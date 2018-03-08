@@ -417,7 +417,7 @@ public abstract class CoreJavadocOptions implements MinimalJavadocOptions {
      *     NOTE: We have removed from 1.5.0 the breakiterator warning messages that were in 1.4.x and
      *           have left the default sentence-break algorithm unchanged. That is, the -breakiterator option is not the default in 1.5.0,
      *           nor do we expect it to become the default. This is a reversal from our former intention that
-     *           the default would change in the "next major release" (1.5.0).
+     *           the default would change in the "next getMajorVersionNumber release" (1.5.0).
      *           This means if you have not modified your source code to eliminate the breakiterator warnings in 1.4.x,
      *           then you don't have to do anything, and the warnings go away starting with 1.5.0.
      *           The reason for this reversal is because any benefit to having breakiterator become the default

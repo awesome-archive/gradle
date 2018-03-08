@@ -58,14 +58,14 @@ class LoggingDeprecatedFeatureHandlerTest extends Specification {
 
     def 'deprecations are logged at WARN level'() {
         when:
-        handler.featureUsed(deprecatedFeatureUsage('feature'))
+        handler.featureUsed(deprecatedFeatureUsage('getMajorVersionNumber'))
 
         then:
         outputEventListener.events.size() == 1
 
         and:
         def event = outputEventListener.events[0]
-        event.message == 'feature'
+        event.message == 'getMajorVersionNumber'
         event.logLevel == LogLevel.WARN
     }
 
@@ -296,7 +296,7 @@ class LoggingDeprecatedFeatureHandlerTest extends Specification {
 
     def 'location reporter can prepend text'() {
         when:
-        handler.featureUsed(deprecatedFeatureUsage('feature'))
+        handler.featureUsed(deprecatedFeatureUsage('getMajorVersionNumber'))
 
         then:
         1 * locationReporter.reportLocation(_, _) >> { FeatureUsage param1, StringBuilder message ->
@@ -306,7 +306,7 @@ class LoggingDeprecatedFeatureHandlerTest extends Specification {
         and:
         def events = outputEventListener.events
         events.size() == 1
-        events[0].message == TextUtil.toPlatformLineSeparators('location\nfeature')
+        events[0].message == TextUtil.toPlatformLineSeparators('location\ngetMajorVersionNumber')
     }
 
     @Unroll

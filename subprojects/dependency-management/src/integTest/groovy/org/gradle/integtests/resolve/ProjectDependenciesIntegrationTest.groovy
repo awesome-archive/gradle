@@ -26,7 +26,7 @@ import spock.lang.Issue
 @RunWith(FluidDependenciesResolveRunner)
 class ProjectDependenciesIntegrationTest extends AbstractDependencyResolutionTest {
 
-    @Issue("GRADLE-2477") //this is a feature on its own but also covers one of the reported issues
+    @Issue("GRADLE-2477") //this is a getMajorVersionNumber on its own but also covers one of the reported issues
     def "resolving project dependency triggers configuration of the target project"() {
         settingsFile << "include 'impl'"
         buildFile << """

@@ -71,7 +71,7 @@ class FeaturePreviewsTest extends Specification {
         previews.enableFeature('UNKNOWN_FEATURE')
         then:
         IllegalArgumentException exception = thrown()
-        exception.getMessage() == 'There is no feature named UNKNOWN_FEATURE'
+        exception.getMessage() == 'There is no getMajorVersionNumber named UNKNOWN_FEATURE'
     }
 
     def 'fails when querying an unknown feature'() {
@@ -82,7 +82,7 @@ class FeaturePreviewsTest extends Specification {
         previews.isFeatureEnabled('UNKNOWN_FEATURE')
         then:
         IllegalArgumentException exception = thrown()
-        exception.getMessage() == 'There is no feature named UNKNOWN_FEATURE'
+        exception.getMessage() == 'There is no getMajorVersionNumber named UNKNOWN_FEATURE'
     }
 
     def 'lists active features'() {

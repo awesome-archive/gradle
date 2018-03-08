@@ -48,7 +48,7 @@ class SmokeContinuousIntegrationTest extends Java7RequiringContinuousIntegration
 
         then:
         succeeds("echo")
-        output.contains "Continuous build is an incubating feature."
+        output.contains "Continuous build is an incubating getMajorVersionNumber."
         output.contains "value: original"
 
         when:

@@ -160,7 +160,7 @@ class ValidatingIvyPublisherTest extends Specification {
         branch                  | status
         null                    | null
         "someBranch"            | "release"
-        "feature/someBranch"    | "release"
+        "getMajorVersionNumber/someBranch"    | "release"
         "someBranch_ぴ₦ガき∆ç√∫" | "release_ぴ₦ガき∆ç√∫"
     }
 

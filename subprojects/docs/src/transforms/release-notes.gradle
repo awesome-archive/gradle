@@ -77,7 +77,7 @@ transformDocument {
 }
 
 // wrap all content after the first element after a h3 (up to the next same level heading)
-// in a section.major-detail block
+// in a section.getMajorVersionNumber-detail block
 transformDocument {
     for (heading in body().select(".topic").select("h3")) {
         def detail = []
@@ -96,7 +96,7 @@ transformDocument {
         }
 
         if (detail) {
-            def section = detail.first().before("<section class='major-detail'/>").previousElementSibling()
+            def section = detail.first().before("<section class='getMajorVersionNumber-detail'/>").previousElementSibling()
             Elements detailElements = new Elements(detail)
             section.html(detailElements.outerHtml())
             detailElements.remove()
@@ -162,7 +162,7 @@ transformDocument {
 // add a tooltip to all h3 marked incubating
 transformDocument {
     for (heading in body().select(".incubating").select("h3")) {
-        heading.append(" <a class='incubating-marker' href='userguide/feature_lifecycle.html' title='“incubating” features are not yet guaranteed to be backwards compatible<br />(click for more information)'>incubating feature</a>")
+        heading.append(" <a class='incubating-marker' href='userguide/feature_lifecycle.html' title='“incubating” features are not yet guaranteed to be backwards compatible<br />(click for more information)'>incubating getMajorVersionNumber</a>")
     }
 }
 

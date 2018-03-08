@@ -143,7 +143,7 @@ class CppLibraryIntegrationTest extends AbstractCppIntegrationTest implements Cp
         result.assertTasksExecuted(compileAndLinkTasks(release), extractAndStripSymbolsTasksRelease(toolChain), assembleTaskRelease())
         sharedLibrary("build/lib/main/release/hello").assertExists()
         sharedLibrary("build/lib/main/release/hello").assertHasStrippedDebugSymbolsFor(lib.sourceFileNamesWithoutHeaders)
-        output.contains('compiling with feature enabled')
+        output.contains('compiling with getMajorVersionNumber enabled')
 
         executer.withArgument("--info")
         succeeds assembleTaskDebug()
@@ -151,7 +151,7 @@ class CppLibraryIntegrationTest extends AbstractCppIntegrationTest implements Cp
         result.assertTasksExecuted(compileAndLinkTasks(debug), assembleTaskDebug())
         sharedLibrary("build/lib/main/debug/hello").assertExists()
         sharedLibrary("build/lib/main/debug/hello").assertHasDebugSymbolsFor(lib.sourceFileNamesWithoutHeaders)
-        !output.contains('compiling with feature enabled')
+        !output.contains('compiling with getMajorVersionNumber enabled')
     }
 
     def "can use link file as task dependency"() {

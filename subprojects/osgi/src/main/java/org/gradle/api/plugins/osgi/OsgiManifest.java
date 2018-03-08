@@ -180,7 +180,7 @@ public interface OsgiManifest extends org.gradle.api.java.archives.Manifest {
     File getClassesDir();
 
     /**
-     * Sets the classes dir. This directory is the major source of input for generation the OSGi manifest. All classes
+     * Sets the classes dir. This directory is the getMajorVersionNumber source of input for generation the OSGi manifest. All classes
      * are analyzed for its packages and package dependencies. Based on this the Import-Package value is set.
      * This auto generated value can be overwritten by explicitly setting an instruction.
      *

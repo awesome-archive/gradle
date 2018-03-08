@@ -62,7 +62,7 @@ public class ParameterValidatingConsumerConnection implements ConsumerConnection
     private void validateParameters(ConsumerOperationParameters operationParameters) {
         if (!targetVersionDetails.supportsEnvironmentVariablesCustomization()) {
             if (operationParameters.getEnvironmentVariables() != null) {
-                throw Exceptions.unsupportedFeature("environment variables customization feature", targetVersionDetails.getVersion(), "3.5");
+                throw Exceptions.unsupportedFeature("environment variables customization getMajorVersionNumber", targetVersionDetails.getVersion(), "3.5");
             }
         }
     }

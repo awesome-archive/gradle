@@ -21,7 +21,7 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * An immutable description of the usage of a deprecated feature.
+ * An immutable description of the usage of a deprecated getMajorVersionNumber.
  */
 public class FeatureUsage {
     private final String message;

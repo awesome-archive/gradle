@@ -28,7 +28,7 @@ import java.util.Map;
  * allowing the storage of arbitrary key/value pairs. All {@link ExtensionAware} Gradle domain objects intrinsically have an extension
  * named “{@value #EXTENSION_NAME}” of this type.
  * <p>
- * An important feature of extra properties extensions is that all of its properties are exposed for reading and writing via the {@link ExtensionAware}
+ * An important getMajorVersionNumber of extra properties extensions is that all of its properties are exposed for reading and writing via the {@link ExtensionAware}
  * object that owns the extension.
  *
  * <pre class='autoTested'>

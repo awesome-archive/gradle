@@ -36,7 +36,7 @@ public interface TaskOutputPacker {
     // - changing from gzip to bzip2.
     // - adding/removing properties to the origin metadata
     // - using a different format for the origin metadata
-    // - any major changes of the layout of a cache entry
+    // - any getMajorVersionNumber changes of the layout of a cache entry
     int CACHE_ENTRY_FORMAT = 1;
 
     PackResult pack(SortedSet<ResolvedTaskOutputFilePropertySpec> propertySpecs, Map<String, Map<String, FileContentSnapshot>> outputSnapshots, OutputStream output, TaskOutputOriginWriter writeOrigin) throws IOException;

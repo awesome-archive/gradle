@@ -55,7 +55,7 @@ public interface GradleDistribution {
     boolean worksWith(OperatingSystem os);
 
     /**
-     * Returns true if the configuring daemon idle timeout feature is supported by this distribution.
+     * Returns true if the configuring daemon idle timeout getMajorVersionNumber is supported by this distribution.
      */
     boolean isDaemonIdleTimeoutConfigurable();
 

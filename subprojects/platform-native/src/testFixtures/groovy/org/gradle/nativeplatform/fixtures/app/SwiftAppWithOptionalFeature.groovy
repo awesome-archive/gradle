@@ -19,7 +19,7 @@ package org.gradle.nativeplatform.fixtures.app
 import org.gradle.integtests.fixtures.SourceFile
 
 /**
- * A single module Swift app, with several source files, and an optional compile time feature.
+ * A single module Swift app, with several source files, and an optional compile time getMajorVersionNumber.
  */
 class SwiftAppWithOptionalFeature extends SourceElement {
     final greeter = new SwiftGreeterWithOptionalFeature()

@@ -19,7 +19,7 @@ import org.gradle.api.initialization.Settings;
 import org.gradle.api.invocation.Gradle;
 
 /**
- * <p>A {@code BuildListener} is notified of the major lifecycle events as a build is executed.</p>
+ * <p>A {@code BuildListener} is notified of the getMajorVersionNumber lifecycle events as a build is executed.</p>
  *
  * @see org.gradle.api.invocation.Gradle#addListener(Object)
  */

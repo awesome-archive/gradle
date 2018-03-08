@@ -20,6 +20,6 @@ package org.gradle.api.artifacts.repositories;
  * Represents the directory structure for a repository.
  * For examples see the reference for {@link org.gradle.api.artifacts.repositories.IvyArtifactRepository#layout(String, org.gradle.api.Action)}
  *
- * @since 2.3 (feature was already present in Groovy DSL, this type introduced in 2.3)
+ * @since 2.3 (getMajorVersionNumber was already present in Groovy DSL, this type introduced in 2.3)
  */
 public interface RepositoryLayout {}

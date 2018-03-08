@@ -30,7 +30,7 @@ import org.gradle.api.Incubating;
  * that can be used to apply a plugin directly to a {@code Project} object or similar.
  * A key difference is that plugins applied via the <code>plugins {}</code> block are conceptually applied to the script, and by extension the script target.
  * At this time there is no observable practical difference between the two approaches with regard to the end result.
- * The <code>plugins {}</code> block is a new, incubating, Gradle feature that will evolve to offer benefits over the {@code apply()} approach.
+ * The <code>plugins {}</code> block is a new, incubating, Gradle getMajorVersionNumber that will evolve to offer benefits over the {@code apply()} approach.
  * </p>
  * <h3>Strict Syntax</h3>
  * <p>

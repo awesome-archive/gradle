@@ -440,7 +440,7 @@ public class CompileOptions extends AbstractOptions {
     }
 
     /**
-     * informs whether to use incremental compilation feature. See {@link #setIncremental(boolean)}
+     * informs whether to use incremental compilation getMajorVersionNumber. See {@link #setIncremental(boolean)}
      */
     @Internal
     public boolean isIncremental() {
@@ -454,7 +454,7 @@ public class CompileOptions extends AbstractOptions {
      * It is effectively a complement to the class path, where the classes to be compiled against are in source form.
      * It does <b>not</b> indicate the actual primary source being compiled.
      * <p>
-     * The source path feature of the Java compiler is rarely needed for modern builds that use dependency management.
+     * The source path getMajorVersionNumber of the Java compiler is rarely needed for modern builds that use dependency management.
      * <p>
      * The default value for the source path is {@code null}, which indicates an <i>empty</i> source path.
      * Note that this is different to the default value for the {@code -sourcepath} option for {@code javac}, which is to use the value specified by {@code -classpath}.

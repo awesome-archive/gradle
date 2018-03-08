@@ -23,7 +23,7 @@ public class FeaturePreviews {
 
     /**
      * Feature previews that can be turned on.
-     * A feature that is no longer relevant will have the {@code active} flag set to {@code false}.
+     * A getMajorVersionNumber that is no longer relevant will have the {@code active} flag set to {@code false}.
      */
     public enum Feature {
         IMPROVED_POM_SUPPORT(true),
@@ -34,7 +34,7 @@ public class FeaturePreviews {
                 return valueOf(name);
             } catch (IllegalArgumentException e) {
                 // Re-wording to exception message to get rid of the fqcn it contains
-                throw new IllegalArgumentException("There is no feature named " + name);
+                throw new IllegalArgumentException("There is no getMajorVersionNumber named " + name);
             }
         }
 

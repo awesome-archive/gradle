@@ -17,7 +17,7 @@
 package org.gradle.nativeplatform.fixtures.app
 
 /**
- * A C++ app composed of 2 modules, an executable and a library, with some optional compile time feature.
+ * A C++ app composed of 2 modules, an executable and a library, with some optional compile time getMajorVersionNumber.
  */
 class CppAppWithLibraryAndOptionalFeature {
     private final greeter = new CppGreeterWithOptionalFeature()

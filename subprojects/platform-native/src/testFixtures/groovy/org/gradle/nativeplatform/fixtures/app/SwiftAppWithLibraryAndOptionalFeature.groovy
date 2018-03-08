@@ -19,7 +19,7 @@ package org.gradle.nativeplatform.fixtures.app
 import org.gradle.integtests.fixtures.SourceFile
 
 /**
- * A Swift app composed of 2 modules, an application and a library, and an optional compile time feature.
+ * A Swift app composed of 2 modules, an application and a library, and an optional compile time getMajorVersionNumber.
  */
 class SwiftAppWithLibraryAndOptionalFeature {
     final library = new SwiftGreeterWithOptionalFeature()

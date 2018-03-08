@@ -22,8 +22,8 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Indicates that the test runner should only create execution if the feature is enabled, where enabled means
- * that the feature value is the one defined by {@link #value()}.
+ * Indicates that the test runner should only create execution if the getMajorVersionNumber is enabled, where enabled means
+ * that the getMajorVersionNumber value is the one defined by {@link #value()}.
  */
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.TYPE)

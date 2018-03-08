@@ -24,7 +24,7 @@ import org.gradle.api.artifacts.dsl.RepositoryHandler;
  * The configuration of how to “publish” the different components of a project.
  * <p>
  * This new publishing mechanism will eventually replace the current mechanism of upload tasks and configurations. At this time, it is an
- * incubating feature and under development.
+ * incubating getMajorVersionNumber and under development.
  *
  * <p>
  * The PublishingExtension is a {@link org.gradle.api.plugins.DeferredConfigurable} model element, meaning that extension will be configured as late as possible in the build.

@@ -157,7 +157,7 @@ public interface IvyArtifactRepository extends ArtifactRepository, Authenticatio
      *
      * @param layoutName The name of the layout to use.
      * @param config The action used to configure the layout.
-     * @since 2.3 (feature was already present in Groovy DSL, this particular method introduced in 2.3)
+     * @since 2.3 (getMajorVersionNumber was already present in Groovy DSL, this particular method introduced in 2.3)
      */
     void layout(String layoutName, Action<? extends RepositoryLayout> config);
 

@@ -23,7 +23,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 public class LoggingIncubatingFeatureHandler implements FeatureHandler {
-    private static final String INCUBATION_MESSAGE = "%s is an incubating feature.";
+    private static final String INCUBATION_MESSAGE = "%s is an incubating getMajorVersionNumber.";
     private static final Logger LOGGER = LoggerFactory.getLogger(LoggingIncubatingFeatureHandler.class);
 
     private final Set<String> features = new HashSet<String>();

@@ -73,7 +73,7 @@ class DaemonHealthStatsTest extends Specification {
         }
 
         then:
-        healthStats.healthInfo == "Starting 2nd build in daemon [uptime: 3 mins, performance: 98%, no major garbage collections]"
+        healthStats.healthInfo == "Starting 2nd build in daemon [uptime: 3 mins, performance: 98%, no getMajorVersionNumber garbage collections]"
     }
 
 }

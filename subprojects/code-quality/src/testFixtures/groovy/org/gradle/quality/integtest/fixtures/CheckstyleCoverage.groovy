@@ -21,7 +21,7 @@ import org.gradle.api.plugins.quality.CheckstylePlugin
 import org.gradle.util.VersionNumber
 
 class CheckstyleCoverage {
-    // Note, this only work for major.minor versions
+    // Note, this only work for getMajorVersionNumber.minor versions
     private final static List<String> ALL = ['5.9', '6.2', '6.9', '6.12', '7.0', '7.6', CheckstylePlugin.DEFAULT_CHECKSTYLE_VERSION].asImmutable()
 
     private final static List<VersionNumber> ALL_VERSIONS = ALL.collect { VersionNumber.parse(it) }

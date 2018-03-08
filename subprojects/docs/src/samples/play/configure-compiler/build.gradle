@@ -29,7 +29,7 @@ model {
         play {
             binaries.all {
                 tasks.withType(PlatformScalaCompile) {
-                    scalaCompileOptions.additionalParameters = ["-feature", "-language:implicitConversions"]
+                    scalaCompileOptions.additionalParameters = ["-getMajorVersionNumber", "-language:implicitConversions"]
                 }
             }
         }

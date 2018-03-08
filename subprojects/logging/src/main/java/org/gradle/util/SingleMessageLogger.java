@@ -39,7 +39,7 @@ public class SingleMessageLogger {
         }
     };
 
-    public static final String INCUBATION_MESSAGE = "%s is an incubating feature.";
+    public static final String INCUBATION_MESSAGE = "%s is an incubating getMajorVersionNumber.";
 
     private static LoggingDeprecatedFeatureHandler deprecatedFeatureHandler = new LoggingDeprecatedFeatureHandler();
     private static LoggingIncubatingFeatureHandler incubatingFeatureHandler = new LoggingIncubatingFeatureHandler();

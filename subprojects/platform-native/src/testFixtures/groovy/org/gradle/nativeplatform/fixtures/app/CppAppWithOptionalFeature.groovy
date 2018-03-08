@@ -17,7 +17,7 @@
 package org.gradle.nativeplatform.fixtures.app
 
 /**
- * A single project C++ app, with several source files, and an optional compile time feature.
+ * A single project C++ app, with several source files, and an optional compile time getMajorVersionNumber.
  */
 class CppAppWithOptionalFeature extends CppSourceElement {
     final greeter = new CppGreeter()

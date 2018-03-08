@@ -45,7 +45,7 @@ import static org.gradle.internal.IoActions.withResource;
  * Assembles an "API Jar" containing only the members of a library's public API.
  *
  * <p>This task and the Jar it produces are designed primarily for internal use in support
- * of Gradle's "compile avoidance" performance feature. The task is automatically included
+ * of Gradle's "compile avoidance" performance getMajorVersionNumber. The task is automatically included
  * in the task graph for any JVM library that declares an {@code api { ... }}
  * specification, and the resulting Jar will automatically be placed on the compile time
  * classpath of projects that depend on the library in lieu of the library's complete

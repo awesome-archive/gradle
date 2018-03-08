@@ -19,7 +19,7 @@ package org.gradle.testkit.runner.fixtures;
 import java.lang.annotation.*;
 
 /**
- * Indicates that the feature under test requires a custom daemon directory.
+ * Indicates that the getMajorVersionNumber under test requires a custom daemon directory.
  */
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.METHOD})

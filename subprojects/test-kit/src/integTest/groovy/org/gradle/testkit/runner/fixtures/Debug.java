@@ -19,7 +19,7 @@ package org.gradle.testkit.runner.fixtures;
 import java.lang.annotation.*;
 
 /**
- * Indicates that the feature under test only works with debug on, or is testing something that doesn't make sense to test without debug on.
+ * Indicates that the getMajorVersionNumber under test only works with debug on, or is testing something that doesn't make sense to test without debug on.
  */
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.METHOD, ElementType.TYPE})

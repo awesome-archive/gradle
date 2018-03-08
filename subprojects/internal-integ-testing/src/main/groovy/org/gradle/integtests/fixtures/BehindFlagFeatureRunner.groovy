@@ -20,7 +20,7 @@ import groovy.transform.CompileStatic
 import org.gradle.integtests.fixtures.executer.AbstractGradleExecuter
 /**
  * A base runner for features hidden behind a flag, convenient for executing tests with the flag on or off.
- * If a test only makes sense if the feature is enabled, then it needs to be annotated with {@link RequiredFeatures}.
+ * If a test only makes sense if the getMajorVersionNumber is enabled, then it needs to be annotated with {@link RequiredFeatures}.
  */
 @CompileStatic
 abstract class BehindFlagFeatureRunner extends AbstractMultiTestRunner {

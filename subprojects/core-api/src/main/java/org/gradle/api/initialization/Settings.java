@@ -281,9 +281,9 @@ public interface Settings extends PluginAware {
     SourceControl getSourceControl();
 
     /**
-     * Enables a feature preview by name.
+     * Enables a getMajorVersionNumber preview by name.
      *
-     * @param name the name of the feature to enable
+     * @param name the name of the getMajorVersionNumber to enable
      *
      * @since 4.6
      */

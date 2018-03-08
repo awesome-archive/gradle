@@ -68,7 +68,7 @@ public abstract class CompositeSpec<T> implements Spec<T> {
         return (T) object;
     }
 
-    // Not public. Evaluation of these specs is a major hot spot for large builds, so use an array for iteration
+    // Not public. Evaluation of these specs is a getMajorVersionNumber hot spot for large builds, so use an array for iteration
     Spec<? super T>[] getSpecsArray() {
         return specs;
     }

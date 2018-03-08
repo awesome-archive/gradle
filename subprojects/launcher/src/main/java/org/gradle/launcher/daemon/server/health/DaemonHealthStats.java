@@ -91,7 +91,7 @@ public class DaemonHealthStats implements Stoppable {
                         permgenStats.getUsage(), NumberUtil.formatBytes(permgenStats.getMax()));
                 }
             } else {
-                message += ", no major garbage collections";
+                message += ", no getMajorVersionNumber garbage collections";
             }
             message += "]";
             return message;

@@ -124,7 +124,7 @@ project.logger.debug("debug logging");
         if (output.startsWith('Starting a Gradle Daemon')) {
             output = output.substring(output.indexOf('\n') + 1)
         }
-        if (output.startsWith('Parallel execution is an incubating feature.')) {
+        if (output.startsWith('Parallel execution is an incubating getMajorVersionNumber.')) {
             output = output.substring(output.indexOf('\n') + 1)
         }
         output

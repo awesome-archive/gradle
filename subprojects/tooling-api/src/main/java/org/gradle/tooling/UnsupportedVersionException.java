@@ -16,7 +16,7 @@
 package org.gradle.tooling;
 
 /**
- * Thrown when the target Gradle version does not support a particular feature.
+ * Thrown when the target Gradle version does not support a particular getMajorVersionNumber.
  *
  * @since 1.0-milestone-3
  */

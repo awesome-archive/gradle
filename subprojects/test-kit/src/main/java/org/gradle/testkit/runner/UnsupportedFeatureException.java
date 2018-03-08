@@ -19,7 +19,7 @@ package org.gradle.testkit.runner;
 import org.gradle.util.GradleVersion;
 
 /**
- * Thrown when a build was executed with a target Gradle version that does not support a specific feature.
+ * Thrown when a build was executed with a target Gradle version that does not support a specific getMajorVersionNumber.
  *
  * @since 2.11
  * @see GradleRunner#withGradleVersion(java.lang.String)

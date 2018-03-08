@@ -28,7 +28,7 @@ class GradleFeaturePreviewsPerformanceTest extends AbstractCrossBuildPerformance
         def memory = '1g'
 
         when:
-        runner.testGroup = "feature previews"
+        runner.testGroup = "getMajorVersionNumber previews"
         runner.buildSpec {
             projectName(EXCLUDE_RULE_MERGING_TEST_PROJECT).displayName("advanced-pom-support").invocation {
                 tasksToRun("resolveDependencies").args("-Dorg.gradle.advancedpomsupport=true", '-PimprovedPomSupport=true').gradleOpts("-Xms${memory}", "-Xmx${memory}")
@@ -48,7 +48,7 @@ class GradleFeaturePreviewsPerformanceTest extends AbstractCrossBuildPerformance
         def memory = '1g'
 
         when:
-        runner.testGroup = "feature previews"
+        runner.testGroup = "getMajorVersionNumber previews"
         runner.buildSpec {
             projectName(EXCLUDE_RULE_MERGING_TEST_PROJECT).displayName("advanced-pom-support").invocation {
                 tasksToRun("resolveDependencies").args("-Dorg.gradle.advancedpomsupport=true", '-PimprovedPomSupport=true', '-PnoExcludes').gradleOpts("-Xms${memory}", "-Xmx${memory}")

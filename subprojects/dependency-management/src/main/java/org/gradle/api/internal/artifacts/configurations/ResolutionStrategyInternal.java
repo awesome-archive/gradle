@@ -33,7 +33,7 @@ public interface ResolutionStrategyInternal extends ResolutionStrategy {
     CachePolicy getCachePolicy();
 
     /**
-     * Until the feature 'settles' and we receive more feedback, it's internal
+     * Until the getMajorVersionNumber 'settles' and we receive more feedback, it's internal
      *
      * @return conflict resolution
      */

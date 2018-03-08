@@ -15,7 +15,7 @@
  */
 
 /**
- * Tasks supporting Gradle's "compile avoidance" feature through the generation and use of
+ * Tasks supporting Gradle's "compile avoidance" getMajorVersionNumber through the generation and use of
  * API classes and {@link org.gradle.jvm.tasks.api.ApiJar} files.
  *
  * @since 2.10

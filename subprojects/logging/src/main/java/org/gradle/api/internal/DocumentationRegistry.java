@@ -29,7 +29,7 @@ public class DocumentationRegistry {
     }
 
     /**
-     * Returns the location the documentation for the given feature, referenced by id. The location may be local or remote.
+     * Returns the location the documentation for the given getMajorVersionNumber, referenced by id. The location may be local or remote.
      */
     public String getDocumentationFor(String id) {
         return String.format("https://docs.gradle.org/%s/userguide/%s.html", gradleVersion.getVersion(), id);

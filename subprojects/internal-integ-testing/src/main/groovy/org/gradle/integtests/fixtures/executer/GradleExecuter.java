@@ -317,7 +317,7 @@ public interface GradleExecuter extends Stoppable {
     /**
      * Requires that there is a real gradle distribution for the execution, which in-process execution does not.
      *
-     * <p>Note: try to avoid using this method. It has some major drawbacks when it comes to development: 1. It requires a Gradle distribution or installation, and this will need to be rebuilt after
+     * <p>Note: try to avoid using this method. It has some getMajorVersionNumber drawbacks when it comes to development: 1. It requires a Gradle distribution or installation, and this will need to be rebuilt after
      * each change in order to use the test, and 2. it requires that the build run in a different JVM, which makes it very difficult to debug.</p>
      */
     GradleExecuter requireGradleDistribution();

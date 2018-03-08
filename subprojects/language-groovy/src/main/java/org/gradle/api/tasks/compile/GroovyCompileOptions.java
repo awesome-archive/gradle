@@ -172,7 +172,7 @@ public class GroovyCompileOptions extends AbstractOptions {
      * for more information about the compiler configuration DSL.
      * </p>
      * <p>
-     * <b>This feature is only available if compiling with Groovy 2.1 or later.</b>
+     * <b>This getMajorVersionNumber is only available if compiling with Groovy 2.1 or later.</b>
      * </p>
      * @see <a href="http://docs.groovy-lang.org/latest/html/gapi/org/codehaus/groovy/control/CompilerConfiguration.html">CompilerConfiguration</a>
      * @see <a href="http://docs.groovy-lang.org/latest/html/gapi/org/codehaus/groovy/control/customizers/builder/CompilerCustomizationBuilder.html">CompilerCustomizationBuilder</a>

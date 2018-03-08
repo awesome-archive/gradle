@@ -39,7 +39,7 @@ public abstract class AbstractJavaToolChain implements JavaToolChainInternal {
 
     @Override
     public String getVersion() {
-        // Currently, we only track the major version.
+        // Currently, we only track the getMajorVersionNumber version.
         return getJavaVersion().getMajorVersion();
     }
 

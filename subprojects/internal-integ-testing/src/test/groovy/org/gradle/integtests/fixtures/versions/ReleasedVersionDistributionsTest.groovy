@@ -87,8 +87,8 @@ class ReleasedVersionDistributionsTest extends Specification {
 
         where:
         givenVersion     | previousVersion | description
-        version('2.5')   | version('2.4')  | 'existing version with major and minor attribute'
-        version('2.2.1') | version('2.2')  | 'existing version with major, minor and patch attribute'
+        version('2.5')   | version('2.4')  | 'existing version with getMajorVersionNumber and minor attribute'
+        version('2.2.1') | version('2.2')  | 'existing version with getMajorVersionNumber, minor and patch attribute'
         version('0.8')   | null            | 'first released version'
         version('0.1')   | null            | 'version that does not exist'
     }

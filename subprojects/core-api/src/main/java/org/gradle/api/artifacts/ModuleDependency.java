@@ -47,7 +47,7 @@ public interface ModuleDependency extends Dependency {
      * <p>
      * If your intention is to exclude a particular transitive dependency
      * because you don't like the version it pulls in to the configuration
-     * then consider using forced versions' feature: {@link ResolutionStrategy#force(Object...)}.
+     * then consider using forced versions' getMajorVersionNumber: {@link ResolutionStrategy#force(Object...)}.
      *
      * <pre class='autoTested'>
      * apply plugin: 'java' //so that I can declare 'compile' dependencies

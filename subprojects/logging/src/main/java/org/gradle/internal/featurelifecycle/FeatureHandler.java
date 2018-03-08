@@ -17,7 +17,7 @@
 package org.gradle.internal.featurelifecycle;
 
 /**
- * Notified when a deprecated feature is used.
+ * Notified when a deprecated getMajorVersionNumber is used.
  *
  * <p>Implementations need not be thread-safe.
  */
