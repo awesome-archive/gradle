@@ -210,4 +210,8 @@ class EdgeState implements DependencyGraphEdge {
             }
         });
     }
+
+    public List<NodeState> getTargetNodes() {
+        return targetNodes;
+    }
 }

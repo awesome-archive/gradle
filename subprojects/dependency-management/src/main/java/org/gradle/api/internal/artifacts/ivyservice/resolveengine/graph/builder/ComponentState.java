@@ -281,7 +281,7 @@ public class ComponentState implements ComponentResolutionState, ComponentResult
         return selectedBy != null && selectedBy.getDependencyMetadata().isPending();
     }
 
-    boolean isSelected() {
+    public boolean isSelected() {
         return state == ModuleState.Selected;
     }
 

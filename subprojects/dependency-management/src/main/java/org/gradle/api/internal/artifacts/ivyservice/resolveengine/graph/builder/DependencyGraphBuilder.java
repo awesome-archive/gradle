@@ -23,6 +23,7 @@ import org.gradle.api.Action;
 import org.gradle.api.artifacts.ModuleIdentifier;
 import org.gradle.api.artifacts.ModuleVersionIdentifier;
 import org.gradle.api.artifacts.component.ComponentIdentifier;
+import org.gradle.api.capabilities.CapabilityDescriptor;
 import org.gradle.api.internal.FeaturePreviews;
 import org.gradle.api.internal.artifacts.ComponentSelectorConverter;
 import org.gradle.api.internal.artifacts.ResolveContext;
@@ -33,7 +34,8 @@ import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.strategy.VersionS
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.excludes.ModuleExclusions;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.DependencyGraphSelector;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.DependencyGraphVisitor;
-import org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.conflicts.ConflictHandler;
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.conflicts.DefaultCapabilitiesConflictHandler;
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.conflicts.ModuleConflictHandler;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.conflicts.PotentialConflict;
 import org.gradle.api.internal.attributes.AttributesSchemaInternal;
 import org.gradle.api.internal.attributes.ImmutableAttributesFactory;
@@ -61,7 +63,7 @@ import java.util.Map;
 public class DependencyGraphBuilder {
     private static final Logger LOGGER = LoggerFactory.getLogger(DependencyGraphBuilder.class);
     private static final Predicate<SelectorState> ALL_SELECTORS = Predicates.alwaysTrue();
-    private final ConflictHandler conflictHandler;
+    private final ModuleConflictHandler moduleConflictHandler;
     private final Spec<? super DependencyMetadata> edgeFilter;
     private final ResolveContextToComponentResolver moduleResolver;
     private final DependencyToComponentIdResolver idResolver;
@@ -74,10 +76,11 @@ public class DependencyGraphBuilder {
     private final DependencySubstitutionApplicator dependencySubstitutionApplicator;
     private final FeaturePreviews featurePreviews;
     private final ImmutableAttributesFactory attributesFactory;
+    private final DefaultCapabilitiesConflictHandler capabilitiesConflictHandler;
 
     public DependencyGraphBuilder(DependencyToComponentIdResolver componentIdResolver, ComponentMetaDataResolver componentMetaDataResolver,
                                   ResolveContextToComponentResolver resolveContextToComponentResolver,
-                                  ConflictHandler conflictHandler, Spec<? super DependencyMetadata> edgeFilter,
+                                  ModuleConflictHandler moduleConflictHandler, Spec<? super DependencyMetadata> edgeFilter,
                                   AttributesSchemaInternal attributesSchema,
                                   ModuleExclusions moduleExclusions,
                                   BuildOperationExecutor buildOperationExecutor, ModuleReplacementsData moduleReplacementsData,
@@ -87,7 +90,7 @@ public class DependencyGraphBuilder {
         this.idResolver = componentIdResolver;
         this.metaDataResolver = componentMetaDataResolver;
         this.moduleResolver = resolveContextToComponentResolver;
-        this.conflictHandler = conflictHandler;
+        this.moduleConflictHandler = moduleConflictHandler;
         this.edgeFilter = edgeFilter;
         this.attributesSchema = attributesSchema;
         this.moduleExclusions = moduleExclusions;
@@ -97,6 +100,7 @@ public class DependencyGraphBuilder {
         this.componentSelectorConverter = componentSelectorConverter;
         this.featurePreviews = featurePreviews;
         this.attributesFactory = attributesFactory;
+        this.capabilitiesConflictHandler = new DefaultCapabilitiesConflictHandler();
     }
 
     public void resolve(final ResolveContext resolveContext, final DependencyGraphVisitor modelVisitor) {
@@ -106,7 +110,7 @@ public class DependencyGraphBuilder {
         moduleResolver.resolve(resolveContext, rootModule);
 
         final ResolveState resolveState = new ResolveState(idGenerator, rootModule, resolveContext.getName(), idResolver, metaDataResolver, edgeFilter, attributesSchema, moduleExclusions, moduleReplacementsData, componentSelectorConverter, attributesFactory, dependencySubstitutionApplicator);
-        conflictHandler.registerResolver(new DirectDependencyForcingResolver(resolveState.getRoot().getComponent()));
+        moduleConflictHandler.registerResolver(new DirectDependencyForcingResolver(resolveState.getRoot().getComponent()));
 
         traverseGraph(resolveState);
 
@@ -127,7 +131,7 @@ public class DependencyGraphBuilder {
 
         final PendingDependenciesHandler pendingDependenciesHandler = new DefaultPendingDependenciesHandler();
 
-        while (resolveState.peek() != null || conflictHandler.hasConflicts()) {
+        while (resolveState.peek() != null || moduleConflictHandler.hasConflicts() || capabilitiesConflictHandler.hasConflicts()) {
             if (resolveState.peek() != null) {
                 final NodeState node = resolveState.pop();
                 LOGGER.debug("Visiting configuration {}.", node);
@@ -140,7 +144,11 @@ public class DependencyGraphBuilder {
                 resolveEdges(node, dependencies, dependenciesMissingLocalMetadata, resolveState, componentIdentifierCache);
             } else {
                 // We have some batched up conflicts. Resolve the first, and continue traversing the graph
-                conflictHandler.resolveNextConflict(resolveState.getReplaceSelectionWithConflictResultAction());
+                if (moduleConflictHandler.hasConflicts()) {
+                    moduleConflictHandler.resolveNextConflict(resolveState.getReplaceSelectionWithConflictResultAction());
+                } else {
+                    capabilitiesConflictHandler.resolveNextConflict(null);
+                }
             }
 
         }
@@ -159,7 +167,7 @@ public class DependencyGraphBuilder {
             }
 
             // A new module revision. Check for conflict
-            PotentialConflict c = conflictHandler.registerModule(module);
+            PotentialConflict c = moduleConflictHandler.registerModule(module);
             if (!c.conflictExists()) {
                 // No conflict. Select it for now
                 LOGGER.debug("Selecting new module version {}", moduleRevision);
@@ -223,17 +231,28 @@ public class DependencyGraphBuilder {
         performSelectionSerially(dependencies, resolveState);
         computePreemptiveDownloadList(dependencies, dependenciesMissingMetadataLocally, componentIdentifierCache);
         downloadMetadataConcurrently(node, dependenciesMissingMetadataLocally);
-        attachToTargetRevisionsSerially(dependencies);
+        attachToTargetRevisionsSerially(dependencies, resolveState);
 
     }
 
-    private void attachToTargetRevisionsSerially(List<EdgeState> dependencies) {
+    private void attachToTargetRevisionsSerially(List<EdgeState> dependencies, ResolveState resolveState) {
         // the following only needs to be done serially to preserve ordering of dependencies in the graph: we have visited the edges
         // but we still didn't add the result to the queue. Doing it from resolve threads would result in non-reproducible graphs, where
         // edges could be added in different order. To avoid this, the addition of new edges is done serially.
         for (EdgeState dependency : dependencies) {
             if (dependency.getTargetComponent() != null) {
                 dependency.attachToTargetConfigurations();
+            }
+            for (NodeState target : dependency.getTargetNodes()) {
+                List<? extends CapabilityDescriptor> capabilities = target.getMetadata().getCapabilitiesMetadata().getCapabilities();
+                for (CapabilityDescriptor capability : capabilities) {
+                    PotentialConflict c = capabilitiesConflictHandler.registerModule(
+                        new DefaultCapabilitiesConflictHandler.Candidate(target.getComponent(), capability)
+                    );
+                    if (c.conflictExists()) {
+                        c.withParticipatingModules(resolveState.getDeselectVersionAction());
+                    }
+                }
             }
         }
     }
