@@ -16,7 +16,11 @@
 package org.gradle.internal.operations;
 
 /**
- * A listener that is notified as build operations are executed via a {@link org.gradle.internal.operations.BuildOperationExecutor}.
+ * A listener that is notified of build operations.
+ *
+ * Note: listeners _must_ be registered via {@link BuildOperationListenerManager}, and not ListenerManager.
+ * This means that if implementations implement other listener interfaces, that are signalled via the listener manager,
+ * they may receive signals concurrently from the build operation listener manager and general listener manager.
  *
  * @since 3.5
  */

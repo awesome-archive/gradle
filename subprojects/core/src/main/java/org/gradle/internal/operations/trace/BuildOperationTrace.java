@@ -31,6 +31,7 @@ import org.gradle.internal.concurrent.Stoppable;
 import org.gradle.internal.event.ListenerManager;
 import org.gradle.internal.operations.BuildOperationDescriptor;
 import org.gradle.internal.operations.BuildOperationListener;
+import org.gradle.internal.operations.BuildOperationListenerManager;
 import org.gradle.internal.operations.OperationFinishEvent;
 import org.gradle.internal.operations.OperationIdentifier;
 import org.gradle.internal.operations.OperationProgressEvent;
@@ -92,11 +93,13 @@ public class BuildOperationTrace implements Stoppable {
 
     private final String basePath;
     private final OutputStream logOutputStream;
+    private final BuildOperationListenerManager buildOperationListenerManager;
     private final ListenerManager listenerManager;
 
-    private final BuildOperationListener listener = new LoggingListener();
+    private final LoggingListener listener = new LoggingListener();
 
-    public BuildOperationTrace(StartParameter startParameter, ListenerManager listenerManager) {
+    public BuildOperationTrace(StartParameter startParameter, BuildOperationListenerManager buildOperationListenerManager, ListenerManager listenerManager) {
+        this.buildOperationListenerManager = buildOperationListenerManager;
         this.listenerManager = listenerManager;
 
         Map<String, String> sysProps = startParameter.getSystemPropertiesArgs();
@@ -126,10 +129,12 @@ public class BuildOperationTrace implements Stoppable {
         }
 
         listenerManager.addListener(listener);
+        buildOperationListenerManager.addListener(listener);
     }
 
     @Override
     public void stop() {
+        buildOperationListenerManager.removeListener(listener);
         listenerManager.removeListener(listener);
 
         if (logOutputStream != null) {
@@ -146,9 +151,13 @@ public class BuildOperationTrace implements Stoppable {
     }
 
     private void writeDetailTree(List<BuildOperationRecord> roots) throws IOException {
-        String rawJson = JsonOutput.toJson(BuildOperationTree.serialize(roots));
-        String prettyJson = JsonOutput.prettyPrint(rawJson);
-        Files.asCharSink(file(basePath, "-tree.json"), Charsets.UTF_8).write(prettyJson);
+        try {
+            String rawJson = JsonOutput.toJson(BuildOperationTree.serialize(roots));
+            String prettyJson = JsonOutput.prettyPrint(rawJson);
+            Files.asCharSink(file(basePath, "-tree.json"), Charsets.UTF_8).write(prettyJson);
+        } catch (OutOfMemoryError e) {
+            System.err.println("Failed to write build operation trace JSON due to out of memory.");
+        }
     }
 
     private void writeSummaryTree(final List<BuildOperationRecord> roots) throws IOException {

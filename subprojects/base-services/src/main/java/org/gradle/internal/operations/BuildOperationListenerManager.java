@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 the original author or authors.
+ * Copyright 2018 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,10 +19,11 @@ package org.gradle.internal.operations;
 /**
  * Manages listeners of build operations.
  *
- * Be aware that there are two instances of this within the services hierarchy:
+ * There is one global instance for the runtime (see GlobalScopedServices).
+ * All listeners should take care to remove themselves when done,
+ * unless they really want all notifications for the life of the runtime.
  *
- * - Global scoped (used by TAPI infrastructure)
- * - Cross build session
+ * This does not use the typical ListenerManager infrastructure as a workaround for avoiding deadlock.
  *
  * @since 3.5
  */

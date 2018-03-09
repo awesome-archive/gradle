@@ -163,8 +163,8 @@ public class GlobalScopeServices extends BasicGlobalScopeServices {
         return CurrentBuildOperationRef.instance();
     }
 
-    BuildOperationListenerManager createBuildOperationService(ListenerManager listenerManager) {
-        return new DefaultBuildOperationListenerManager(listenerManager);
+    BuildOperationListenerManager createBuildOperationListenerManager() {
+        return new DefaultBuildOperationListenerManager();
     }
 
     TemporaryFileProvider createTemporaryFileProvider() {
