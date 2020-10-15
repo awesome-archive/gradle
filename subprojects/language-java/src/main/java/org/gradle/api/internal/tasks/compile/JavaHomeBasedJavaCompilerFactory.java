@@ -17,67 +17,34 @@
 package org.gradle.api.internal.tasks.compile;
 
 import org.gradle.internal.Factory;
-import org.gradle.internal.SystemProperties;
 import org.gradle.internal.jvm.Jvm;
 
 import javax.tools.JavaCompiler;
 import java.io.File;
 import java.io.Serializable;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class JavaHomeBasedJavaCompilerFactory implements Factory<JavaCompiler>, Serializable {
-    private final Factory<? extends File> currentJvmJavaHomeFactory;
-    private final Factory<? extends File> systemPropertiesJavaHomeFactory;
-    private final Factory<? extends JavaCompiler> systemJavaCompilerFactory;
+    private final List<File> compilerPluginsClasspath;
+    // We use a static cache here because we want to reuse classloaders in compiler workers as
+    // it has a huge impact on performance. Previously there was a single, JdkTools.current()
+    // instance, but we can have different "compiler plugins" classpath. For this reason we use
+    // a map, but in practice it's likely there's only one instance in this map.
+    private final static transient Map<List<File>, JdkTools> JDK_TOOLS = new ConcurrentHashMap<>();
 
-    public JavaHomeBasedJavaCompilerFactory() {
-        this(new CurrentJvmJavaHomeFactory(), new SystemPropertiesJavaHomeFactory(), new SystemJavaCompilerFactory());
-    }
-
-    JavaHomeBasedJavaCompilerFactory(Factory<? extends File> currentJvmJavaHomeFactory, Factory<? extends File> systemPropertiesJavaHomeFactory, Factory<? extends JavaCompiler> systemJavaCompilerFactory) {
-        this.currentJvmJavaHomeFactory = currentJvmJavaHomeFactory;
-        this.systemPropertiesJavaHomeFactory = systemPropertiesJavaHomeFactory;
-        this.systemJavaCompilerFactory = systemJavaCompilerFactory;
+    public JavaHomeBasedJavaCompilerFactory(List<File> compilerPluginsClasspath) {
+        this.compilerPluginsClasspath = compilerPluginsClasspath;
     }
 
     @Override
     public JavaCompiler create() {
-        JavaCompiler compiler = findCompiler();
-
-        if (compiler == null) {
-            throw new RuntimeException("Cannot find System Java Compiler. Ensure that you have installed a JDK (not just a JRE) and configured your JAVA_HOME system variable to point to the according directory.");
-        }
-
-        return compiler;
+        JdkTools jdkTools = JavaHomeBasedJavaCompilerFactory.JDK_TOOLS.computeIfAbsent(compilerPluginsClasspath, JavaHomeBasedJavaCompilerFactory::createJdkTools);
+        return jdkTools.getSystemJavaCompiler();
     }
 
-    private JavaCompiler findCompiler() {
-        File realJavaHome = currentJvmJavaHomeFactory.create();
-        File javaHomeFromToolProvidersPointOfView = systemPropertiesJavaHomeFactory.create();
-        if (realJavaHome.equals(javaHomeFromToolProvidersPointOfView)) {
-            return systemJavaCompilerFactory.create();
-        }
-
-        return SystemProperties.getInstance().withJavaHome(realJavaHome, systemJavaCompilerFactory);
-    }
-
-    public static class CurrentJvmJavaHomeFactory implements Factory<File>, Serializable {
-        @Override
-        public File create() {
-            return Jvm.current().getJavaHome();
-        }
-    }
-
-    public static class SystemPropertiesJavaHomeFactory implements Factory<File>, Serializable {
-        @Override
-        public File create() {
-            return SystemProperties.getInstance().getJavaHomeDir();
-        }
-    }
-
-    public static class SystemJavaCompilerFactory implements Factory<JavaCompiler>, Serializable {
-        @Override
-        public JavaCompiler create() {
-            return JdkTools.current().getSystemJavaCompiler();
-        }
+    private static JdkTools createJdkTools(List<File> compilerPluginsClasspath) {
+        return new JdkTools(Jvm.current(), compilerPluginsClasspath);
     }
 }

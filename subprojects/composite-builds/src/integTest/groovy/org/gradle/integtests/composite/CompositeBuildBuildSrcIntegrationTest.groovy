@@ -20,6 +20,7 @@ import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.build.BuildTestFile
 
 class CompositeBuildBuildSrcIntegrationTest extends AbstractIntegrationSpec {
+
     def "included and composing builds can contain buildSrc builds"() {
         def outerBuild = new BuildTestFile(testDirectory, "root")
         def childBuild = new BuildTestFile(testDirectory.file("child"), "child")
@@ -36,7 +37,7 @@ class CompositeBuildBuildSrcIntegrationTest extends AbstractIntegrationSpec {
 
         childBuild.settingsFile << "rootProject.name = 'someBuild'"
         childBuild.file('buildSrc/src/main/java/Thing.java') << """
-            class Thing { 
+            class Thing {
                 Thing() { System.out.println("child thing"); }
             }
         """
@@ -46,9 +47,8 @@ class CompositeBuildBuildSrcIntegrationTest extends AbstractIntegrationSpec {
         run("help")
 
         then:
-        // TODO - Fix test fixtures to allow assertions on buildSrc tasks rather than relying on output scraping in tests
-        outputContains(":buildSrc:assemble")
-        outputContains(":child:buildSrc:assemble")
+        result.assertTaskExecuted(":buildSrc:assemble")
+        result.assertTaskExecuted(":child:buildSrc:assemble")
 
         outputContains("outer thing")
         outputContains("child thing")

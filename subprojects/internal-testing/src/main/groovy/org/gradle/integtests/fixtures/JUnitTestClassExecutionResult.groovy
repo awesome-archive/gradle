@@ -19,32 +19,35 @@ package org.gradle.integtests.fixtures
 import groovy.util.slurpersupport.GPathResult
 import groovy.util.slurpersupport.NodeChild
 import org.hamcrest.Matcher
-import org.hamcrest.Matchers
+import org.hamcrest.CoreMatchers
 import org.junit.Assert
 
 import static org.gradle.integtests.fixtures.DefaultTestExecutionResult.removeParentheses
+import static org.gradle.integtests.fixtures.TestExecutionResult.EXECUTION_FAILURE
 
 class JUnitTestClassExecutionResult implements TestClassExecutionResult {
     GPathResult testClassNode
     String testClassName
     boolean checked
+    String testClassDisplayName
     TestResultOutputAssociation outputAssociation
 
-    def JUnitTestClassExecutionResult(GPathResult testClassNode, String testClassName, TestResultOutputAssociation outputAssociation) {
+    JUnitTestClassExecutionResult(GPathResult testClassNode, String testClassName, String testClassDisplayName, TestResultOutputAssociation outputAssociation) {
         this.outputAssociation = outputAssociation
         this.testClassNode = testClassNode
         this.testClassName = testClassName
+        this.testClassDisplayName = testClassDisplayName
     }
 
-    def JUnitTestClassExecutionResult(String content, String testClassName, TestResultOutputAssociation outputAssociation) {
-        this(new XmlSlurper().parse(new StringReader(content)), testClassName, outputAssociation)
+    JUnitTestClassExecutionResult(String content, String testClassName, String testClassDisplayName, TestResultOutputAssociation outputAssociation) {
+        this(new XmlSlurper().parse(new StringReader(content)), testClassName, testClassDisplayName, outputAssociation)
     }
 
     TestClassExecutionResult assertTestsExecuted(String... testNames) {
         Map<String, Node> testMethods = findTests().findAll { name, element ->
             element."skipped".size() == 0 // Exclude skipped test.
         }
-        Assert.assertThat(testMethods.keySet(), Matchers.equalTo(testNames as Set))
+        Assert.assertThat(testMethods.keySet(), CoreMatchers.equalTo(testNames as Set))
         this
     }
 
@@ -74,17 +77,22 @@ class JUnitTestClassExecutionResult implements TestClassExecutionResult {
 
     TestClassExecutionResult assertTestPassed(String name) {
         Map<String, Node> testMethods = findTests()
-        Assert.assertThat(testMethods.keySet(), Matchers.hasItem(name))
-        Assert.assertThat(testMethods[name].failure.size(), Matchers.equalTo(0))
+        Assert.assertThat(testMethods.keySet(), CoreMatchers.hasItem(name))
+        Assert.assertThat(testMethods[name].failure.size(), CoreMatchers.equalTo(0))
         this
+    }
+
+    @Override
+    TestClassExecutionResult assertTestFailed(String name, String displayName, Matcher<? super String>... messageMatchers) {
+        return assertTestFailed(name, messageMatchers)
     }
 
     TestClassExecutionResult assertTestFailed(String name, Matcher<? super String>... messageMatchers) {
         Map<String, Node> testMethods = findTests()
-        Assert.assertThat(testMethods.keySet(), Matchers.hasItem(name))
+        Assert.assertThat(testMethods.keySet(), CoreMatchers.hasItem(name))
 
         def failures = testMethods[name].failure
-        Assert.assertThat("Expected ${messageMatchers.length} failures. Found: $failures", failures.size(), Matchers.equalTo(messageMatchers.length))
+        Assert.assertThat("Expected ${messageMatchers.length} failures. Found: $failures", failures.size(), CoreMatchers.equalTo(messageMatchers.length))
 
         for (int i = 0; i < messageMatchers.length; i++) {
             Assert.assertThat(failures[i].@message.text(), messageMatchers[i])
@@ -104,7 +112,7 @@ class JUnitTestClassExecutionResult implements TestClassExecutionResult {
         }
 
         for (int i = 0; i < messageMatchers.length; i++) {
-            if (!messageMatchers[i].matches(failures[i].@message.text())) {
+            if (!messageMatchers[i].matches(failures[i].@message.text()) && !messageMatchers[i].matches(failures[i].text())) {
                 return false
             }
         }
@@ -112,16 +120,25 @@ class JUnitTestClassExecutionResult implements TestClassExecutionResult {
         return true
     }
 
+    @Override
+    TestClassExecutionResult assertTestSkipped(String name, String displayName) {
+        return assertTestSkipped(name)
+    }
+
     TestClassExecutionResult assertExecutionFailedWithCause(Matcher<? super String> causeMatcher) {
         Map<String, Node> testMethods = findTests()
-        String failureMethodName = "execution failure"
-        Assert.assertThat(testMethods.keySet(), Matchers.hasItem(failureMethodName))
+        String failureMethodName = EXECUTION_FAILURE
+        Assert.assertThat(testMethods.keySet(), CoreMatchers.hasItem(failureMethodName))
 
         String causeLinePrefix = "Caused by: "
         def failures = testMethods[failureMethodName].failure
         def cause = failures[0].text().readLines().find { it.startsWith causeLinePrefix }?.substring(causeLinePrefix.length())
 
         Assert.assertThat(cause, causeMatcher)
+        this
+    }
+
+    TestClassExecutionResult assertDisplayName(String classDisplayName) {
         this
     }
 
@@ -134,8 +151,19 @@ class JUnitTestClassExecutionResult implements TestClassExecutionResult {
             element."skipped".size() > 0 // Include only skipped test.
         }
 
-        Assert.assertThat(testMethods.keySet(), Matchers.equalTo(testNames as Set))
+        Assert.assertThat(testMethods.keySet(), CoreMatchers.equalTo(testNames as Set))
         this
+    }
+
+    @Override
+    TestClassExecutionResult assertTestPassed(String name, String displayName) {
+        return assertTestPassed(name)
+    }
+
+    int getTestSkippedCount() {
+        return findTests().findAll { name, element ->
+            element."skipped".size() > 0 // Include only skipped test.
+        }.size()
     }
 
     TestClassExecutionResult assertConfigMethodPassed(String name) {
@@ -176,32 +204,32 @@ class JUnitTestClassExecutionResult implements TestClassExecutionResult {
 
     private def findTests() {
         if (!checked) {
-            Assert.assertThat(testClassNode.name(), Matchers.equalTo('testsuite'))
-            Assert.assertThat(testClassNode.@name.text(), Matchers.equalTo(testClassName))
-            Assert.assertThat(testClassNode.@tests.text(), Matchers.not(Matchers.equalTo('')))
-            Assert.assertThat(testClassNode.@skipped.text(), Matchers.not(Matchers.equalTo('')))
-            Assert.assertThat(testClassNode.@failures.text(), Matchers.not(Matchers.equalTo('')))
-            Assert.assertThat(testClassNode.@errors.text(), Matchers.not(Matchers.equalTo('')))
-            Assert.assertThat(testClassNode.@time.text(), Matchers.not(Matchers.equalTo('')))
-            Assert.assertThat(testClassNode.@timestamp.text(), Matchers.not(Matchers.equalTo('')))
-            Assert.assertThat(testClassNode.@hostname.text(), Matchers.not(Matchers.equalTo('')))
-            Assert.assertThat(testClassNode.properties.size(), Matchers.equalTo(1))
+            Assert.assertThat(testClassNode.name(), CoreMatchers.equalTo('testsuite'))
+            Assert.assertThat(testClassNode.@name.text(), CoreMatchers.equalTo(testClassDisplayName))
+            Assert.assertThat(testClassNode.@tests.text(), CoreMatchers.not(CoreMatchers.equalTo('')))
+            Assert.assertThat(testClassNode.@skipped.text(), CoreMatchers.not(CoreMatchers.equalTo('')))
+            Assert.assertThat(testClassNode.@failures.text(), CoreMatchers.not(CoreMatchers.equalTo('')))
+            Assert.assertThat(testClassNode.@errors.text(), CoreMatchers.not(CoreMatchers.equalTo('')))
+            Assert.assertThat(testClassNode.@time.text(), CoreMatchers.not(CoreMatchers.equalTo('')))
+            Assert.assertThat(testClassNode.@timestamp.text(), CoreMatchers.not(CoreMatchers.equalTo('')))
+            Assert.assertThat(testClassNode.@hostname.text(), CoreMatchers.not(CoreMatchers.equalTo('')))
+            Assert.assertThat(testClassNode.properties.size(), CoreMatchers.equalTo(1))
             testClassNode.testcase.each { node ->
-                Assert.assertThat(node.@classname.text(), Matchers.equalTo(testClassName))
-                Assert.assertThat(node.@name.text(), Matchers.not(Matchers.equalTo('')))
-                Assert.assertThat(node.@time.text(), Matchers.not(Matchers.equalTo('')))
+                Assert.assertThat(node.@classname.text(), CoreMatchers.equalTo(testClassName))
+                Assert.assertThat(node.@name.text(), CoreMatchers.not(CoreMatchers.equalTo('')))
+                Assert.assertThat(node.@time.text(), CoreMatchers.not(CoreMatchers.equalTo('')))
                 node.failure.each { failure ->
-                    Assert.assertThat(failure.@message.size(), Matchers.equalTo(1))
-                    Assert.assertThat(failure.@type.text(), Matchers.not(Matchers.equalTo('')))
-                    Assert.assertThat(failure.text(), Matchers.not(Matchers.equalTo('')))
+                    Assert.assertThat(failure.@message.size(), CoreMatchers.equalTo(1))
+                    Assert.assertThat(failure.@type.text(), CoreMatchers.not(CoreMatchers.equalTo('')))
+                    Assert.assertThat(failure.text(), CoreMatchers.not(CoreMatchers.equalTo('')))
                 }
-                def matcher = Matchers.equalTo(outputAssociation == TestResultOutputAssociation.WITH_TESTCASE ? 1 : 0)
+                def matcher = CoreMatchers.equalTo(outputAssociation == TestResultOutputAssociation.WITH_TESTCASE ? 1 : 0)
                 Assert.assertThat(node.'system-err'.size(), matcher)
                 Assert.assertThat(node.'system-out'.size(), matcher)
             }
             if (outputAssociation == TestResultOutputAssociation.WITH_SUITE) {
-                Assert.assertThat(testClassNode.'system-out'.size(), Matchers.equalTo(1))
-                Assert.assertThat(testClassNode.'system-err'.size(), Matchers.equalTo(1))
+                Assert.assertThat(testClassNode.'system-out'.size(), CoreMatchers.equalTo(1))
+                Assert.assertThat(testClassNode.'system-err'.size(), CoreMatchers.equalTo(1))
             }
             checked = true
         }

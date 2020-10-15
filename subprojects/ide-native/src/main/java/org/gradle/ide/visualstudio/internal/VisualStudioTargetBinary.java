@@ -17,9 +17,9 @@
 package org.gradle.ide.visualstudio.internal;
 
 import org.gradle.api.file.FileCollection;
-import org.gradle.util.VersionNumber;
 import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.Internal;
+import org.gradle.util.VersionNumber;
 
 import java.io.File;
 import java.util.List;
@@ -56,11 +56,13 @@ public interface VisualStudioTargetBinary {
     /**
      * Returns the target Visual Studio version of this binary.
      */
+    @Internal
     VersionNumber getVisualStudioVersion();
 
     /**
      * Returns the target SDK version of this binary.
      */
+    @Internal
     VersionNumber getSdkVersion();
 
     /**
@@ -130,6 +132,12 @@ public interface VisualStudioTargetBinary {
     List<String> getCompilerDefines();
 
     /**
+     * Returns the language standard of the source for this binary.
+     */
+    @Input
+    LanguageStandard getLanguageStandard();
+
+    /**
      * Returns the include paths that should be used with this binary
      */
     @Internal
@@ -146,6 +154,36 @@ public interface VisualStudioTargetBinary {
 
         public String getSuffix() {
             return suffix;
+        }
+    }
+
+    enum LanguageStandard {
+        NONE(""),
+        STD_CPP_14("stdcpp14"),
+        STD_CPP_17("stdcpp17"),
+        STD_CPP_LATEST("stdcpplatest");
+
+        private final String value;
+
+        LanguageStandard(String value) {
+            this.value = value;
+        }
+
+        public String getValue() {
+            return value;
+        }
+
+        public static LanguageStandard from(List<String> arguments) {
+            return arguments.stream().filter(it -> it.matches("^[-/]std:c\\+\\+.+")).findFirst().map(it -> {
+                if (it.endsWith("++14")) {
+                    return LanguageStandard.STD_CPP_14;
+                } else if (it.endsWith("++17")) {
+                    return LanguageStandard.STD_CPP_17;
+                } else if (it.endsWith("++latest")) {
+                    return LanguageStandard.STD_CPP_LATEST;
+                }
+                return LanguageStandard.NONE;
+            }).orElse(LanguageStandard.NONE);
         }
     }
 }

@@ -30,7 +30,6 @@ import org.gradle.util.GUtil;
 
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -44,14 +43,13 @@ public class ProgressLogEventGenerator implements OutputEventListener {
     private static final String EOL = SystemProperties.getInstance().getLineSeparator();
 
     private final OutputEventListener listener;
-    private final boolean deferHeader;
     private final Map<OperationIdentifier, Operation> operations = new LinkedHashMap<OperationIdentifier, Operation>();
 
-    public ProgressLogEventGenerator(OutputEventListener listener, boolean deferHeader) {
+    public ProgressLogEventGenerator(OutputEventListener listener) {
         this.listener = listener;
-        this.deferHeader = deferHeader;
     }
 
+    @Override
     public void onOutput(OutputEvent event) {
         if (event instanceof ProgressStartEvent) {
             onStart((ProgressStartEvent) event);
@@ -72,20 +70,12 @@ public class ProgressLogEventGenerator implements OutputEventListener {
     }
 
     private void onComplete(ProgressCompleteEvent progressCompleteEvent) {
-        assert !operations.isEmpty();
+        if (operations.isEmpty()) {
+            return;
+        }
         Operation operation = operations.remove(progressCompleteEvent.getProgressOperationId());
-
-        // Didn't find an operation with that id in the map
         if (operation == null) {
-            // Remove last operation and complete that
-            Iterator<Map.Entry<OperationIdentifier, Operation>> entryIterator = operations.entrySet().iterator();
-            Map.Entry<OperationIdentifier, Operation> lastEntry = entryIterator.next();
-            while (entryIterator.hasNext()) {
-                lastEntry = entryIterator.next();
-            }
-            entryIterator.remove();
-            operation = lastEntry.getValue();
-            // TODO: Do we actually run into this case anymore?
+            return;
         }
         completeOperation(progressCompleteEvent, operation);
     }
@@ -99,10 +89,6 @@ public class ProgressLogEventGenerator implements OutputEventListener {
     private void onStart(ProgressStartEvent progressStartEvent) {
         Operation operation = new Operation(progressStartEvent.getCategory(), progressStartEvent.getLoggingHeader(), progressStartEvent.getTimestamp(), progressStartEvent.getBuildOperationId());
         operations.put(progressStartEvent.getProgressOperationId(), operation);
-
-        if (!deferHeader || !(progressStartEvent.getLoggingHeader() != null && progressStartEvent.getLoggingHeader().equals(progressStartEvent.getShortDescription()))) {
-            operation.startHeader();
-        }
     }
 
     enum State {None, HeaderStarted, HeaderCompleted, Completed}

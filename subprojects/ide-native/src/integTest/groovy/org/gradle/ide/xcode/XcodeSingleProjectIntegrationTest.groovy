@@ -17,8 +17,11 @@
 package org.gradle.ide.xcode
 
 import org.gradle.ide.xcode.fixtures.AbstractXcodeIntegrationSpec
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 
 class XcodeSingleProjectIntegrationTest extends AbstractXcodeIntegrationSpec {
+
+    @ToBeFixedForConfigurationCache
     def "create xcode workspace when no language plugins are applied"() {
         when:
         succeeds("xcode")
@@ -34,6 +37,7 @@ class XcodeSingleProjectIntegrationTest extends AbstractXcodeIntegrationSpec {
         project.assertNoTargets()
     }
 
+    @ToBeFixedForConfigurationCache
     def "cleanXcode remove all XCode generated project files"() {
         requireSwiftToolChain()
 

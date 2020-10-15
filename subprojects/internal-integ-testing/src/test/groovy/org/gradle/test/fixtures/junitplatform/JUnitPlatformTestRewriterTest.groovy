@@ -26,19 +26,56 @@ import spock.lang.Unroll
 class JUnitPlatformTestRewriterTest extends Specification {
 
     @Rule
-    final TestNameTestDirectoryProvider temporaryFolder = new TestNameTestDirectoryProvider()
+    final TestNameTestDirectoryProvider temporaryFolder = new TestNameTestDirectoryProvider(getClass())
 
     def 'build.gradle should be rewritten'() {
         given:
         temporaryFolder.testDirectory.file('build.gradle') << '''
-dependencies { testCompile 'junit:junit:4.12' }
+dependencies { testCompile 'junit:junit:4.13' }
 '''
         when:
-        JUnitPlatformTestRewriter.rewriteBuildFileWithJupiter(temporaryFolder.testDirectory,'5.1.0')
+        JUnitPlatformTestRewriter.rewriteBuildFileWithJupiter(temporaryFolder.testDirectory,'5.7.0')
 
         then:
         temporaryFolder.testDirectory.file('build.gradle').text.contains(
-            "testCompile 'org.junit.jupiter:junit-jupiter-api:5.1.0','org.junit.jupiter:junit-jupiter-engine:5.1.0'")
+            "testCompile 'org.junit.jupiter:junit-jupiter-api:5.7.0','org.junit.jupiter:junit-jupiter-engine:5.7.0'")
+    }
+
+    def 'modular build.gradle should be rewritten'() {
+        given:
+        temporaryFolder.testDirectory.file('build.gradle') << '''
+dependencies {
+    testImplementation 'junit:junit:4.13'
+}
+compileTestJava {
+    def args = ["--add-modules", "junit",
+                "--add-reads", "org.gradle.example=junit"]
+}
+test {
+    def args = ["--add-modules", "ALL-MODULE-PATH",
+                "--add-reads", "org.gradle.example=junit"]
+}
+'''
+        when:
+        JUnitPlatformTestRewriter.rewriteBuildFileWithJupiter(temporaryFolder.testDirectory,'5.7.0')
+
+        then:
+        temporaryFolder.testDirectory.file('build.gradle').text == '''
+dependencies {
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.7.0','org.junit.jupiter:junit-jupiter-engine:5.7.0'
+}
+compileTestJava {
+    def args = ["--add-modules", "org.junit.jupiter.api",
+                "--add-reads", "org.gradle.example=org.junit.jupiter.api"]
+}
+
+tasks.named("test") {
+    useJUnitPlatform()
+
+    def args = ["--add-modules", "ALL-MODULE-PATH",
+                "--add-reads", "org.gradle.example=org.junit.jupiter.api"]
+}
+'''
     }
 
     @Unroll
@@ -92,18 +129,18 @@ import org.junit.After;
 public class OkTest {
     @org.junit.Test
     public void ok() throws Exception {
-        assertEquals("4.12", new org.junit.runner.JUnitCore().getVersion());
+        assertEquals("4.13", new org.junit.runner.JUnitCore().getVersion());
     }
-    
+
     @After
     public void broken() {
         fail("failed");
     }
-    
+
     @AfterClass
     public void clean() {
     }
-    
+
     @org.junit.AfterClass
     public void clean() {
     }
@@ -116,18 +153,18 @@ import org.junit.jupiter.api.AfterEach;
 public class OkTest {
     @org.junit.jupiter.api.Test
     public void ok() throws Exception {
-        assertEquals("4.12", new org.junit.runner.JUnitCore().getVersion());
+        assertEquals("4.13", new org.junit.runner.JUnitCore().getVersion());
     }
-    
+
     @AfterEach
     public void broken() {
         fail("failed");
     }
-    
+
     @AfterAll
     public void clean() {
     }
-    
+
     @org.junit.jupiter.api.AfterAll
     public void clean() {
     }

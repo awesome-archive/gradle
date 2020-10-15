@@ -28,8 +28,8 @@ class JacocoTaskExtensionSpec extends Specification {
     JacocoAgentJar agent = Mock()
     JavaForkOptions task = Mock()
     Project project = ProjectBuilder.builder().build()
-    JacocoTaskExtension extension = new JacocoTaskExtension(project, agent, task)
-    @Rule final TestNameTestDirectoryProvider temporaryFolder = new TestNameTestDirectoryProvider()
+    JacocoTaskExtension extension = new JacocoTaskExtension(project.objects, agent, task)
+    @Rule final TestNameTestDirectoryProvider temporaryFolder = new TestNameTestDirectoryProvider(getClass())
 
     def 'asJvmArg with default arguments assembles correct string'() {
         setup:
@@ -71,7 +71,6 @@ class JacocoTaskExtensionSpec extends Specification {
 
         extension.with {
             destinationFile = temporaryFolder.file('build/jacoco/fake.exec')
-            append = false
             includes = ['org.*', '*.?acoco*']
             excludes = ['org.?joberstar']
             excludeClassLoaders = ['com.sun.*', 'org.fak?.*']
@@ -88,7 +87,7 @@ class JacocoTaskExtensionSpec extends Specification {
         def expected = new StringBuilder().with { builder ->
             builder << "-javaagent:subfolder/fakeagent.jar="
             builder << "destfile=../build/jacoco/fake.exec,"
-            builder << "append=false,"
+            builder << "append=true,"
             builder << "includes=org.*:*.?acoco*,"
             builder << "excludes=org.?joberstar,"
             builder << "exclclassloader=com.sun.*:org.fak?.*,"

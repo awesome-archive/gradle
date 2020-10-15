@@ -15,7 +15,6 @@
  */
 package org.gradle.tooling;
 
-import org.gradle.api.Incubating;
 import org.gradle.tooling.model.Launchable;
 import org.gradle.tooling.model.Task;
 
@@ -34,7 +33,7 @@ import org.gradle.tooling.model.Task;
  * Example:
  * <pre class='autoTested'>
  * ProjectConnection connection = GradleConnector.newConnector()
- *    .forProjectDirectory(new File("someFolder"))
+ *    .forProjectDirectory(new File("some-folder"))
  *    .connect();
  *
  * try {
@@ -44,7 +43,7 @@ import org.gradle.tooling.model.Task;
  *    build.forTasks("clean", "test");
  *
  *    //include some build arguments:
- *    build.withArguments("-i", "--project-dir", "someProjectDir");
+ *    build.withArguments("-i", "--project-dir", "some-project-dir");
  *
  *    //configure the standard input:
  *    build.setStandardInput(new ByteArrayInputStream("consume this!".getBytes()));
@@ -108,7 +107,6 @@ public interface BuildLauncher extends ConfigurableLauncher<BuildLauncher> {
      * @return this
      * @since 1.12
      */
-    @Incubating
     BuildLauncher forLaunchables(Launchable... launchables);
 
     /**
@@ -118,7 +116,6 @@ public interface BuildLauncher extends ConfigurableLauncher<BuildLauncher> {
      * @return this
      * @since 1.12
      */
-    @Incubating
     BuildLauncher forLaunchables(Iterable<? extends Launchable> launchables);
 
     /**

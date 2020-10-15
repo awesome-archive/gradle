@@ -17,6 +17,7 @@
 package org.gradle.api.internal.changedetection.state
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.internal.Actions
 import spock.lang.Issue
 import spock.lang.Unroll
@@ -294,7 +295,7 @@ public class SomeTask extends DefaultTask {
     public File f;
     @OutputDirectory
     public File getF() { return f; }
-    
+
     @TaskAction
     public void go() { }
 }
@@ -348,6 +349,7 @@ public enum SomeEnum {
     }
 
     @Unroll
+    @ToBeFixedForConfigurationCache(because = "ClassNotFoundException: ArrayList1_groovyProxy",iterationMatchers = '.*\\[2\\]$')
     def "task can take as input a collection of enum type from various sources"() {
         def buildSrcEnum = file("buildSrc/src/main/java/BuildSrcEnum.java")
         buildSrcEnum << """

@@ -16,8 +16,8 @@
 
 package org.gradle.internal.operations.logging;
 
+import com.google.common.annotations.VisibleForTesting;
 import org.gradle.internal.concurrent.Stoppable;
-import org.gradle.internal.logging.LoggingManagerInternal;
 import org.gradle.internal.logging.events.CategorisedOutputEvent;
 import org.gradle.internal.logging.events.LogEvent;
 import org.gradle.internal.logging.events.OutputEvent;
@@ -25,9 +25,10 @@ import org.gradle.internal.logging.events.OutputEventListener;
 import org.gradle.internal.logging.events.ProgressStartEvent;
 import org.gradle.internal.logging.events.RenderableOutputEvent;
 import org.gradle.internal.logging.events.StyledTextOutputEvent;
-import org.gradle.internal.operations.BuildOperationListener;
+import org.gradle.internal.logging.sink.OutputEventListenerManager;
+import org.gradle.internal.operations.BuildOperationProgressEventEmitter;
+import org.gradle.internal.operations.CurrentBuildOperationRef;
 import org.gradle.internal.operations.OperationIdentifier;
-import org.gradle.internal.operations.OperationProgressEvent;
 
 /**
  * Emits build operation progress for events that represent logging.
@@ -58,47 +59,60 @@ import org.gradle.internal.operations.OperationProgressEvent;
  */
 public class LoggingBuildOperationProgressBroadcaster implements Stoppable, OutputEventListener {
 
-    private final LoggingManagerInternal loggingManagerInternal;
-    private final BuildOperationListener buildOperationListener;
+    private final OutputEventListenerManager outputEventListenerManager;
+    private final BuildOperationProgressEventEmitter progressEventEmitter;
 
-    public LoggingBuildOperationProgressBroadcaster(LoggingManagerInternal loggingManagerInternal, BuildOperationListener buildOperationListener) {
-        this.loggingManagerInternal = loggingManagerInternal;
-        this.buildOperationListener = buildOperationListener;
+    @VisibleForTesting
+    OperationIdentifier rootBuildOperation;
 
-        loggingManagerInternal.addOutputEventListener(this);
+    public LoggingBuildOperationProgressBroadcaster(OutputEventListenerManager outputEventListenerManager, BuildOperationProgressEventEmitter progressEventEmitter) {
+        this.outputEventListenerManager = outputEventListenerManager;
+        this.progressEventEmitter = progressEventEmitter;
+        outputEventListenerManager.setListener(this);
     }
 
     @Override
     public void onOutput(OutputEvent event) {
         if (event instanceof RenderableOutputEvent) {
             RenderableOutputEvent renderableOutputEvent = (RenderableOutputEvent) event;
-            if (renderableOutputEvent.getBuildOperationId() == null) {
-                return;
+            OperationIdentifier operationIdentifier = renderableOutputEvent.getBuildOperationId();
+            if (operationIdentifier == null) {
+                if (rootBuildOperation == null) {
+                    return;
+                }
+                operationIdentifier = rootBuildOperation;
             }
+
             if (renderableOutputEvent instanceof StyledTextOutputEvent || renderableOutputEvent instanceof LogEvent) {
-                emit(renderableOutputEvent, renderableOutputEvent.getBuildOperationId());
+                emit(renderableOutputEvent, operationIdentifier);
             }
         } else if (event instanceof ProgressStartEvent) {
             ProgressStartEvent progressStartEvent = (ProgressStartEvent) event;
-            if (progressStartEvent.getBuildOperationId() == null) {
-                return;
-            }
             if (progressStartEvent.getLoggingHeader() == null) {
                 return; // If the event has no logging header, it doesn't manifest as console output.
             }
-            emit(progressStartEvent, progressStartEvent.getBuildOperationId());
+            OperationIdentifier operationIdentifier = progressStartEvent.getBuildOperationId();
+            if (operationIdentifier == null && rootBuildOperation != null) {
+                operationIdentifier = rootBuildOperation;
+            }
+            emit(progressStartEvent, operationIdentifier);
         }
     }
 
     private void emit(CategorisedOutputEvent event, OperationIdentifier buildOperationId) {
-        buildOperationListener.progress(
+        progressEventEmitter.emit(
             buildOperationId,
-            new OperationProgressEvent(event.getTimestamp(), event)
+            event.getTimestamp(),
+            event
         );
     }
 
     @Override
     public void stop() {
-        loggingManagerInternal.removeOutputEventListener(this);
+        outputEventListenerManager.removeListener(this);
+    }
+
+    public void rootBuildOperationStarted() {
+        rootBuildOperation = CurrentBuildOperationRef.instance().getId();
     }
 }

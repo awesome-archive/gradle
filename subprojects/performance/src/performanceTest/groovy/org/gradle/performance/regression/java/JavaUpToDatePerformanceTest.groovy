@@ -16,23 +16,21 @@
 
 package org.gradle.performance.regression.java
 
+import org.gradle.initialization.StartParameterBuildOptions
 import org.gradle.performance.AbstractCrossVersionPerformanceTest
+import org.gradle.profiler.mutations.AbstractCleanupMutator
+import org.gradle.profiler.mutations.ClearBuildCacheMutator
 import spock.lang.Unroll
-
-import static org.gradle.performance.generator.JavaTestProject.LARGE_MONOLITHIC_JAVA_PROJECT
-import static org.gradle.performance.generator.JavaTestProject.LARGE_JAVA_MULTI_PROJECT
 
 class JavaUpToDatePerformanceTest extends AbstractCrossVersionPerformanceTest {
 
     @Unroll
-    def "up-to-date assemble on #testProject"() {
-        //This test scenario can potentially be replaced with an incremental change test
-
+    def "up-to-date assemble (parallel #parallel)"() {
         given:
-        runner.testProject = testProject
-        runner.gradleOpts = ["-Xms${testProject.daemonMemory}", "-Xmx${testProject.daemonMemory}"]
+        runner.gradleOpts = runner.projectMemoryOptions
         runner.tasksToRun = ['assemble']
-        runner.targetVersions = ["4.7-20180308002700+0000"]
+        runner.targetVersions = ["6.7-20200824220048+0000"]
+        runner.args += ["-Dorg.gradle.parallel=$parallel"]
 
         when:
         def result = runner.run()
@@ -41,8 +39,28 @@ class JavaUpToDatePerformanceTest extends AbstractCrossVersionPerformanceTest {
         result.assertCurrentVersionHasNotRegressed()
 
         where:
-        testProject                   | _
-        LARGE_MONOLITHIC_JAVA_PROJECT | _
-        LARGE_JAVA_MULTI_PROJECT      | _
+        parallel << [true, false]
+    }
+
+    @Unroll
+    def "up-to-date assemble with local build cache enabled (parallel #parallel)"() {
+        given:
+        runner.gradleOpts = runner.projectMemoryOptions
+        runner.tasksToRun = ['assemble']
+        runner.targetVersions = ["6.7-20200824220048+0000"]
+        runner.minimumBaseVersion = "3.5"
+        runner.args += ["-Dorg.gradle.parallel=$parallel", "-D${StartParameterBuildOptions.BuildCacheOption.GRADLE_PROPERTY}=true"]
+        runner.addBuildMutator { invocationSettings ->
+            new ClearBuildCacheMutator(invocationSettings.getGradleUserHome(), AbstractCleanupMutator.CleanupSchedule.SCENARIO)
+        }
+
+        when:
+        def result = runner.run()
+
+        then:
+        result.assertCurrentVersionHasNotRegressed()
+
+        where:
+        parallel << [true, false]
     }
 }

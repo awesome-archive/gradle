@@ -17,7 +17,6 @@
 package org.gradle.nativeplatform.tasks;
 
 import org.gradle.api.DefaultTask;
-import org.gradle.api.Incubating;
 import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.provider.Property;
@@ -25,6 +24,8 @@ import org.gradle.api.tasks.InputFile;
 import org.gradle.api.tasks.Internal;
 import org.gradle.api.tasks.Nested;
 import org.gradle.api.tasks.OutputFile;
+import org.gradle.api.tasks.PathSensitive;
+import org.gradle.api.tasks.PathSensitivity;
 import org.gradle.api.tasks.TaskAction;
 import org.gradle.api.tasks.WorkResult;
 import org.gradle.internal.Cast;
@@ -45,7 +46,6 @@ import org.gradle.nativeplatform.toolchain.internal.PlatformToolProvider;
  *
  * @since 4.5
  */
-@Incubating
 public class ExtractSymbols extends DefaultTask {
     private final RegularFileProperty binaryFile;
     private final RegularFileProperty symbolFile;
@@ -55,8 +55,8 @@ public class ExtractSymbols extends DefaultTask {
     public ExtractSymbols() {
         ObjectFactory objectFactory = getProject().getObjects();
 
-        this.binaryFile = newInputFile();
-        this.symbolFile = newOutputFile();
+        this.binaryFile = objectFactory.fileProperty();
+        this.symbolFile = objectFactory.fileProperty();
         this.targetPlatform = objectFactory.property(NativePlatform.class);
         this.toolChain = objectFactory.property(NativeToolChain.class);
     }
@@ -65,6 +65,7 @@ public class ExtractSymbols extends DefaultTask {
      * The file to extract debug symbols from.
      */
     @InputFile
+    @PathSensitive(PathSensitivity.NONE)
     public RegularFileProperty getBinaryFile() {
         return binaryFile;
     }
@@ -100,7 +101,7 @@ public class ExtractSymbols extends DefaultTask {
     // TODO: Need to track version/implementation of symbol extraction tool.
 
     @TaskAction
-    public void extractSymbols() {
+    protected void extractSymbols() {
         BuildOperationLogger operationLogger = getServices().get(BuildOperationLoggerFactory.class).newOperationLogger(getName(), getTemporaryDir());
 
         SymbolExtractorSpec spec = new DefaultSymbolExtractorSpec();

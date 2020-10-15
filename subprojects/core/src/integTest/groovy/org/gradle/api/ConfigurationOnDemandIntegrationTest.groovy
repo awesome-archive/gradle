@@ -17,6 +17,7 @@
 package org.gradle.api
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.integtests.fixtures.FluidDependenciesResolveRunner
 import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
 import org.gradle.integtests.fixtures.executer.ProjectLifecycleFixture
@@ -56,7 +57,7 @@ class ConfigurationOnDemandIntegrationTest extends AbstractIntegrationSpec {
 
         then:
         fixture.assertProjectsConfigured(":")
-        output.count("Parallel execution with configuration on demand is an incubating feature") == 1
+        output.count("Configuration on demand is an incubating feature") == 1
     }
 
     def "can be enabled from command line for a single module build"() {
@@ -71,18 +72,14 @@ class ConfigurationOnDemandIntegrationTest extends AbstractIntegrationSpec {
     }
 
     def "evaluates only project referenced in the task list"() {
-        // The util project's classloaders will be created eagerly because util:impl
-        // will be evaluated before it
-        executer.withEagerClassLoaderCreationCheckDisabled()
-
         settingsFile << "include 'api', 'impl', 'util', 'util:impl'"
         buildFile << "allprojects { task foo }"
 
         when:
-        run(":foo", ":util:impl:foo")
+        run(":util:impl:foo")
 
         then:
-        fixture.assertProjectsConfigured(":", ":util:impl")
+        fixture.assertProjectsConfigured(":", ":util", ":util:impl")
     }
 
     def "does not show configuration on demand incubating message in a regular mode"() {
@@ -93,12 +90,13 @@ class ConfigurationOnDemandIntegrationTest extends AbstractIntegrationSpec {
         !output.contains("Configuration on demand is incubating")
     }
 
+    @ToBeFixedForConfigurationCache(because = "test expects configuration phase")
     def "follows java project dependencies"() {
         settingsFile << "include 'api', 'impl', 'util'"
-        buildFile << "allprojects { apply plugin: 'java' } "
+        buildFile << "allprojects { apply plugin: 'java-library' } "
 
-        file("impl/build.gradle") << "dependencies { compile project(':api') } "
-        file("util/build.gradle") << "dependencies { compile project(':impl') } "
+        file("impl/build.gradle") << "dependencies { api project(':api') } "
+        file("util/build.gradle") << "dependencies { implementation project(':impl') } "
         //util -> impl -> api
 
         file("api/src/main/java/Person.java") << """public interface Person {
@@ -142,13 +140,13 @@ class ConfigurationOnDemandIntegrationTest extends AbstractIntegrationSpec {
     def "can have cycles in project dependencies"() {
         settingsFile << "include 'api', 'impl', 'util'"
         buildFile << """
-allprojects { apply plugin: 'java' }
+allprojects { apply plugin: 'java-library' }
 project(':impl') {
-    dependencies { compile project(path: ':api', configuration: 'archives') }
+    dependencies { implementation project(path: ':api', configuration: 'archives') }
 }
 project(':api') {
-    dependencies { runtime project(':impl') }
-    task run(dependsOn: configurations.runtime)
+    dependencies { runtimeOnly project(':impl') }
+    task run(dependsOn: configurations.runtimeClasspath)
 }
 """
 
@@ -210,7 +208,7 @@ project(':api') {
         settingsFile << "include 'api', 'impl'"
 
         when:
-        run(":tasks")
+        run(":help")
 
         then:
         fixture.assertProjectsConfigured(":")
@@ -220,7 +218,7 @@ project(':api') {
         settingsFile << "include 'api', 'impl'"
 
         when:
-        run(":api:tasks")
+        run(":api:help")
 
         then:
         fixture.assertProjectsConfigured(":", ":api")
@@ -249,17 +247,18 @@ project(':api') {
         """
 
         when:
-        run("api:tasks")
+        run("api:help")
 
         then:
         fixture.assertProjectsConfigured(":", ":impl", ":api")
     }
 
+    @ToBeFixedForConfigurationCache(because = "test expects configuration phase")
     def "respects buildProjectDependencies setting"() {
         settingsFile << "include 'api', 'impl', 'other'"
         file("impl/build.gradle") << """
-            apply plugin: 'java'
-            dependencies { compile project(":api") }
+            apply plugin: 'java-library'
+            dependencies { implementation project(":api") }
         """
         file("api/build.gradle") << "apply plugin: 'java'"
         // Provide a source file so that the compile task doesn't skip resolving inputs
@@ -273,13 +272,12 @@ project(':api') {
         fixture.assertProjectsConfigured(":", ":impl", ":api")
 
         when:
-        executer.expectDeprecationWarning()
         run("impl:build", "--no-rebuild") // impl -> api
 
         then:
         executed ":impl:jar"
         notExecuted ":api:jar"
-        // :api is configured to resolve impl.compile configuration
+        // :api is configured to resolve impl.compileClasspath configuration
         fixture.assertProjectsConfigured(":", ":impl", ":api")
     }
 
@@ -348,7 +346,7 @@ project(':api') {
         file("b/build.gradle") << """
             apply plugin: 'java'
             project(':b') {
-                dependencies { compile project(':a') }
+                dependencies { implementation project(':a') }
             }
         """
 
@@ -356,7 +354,7 @@ project(':api') {
         run(":b:buildNeeded")
 
         then:
-        result.executedTasks.containsAll ':b:buildNeeded', ':a:buildNeeded'
+        executed ':b:buildNeeded', ':a:buildNeeded'
         fixture.assertProjectsConfigured(":", ":b", ":a")
     }
 
@@ -366,7 +364,7 @@ project(':api') {
         file("b/build.gradle") << """
             apply plugin: 'java'
             project(':b') {
-                dependencies { compile project(':a') }
+                dependencies { implementation project(':a') }
             }
         """
 
@@ -374,7 +372,7 @@ project(':api') {
         run(":a:buildDependents")
 
         then:
-        result.executedTasks.containsAll ':b:buildDependents', ':a:buildDependents'
+        executed ':b:buildDependents', ':a:buildDependents'
         //unfortunately buildDependents requires all projects to be configured
         fixture.assertProjectsConfigured(":", ":a", ":b", ":c")
     }
@@ -513,5 +511,24 @@ allprojects {
         then:
         result.assertTasksExecuted(":a:one")
         fixture.assertProjectsConfigured(":", ":b", ":b:child", ":a")
+    }
+
+    def "extra properties defined in parent project are accessible to child"() {
+        settingsFile << "include 'a', 'a:child'"
+        file('a/build.gradle') << """
+ext.foo = "Moo!!!"
+"""
+        file('a/child/build.gradle') << """
+task printExt {
+    doLast {
+        println "The Foo says " + foo
+    }
+}
+"""
+        when:
+        run(":a:child:printExt")
+
+        then:
+        outputContains("The Foo says Moo!!!")
     }
 }

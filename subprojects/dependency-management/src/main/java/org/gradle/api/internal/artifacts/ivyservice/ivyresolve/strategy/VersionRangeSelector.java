@@ -16,6 +16,7 @@
 package org.gradle.api.internal.artifacts.ivyservice.ivyresolve.strategy;
 
 import java.util.Comparator;
+import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -106,10 +107,15 @@ public class VersionRangeSelector extends AbstractVersionVersionSelector {
     private final boolean lowerInclusive;
     private final Version lowerBoundVersion;
     private final Comparator<Version> comparator;
+    private final boolean smartExcludeUpperBound;
 
-    public VersionRangeSelector(String selector, Comparator<Version> comparator) {
-        super(selector);
+    public VersionRangeSelector(String selector, Comparator<Version> comparator, VersionParser versionParser) {
+        this(selector, comparator, versionParser, false);
+    }
+    public VersionRangeSelector(String selector, Comparator<Version> comparator, VersionParser versionParser, boolean smartExcludeUpperBound) {
+        super(versionParser, selector);
         this.comparator = comparator;
+        this.smartExcludeUpperBound = smartExcludeUpperBound;
 
         Matcher matcher;
         matcher = FINITE_RANGE.matcher(selector);
@@ -145,30 +151,31 @@ public class VersionRangeSelector extends AbstractVersionVersionSelector {
                 }
             }
         }
-        lowerBoundVersion = lowerBound == null ? null : VersionParser.INSTANCE.transform(lowerBound);
-        upperBoundVersion = upperBound == null ? null : VersionParser.INSTANCE.transform(upperBound);
+        lowerBoundVersion = lowerBound == null ? null : versionParser.transform(lowerBound);
+        upperBoundVersion = upperBound == null ? null : versionParser.transform(upperBound);
     }
 
+    @Override
     public boolean isDynamic() {
         return true;
     }
 
+    @Override
     public boolean requiresMetadata() {
         return false;
     }
 
+    @Override
     public boolean matchesUniqueVersion() {
         return false;
     }
 
+    @Override
     public boolean accept(Version candidate) {
         if (lowerBound != null && !isHigher(candidate, lowerBoundVersion, lowerInclusive)) {
             return false;
         }
-        if (upperBound != null && !isLower(candidate, upperBoundVersion, upperInclusive)) {
-            return false;
-        }
-        return true;
+        return upperBound == null || isLower(candidate, upperBoundVersion, upperInclusive);
     }
 
     /**
@@ -176,7 +183,20 @@ public class VersionRangeSelector extends AbstractVersionVersionSelector {
      */
     private boolean isLower(Version version1, Version version2, boolean inclusive) {
         int result = comparator.compare(version1, version2);
-        return result <= (inclusive ? 0 : -1);
+        if (inclusive) {
+            return result <= 0;
+        } else {
+            // For non inclusive upper bound, we also check that the prefix does not match
+            if (result <= -1) {
+                if (smartExcludeUpperBound) {
+                    return !version1.toString().startsWith(version2.toString());
+                } else {
+                    return true;
+                }
+            } else {
+                return false;
+            }
+        }
     }
 
     /**
@@ -233,16 +253,16 @@ public class VersionRangeSelector extends AbstractVersionVersionSelector {
         if (lowerInclusive != that.lowerInclusive) {
             return false;
         }
-        if (upperBound != null ? !upperBound.equals(that.upperBound) : that.upperBound != null) {
+        if (!Objects.equals(upperBound, that.upperBound)) {
             return false;
         }
-        if (upperBoundVersion != null ? !upperBoundVersion.equals(that.upperBoundVersion) : that.upperBoundVersion != null) {
+        if (!Objects.equals(upperBoundVersion, that.upperBoundVersion)) {
             return false;
         }
-        if (lowerBound != null ? !lowerBound.equals(that.lowerBound) : that.lowerBound != null) {
+        if (!Objects.equals(lowerBound, that.lowerBound)) {
             return false;
         }
-        if (lowerBoundVersion != null ? !lowerBoundVersion.equals(that.lowerBoundVersion) : that.lowerBoundVersion != null) {
+        if (!Objects.equals(lowerBoundVersion, that.lowerBoundVersion)) {
             return false;
         }
         return comparator.equals(that.comparator);
@@ -260,62 +280,4 @@ public class VersionRangeSelector extends AbstractVersionVersionSelector {
         return result;
     }
 
-    public VersionRangeSelector intersect(VersionRangeSelector other) {
-        StringBuilder sb = new StringBuilder();
-        Version lower = null;
-        Version upper = null;
-        boolean lowerInc = false;
-        if (lowerBound == null) {
-            if (other.lowerBound == null) {
-                sb.append(LOWER_INFINITE);
-            } else {
-                sb.append(other.lowerInclusive ? OPEN_INC : OPEN_EXC);
-                sb.append(other.lowerBound);
-                lower = other.lowerBoundVersion;
-                lowerInc = other.lowerInclusive;
-            }
-        } else {
-            if (other.lowerBound == null || isHigher(lowerBoundVersion, other.lowerBoundVersion, lowerInclusive)) {
-                lowerInc = lowerBound.equals(other.lowerBound) ? lowerInclusive && other.lowerInclusive : lowerInclusive;
-                sb.append(lowerInc ? OPEN_INC : OPEN_EXC);
-                sb.append(lowerBound);
-                lower = lowerBoundVersion;
-            } else {
-                lowerInc = other.lowerBound.equals(lowerBound) ? lowerInclusive && other.lowerInclusive : other.lowerInclusive;
-                sb.append(lowerInc ? OPEN_INC : OPEN_EXC);
-                sb.append(other.lowerBound);
-                lower = other.lowerBoundVersion;
-                lowerInc = other.lowerInclusive;
-            }
-        }
-        sb.append(SEPARATOR);
-        if (upperBound == null) {
-            if (other.upperBound == null) {
-                sb.append(UPPER_INFINITE);
-            } else {
-                sb.append(other.upperBound);
-                sb.append(other.upperInclusive ? CLOSE_INC : CLOSE_EXC);
-                upper = other.upperBoundVersion;
-            }
-        } else {
-            if (other.upperBound == null || isLower(upperBoundVersion, other.upperBoundVersion, upperInclusive)) {
-                sb.append(upperBound);
-                boolean inclusive = upperBound.equals(other.upperBound) ? upperInclusive && other.upperInclusive : upperInclusive;
-                sb.append(inclusive ? CLOSE_INC : CLOSE_EXC);
-                upper = upperBoundVersion;
-            } else {
-                sb.append(other.upperBound);
-                boolean inclusive = other.upperBound.equals(upperBound) ? upperInclusive && other.upperInclusive : other.upperInclusive;
-                sb.append(inclusive ? CLOSE_INC : CLOSE_EXC);
-                upper = other.upperBoundVersion;
-            }
-        }
-        if (lower != null && upper != null && isHigher(lower, upper, lowerInc)) {
-            return null;
-        }
-        if (lower != null && lower.equals(upper) && !lowerInc) {
-            return null;
-        }
-        return new VersionRangeSelector(sb.toString(), comparator);
-    }
 }

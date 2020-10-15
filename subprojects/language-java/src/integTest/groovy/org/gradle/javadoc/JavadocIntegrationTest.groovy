@@ -40,7 +40,8 @@ class JavadocIntegrationTest extends AbstractIntegrationSpec {
         javadoc.text =~ /(?ms)Custom Taglet.*custom taglet value/
     }
 
-    @Issue("GRADLE-2520")
+    @Issue(["GRADLE-2520", "https://github.com/gradle/gradle/issues/4993"])
+    @Requires(TestPrecondition.JDK9_OR_EARLIER)
     def canCombineLocalOptionWithOtherOptions() {
         when:
         run("javadoc")
@@ -154,12 +155,12 @@ Joe!""")
         when:
         run "javadoc"
         then:
-        nonSkippedTasks == [":javadoc"]
+        executedAndNotSkipped( ":javadoc")
 
         when:
         run "javadoc"
         then:
-        skippedTasks as List == [":javadoc"]
+        skipped(":javadoc")
 
         when:
         buildFile.text = """
@@ -174,17 +175,7 @@ Joe!""")
         run "javadoc"
 
         then:
-        nonSkippedTasks == [":javadoc"]
-    }
-
-    def "ensure javadoc task does not change its inputs"() {
-        executer.withArgument("-Dorg.gradle.tasks.verifyinputs=true")
-        buildFile << """
-            apply plugin: 'java'
-        """
-        writeSourceFile()
-        expect:
-        succeeds("javadoc")
+        executedAndNotSkipped(":javadoc")
     }
 
     @Issue("https://github.com/gradle/gradle/issues/1456")
@@ -277,7 +268,7 @@ Joe!""")
         writeSourceFile()
         expect:
         succeeds("javadoc", "--info")
-        result.assertOutputContains("-J-Dpublic.api=com.sample.tools.VisibilityPublic")
+        outputContains("-J-Dpublic.api=com.sample.tools.VisibilityPublic")
     }
 
     @Issue("https://github.com/gradle/gradle/issues/2235")

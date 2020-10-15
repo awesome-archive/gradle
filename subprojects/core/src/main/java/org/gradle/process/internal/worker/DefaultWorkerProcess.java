@@ -21,6 +21,7 @@ import org.gradle.api.logging.Logging;
 import org.gradle.internal.UncheckedException;
 import org.gradle.internal.concurrent.AsyncStoppable;
 import org.gradle.internal.concurrent.CompositeStoppable;
+import org.gradle.internal.concurrent.Stoppable;
 import org.gradle.internal.remote.ConnectionAcceptor;
 import org.gradle.internal.remote.ObjectConnection;
 import org.gradle.process.ExecResult;
@@ -46,6 +47,7 @@ public class DefaultWorkerProcess implements WorkerProcess {
     private ConnectionAcceptor acceptor;
     private ExecHandle execHandle;
     private boolean running;
+    private boolean aborted;
     private Throwable processFailure;
     private final long connectTimeout;
     private final JvmMemoryStatus jvmMemoryStatus;
@@ -66,16 +68,28 @@ public class DefaultWorkerProcess implements WorkerProcess {
 
     @Override
     public void stopNow() {
-        // cleanup() will abort the process as desired
-        cleanup();
+        lock.lock();
+        try {
+            aborted = true;
+            if (connection != null) {
+                connection.abort();
+            }
+        } finally {
+            lock.unlock();
+
+            // cleanup() will abort the process as desired
+            cleanup();
+        }
     }
 
     public void setExecHandle(ExecHandle execHandle) {
         this.execHandle = execHandle;
         execHandle.addListener(new ExecHandleListener() {
+            @Override
             public void executionStarted(ExecHandle execHandle) {
             }
 
+            @Override
             public void executionFinished(ExecHandle execHandle, ExecResult execResult) {
                 onProcessStop(execResult);
             }
@@ -106,6 +120,9 @@ public class DefaultWorkerProcess implements WorkerProcess {
             }
 
             this.connection = connection;
+            if (aborted) {
+                connection.abort();
+            }
             condition.signalAll();
             stoppable = acceptor;
         } finally {
@@ -140,10 +157,12 @@ public class DefaultWorkerProcess implements WorkerProcess {
                 + '}';
     }
 
+    @Override
     public ObjectConnection getConnection() {
         return connection;
     }
 
+    @Override
     public WorkerProcess start() {
         try {
             doStart();
@@ -191,6 +210,7 @@ public class DefaultWorkerProcess implements WorkerProcess {
         }
     }
 
+    @Override
     public ExecResult waitForStop() {
         try {
             return execHandle.waitForFinish().assertNormalExitValue();
@@ -203,13 +223,17 @@ public class DefaultWorkerProcess implements WorkerProcess {
         CompositeStoppable stoppable;
         lock.lock();
         try {
-            stoppable = CompositeStoppable.stoppable(acceptor, connection);
+            stoppable = CompositeStoppable.stoppable(connection, new Stoppable() {
+                @Override
+                public void stop() {
+                    execHandle.abort();
+                }
+            }, acceptor);
         } finally {
             this.connection = null;
             this.acceptor = null;
             lock.unlock();
         }
         stoppable.stop();
-        execHandle.abort();
     }
 }

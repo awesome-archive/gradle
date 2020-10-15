@@ -16,12 +16,15 @@
 
 package org.gradle.testkit.runner.enduser
 
+import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
 import org.gradle.testkit.runner.fixtures.NoDebug
 import org.gradle.testkit.runner.fixtures.NonCrossVersion
 import spock.lang.Ignore
+import spock.lang.IgnoreIf
 
 @NonCrossVersion
 @NoDebug
+@IgnoreIf({ GradleContextualExecuter.embedded }) // These tests run builds that themselves run a build in a test worker with 'gradleTestKit()' dependency, which needs to pick up Gradle modules from a real distribution
 class CheckstyleEndUserIntegrationTest extends BaseTestKitEndUserIntegrationTest {
 
     def setup() {
@@ -32,7 +35,7 @@ class CheckstyleEndUserIntegrationTest extends BaseTestKitEndUserIntegrationTest
             }
             ${jcenterRepository()}
             dependencies {
-                testCompile('org.spockframework:spock-core:1.0-groovy-2.4') {
+                testImplementation('org.spockframework:spock-core:1.0-groovy-2.4') {
                     exclude module: 'groovy-all'
                 }
             }
@@ -50,6 +53,7 @@ class Test extends Specification {
 
     def 'task runs successfully'() {
         setup:
+        temporaryFolder.newFile('settings.gradle') << "rootProject.name = 'checkstyle-test'"
         temporaryFolder.newFile('build.gradle') << '''
 apply plugin: 'java'
 apply plugin: 'checkstyle'
@@ -57,7 +61,7 @@ apply plugin: 'checkstyle'
 ${mavenCentralRepository()}
 
 dependencies {
-    testCompile 'junit:junit:4.11'
+    testImplementation 'junit:junit:4.11'
 }
 '''
         javaFile()

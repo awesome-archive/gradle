@@ -20,8 +20,8 @@ import org.gradle.StartParameter
 import org.gradle.api.Project
 import org.gradle.api.UnknownProjectException
 import org.gradle.api.initialization.dsl.ScriptHandler
-import org.gradle.api.internal.AsmBackedClassGenerator
 import org.gradle.api.internal.FeaturePreviews
+import org.gradle.api.internal.FeaturePreviewsActivationFixture
 import org.gradle.api.internal.GradleInternal
 import org.gradle.api.internal.file.FileResolver
 import org.gradle.api.internal.initialization.ClassLoaderScope
@@ -29,15 +29,14 @@ import org.gradle.api.internal.initialization.ScriptHandlerFactory
 import org.gradle.api.internal.plugins.DefaultPluginManager
 import org.gradle.configuration.ScriptPluginFactory
 import org.gradle.groovy.scripts.ScriptSource
+import org.gradle.internal.instantiation.InstantiatorFactory
 import org.gradle.internal.service.ServiceRegistry
 import org.gradle.internal.service.scopes.ServiceRegistryFactory
+import org.gradle.util.TestUtil
 import spock.lang.Specification
-
-import static org.gradle.api.internal.FeaturePreviews.Feature.GRADLE_METADATA
+import spock.lang.Unroll
 
 class DefaultSettingsTest extends Specification {
-
-    AsmBackedClassGenerator classGenerator = new AsmBackedClassGenerator()
     File settingsDir = new File('/somepath/root').absoluteFile
     StartParameter startParameter = new StartParameter(currentDir: new File(settingsDir, 'current'), gradleUserHomeDir: new File('gradleUserHomeDir'))
     ClassLoaderScope rootClassLoaderScope = Mock(ClassLoaderScope)
@@ -64,12 +63,13 @@ class DefaultSettingsTest extends Specification {
         settingsServices.get(ProjectDescriptorRegistry) >> projectDescriptorRegistry
         settingsServices.get(FeaturePreviews) >> previews
         settingsServices.get(DefaultPluginManager) >>> [pluginManager, null]
+        settingsServices.get(InstantiatorFactory) >> Stub(InstantiatorFactory)
 
         serviceRegistryFactory = Mock(ServiceRegistryFactory) {
            1 * createFor(_) >> settingsServices
         }
 
-        settings = classGenerator.newInstance(DefaultSettings.class, serviceRegistryFactory,
+        settings = TestUtil.instantiatorFactory().decorateLenient().newInstance(DefaultSettings.class, serviceRegistryFactory,
                 gradleMock, classLoaderScope, rootClassLoaderScope, settingsScriptHandler,
                 settingsDir, scriptSourceMock, startParameter)
     }
@@ -191,6 +191,14 @@ class DefaultSettingsTest extends Specification {
         settings.dynamicProp == 'value'
     }
 
+    def 'can get and set dynamic properties on extension'() {
+        when:
+        settings.extensions.dynamicProperty = 'valued'
+
+        then:
+        settings.dynamicProperty == 'valued'
+    }
+
     def 'fails on missing property'() {
         when:
         settings.unknownProp
@@ -204,11 +212,21 @@ class DefaultSettingsTest extends Specification {
         settings.toString() == 'settings \'root\''
     }
 
-    def 'can enable feature preview'() {
+    @Unroll
+    def "can enable feature preview for #feature"() {
         when:
-        settings.enableFeaturePreview("GRADLE_METADATA")
-
+        settings.enableFeaturePreview(feature.name())
         then:
-        previews.isFeatureEnabled(GRADLE_METADATA)
+        previews.isFeatureEnabled(feature)
+        where:
+        feature << FeaturePreviewsActivationFixture.activeFeatures()
+    }
+
+    def 'fails when enabling an unknown feature'() {
+        when:
+        settings.enableFeaturePreview('UNKNOWN_FEATURE')
+        then:
+        IllegalArgumentException exception = thrown()
+        exception.getMessage() == 'There is no feature named UNKNOWN_FEATURE'
     }
 }

@@ -16,7 +16,6 @@
 
 package org.gradle.language.scala.tasks;
 
-import org.gradle.api.Incubating;
 import org.gradle.api.tasks.Console;
 import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.Nested;
@@ -31,7 +30,6 @@ import java.util.List;
 /**
  * Options for Scala platform compilation.
  */
-@Incubating
 public class BaseScalaCompileOptions extends AbstractOptions {
 
     private static final long serialVersionUID = 0;
@@ -60,7 +58,7 @@ public class BaseScalaCompileOptions extends AbstractOptions {
 
     private ScalaForkOptions forkOptions = new ScalaForkOptions();
 
-    private IncrementalCompileOptions incrementalOptions = new IncrementalCompileOptions();
+    private transient IncrementalCompileOptions incrementalOptions;
 
     /**
      * Fail the build on compilation errors.

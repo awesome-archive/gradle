@@ -53,10 +53,12 @@ public class DefaultPublishArtifactSet extends DelegatingDomainObjectSet<Publish
         return displayName.getDisplayName();
     }
 
+    @Override
     public FileCollection getFiles() {
         return files;
     }
 
+    @Override
     public TaskDependency getBuildDependencies() {
         return builtBy;
     }
@@ -69,7 +71,7 @@ public class DefaultPublishArtifactSet extends DelegatingDomainObjectSet<Publish
 
         @Override
         public Set<File> getFiles() {
-            Set<File> files = new LinkedHashSet<File>();
+            Set<File> files = new LinkedHashSet<>();
             for (PublishArtifact artifact : DefaultPublishArtifactSet.this) {
                 files.add(artifact.getFile());
             }

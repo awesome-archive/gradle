@@ -16,20 +16,23 @@
 
 package org.gradle.api.tasks.util.internal;
 
-import com.google.common.collect.Lists;
 import org.apache.tools.ant.DirectoryScanner;
 import org.gradle.api.file.FileTreeElement;
-import org.gradle.api.file.RelativePath;
 import org.gradle.api.internal.file.RelativePathSpec;
+import org.gradle.api.internal.file.pattern.PatternMatcher;
 import org.gradle.api.internal.file.pattern.PatternMatcherFactory;
 import org.gradle.api.specs.Spec;
 import org.gradle.api.specs.Specs;
 import org.gradle.api.tasks.util.PatternSet;
+import org.gradle.internal.deprecation.DeprecationLogger;
+import org.gradle.internal.service.scopes.Scope;
+import org.gradle.internal.service.scopes.ServiceScope;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.HashMap;
+import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 
@@ -39,17 +42,18 @@ import java.util.Map;
  * used, no matter which other includes and excludes a {@link PatternSet} has. For an
  * implementation that caches all other patterns as well, see {@link CachingPatternSpecFactory}.
  */
+@ServiceScope(Scope.Global.class)
 public class PatternSpecFactory {
     public static final PatternSpecFactory INSTANCE = new PatternSpecFactory();
-    private final List<String> previousDefaultExcludes = Lists.newArrayList();
-    private final Map<Boolean, Spec<FileTreeElement>> defaultExcludeSpecs = new HashMap<Boolean, Spec<FileTreeElement>>(2);
+    private String[] previousDefaultExcludes;
+    private final Map<CaseSensitivity, Spec<FileTreeElement>> defaultExcludeSpecCache = new EnumMap<>(CaseSensitivity.class);
 
     public Spec<FileTreeElement> createSpec(PatternSet patternSet) {
         return Specs.intersect(createIncludeSpec(patternSet), Specs.negate(createExcludeSpec(patternSet)));
     }
 
     public Spec<FileTreeElement> createIncludeSpec(PatternSet patternSet) {
-        List<Spec<FileTreeElement>> allIncludeSpecs = new ArrayList<Spec<FileTreeElement>>(1 + patternSet.getIncludeSpecs().size());
+        List<Spec<FileTreeElement>> allIncludeSpecs = new ArrayList<>(1 + patternSet.getIncludeSpecs().size());
 
         if (!patternSet.getIncludes().isEmpty()) {
             allIncludeSpecs.add(createSpec(patternSet.getIncludes(), true, patternSet.isCaseSensitive()));
@@ -61,14 +65,13 @@ public class PatternSpecFactory {
     }
 
     public Spec<FileTreeElement> createExcludeSpec(PatternSet patternSet) {
-        List<Spec<FileTreeElement>> allExcludeSpecs = new ArrayList<Spec<FileTreeElement>>(2 + patternSet.getExcludeSpecs().size());
+        List<Spec<FileTreeElement>> allExcludeSpecs = new ArrayList<>(2 + patternSet.getExcludeSpecs().size());
 
         if (!patternSet.getExcludes().isEmpty()) {
             allExcludeSpecs.add(createSpec(patternSet.getExcludes(), false, patternSet.isCaseSensitive()));
         }
 
-        allExcludeSpecs.add(getDefaultExcludeSpec(patternSet.isCaseSensitive()));
-
+        allExcludeSpecs.add(getDefaultExcludeSpec(CaseSensitivity.forCaseSensitive(patternSet.isCaseSensitive())));
         allExcludeSpecs.addAll(patternSet.getExcludeSpecs());
 
         if (allExcludeSpecs.isEmpty()) {
@@ -78,38 +81,74 @@ public class PatternSpecFactory {
         }
     }
 
-    private synchronized Spec<FileTreeElement> getDefaultExcludeSpec(boolean caseSensitive) {
-        Spec<FileTreeElement> specs = defaultExcludeSpecs.get(caseSensitive);
-        List<String> defaultExcludes = Arrays.asList(DirectoryScanner.getDefaultExcludes());
-
-        if (specs == null) {
-            specs = updateDefaultExcludeCache(defaultExcludes, caseSensitive);
-        } else if (!previousDefaultExcludes.equals(defaultExcludes)) {
-            specs = updateDefaultExcludeCache(defaultExcludes, caseSensitive);
+    private synchronized Spec<FileTreeElement> getDefaultExcludeSpec(CaseSensitivity caseSensitivity) {
+        String[] defaultExcludes = DirectoryScanner.getDefaultExcludes();
+        if (defaultExcludeSpecCache.isEmpty()) {
+            updateDefaultExcludeSpecCache(defaultExcludes);
+        } else if (!Arrays.equals(previousDefaultExcludes, defaultExcludes)) {
+            reportChangedDefaultExcludes(previousDefaultExcludes, defaultExcludes);
+            updateDefaultExcludeSpecCache(defaultExcludes);
         }
 
-        return specs;
+        return defaultExcludeSpecCache.get(caseSensitivity);
     }
 
-    private Spec<FileTreeElement> updateDefaultExcludeCache(List<String> defaultExcludes, boolean caseSensitive) {
-        previousDefaultExcludes.clear();
-        previousDefaultExcludes.addAll(defaultExcludes);
-        defaultExcludeSpecs.put(caseSensitive, createSpec(defaultExcludes, false, true));
-        defaultExcludeSpecs.put(caseSensitive, createSpec(defaultExcludes, false, false));
-        return defaultExcludeSpecs.get(caseSensitive);
+    private void reportChangedDefaultExcludes(String[] excludesFromSettings, String[] newDefaultExcludes) {
+        List<String> sortedExcludesFromSettings = Arrays.asList(excludesFromSettings);
+        sortedExcludesFromSettings.sort(Comparator.naturalOrder());
+        List<String> sortedNewExcludes = Arrays.asList(newDefaultExcludes);
+        sortedNewExcludes.sort(Comparator.naturalOrder());
+        DeprecationLogger
+            .deprecateIndirectUsage("Changing default excludes during the build")
+            .withContext(String.format("Default excludes changed from %s to %s.", sortedExcludesFromSettings, sortedNewExcludes))
+            .withAdvice("Configure default excludes in the settings script instead.")
+            .willBeRemovedInGradle7()
+            .withUpgradeGuideSection(6, "changing_default_excludes_during_the_execution_phase")
+            .nagUser();
+    }
+
+    public synchronized void setDefaultExcludesFromSettings(String[] excludesFromSettings) {
+        if (!Arrays.equals(previousDefaultExcludes, excludesFromSettings)) {
+            updateDefaultExcludeSpecCache(excludesFromSettings);
+        }
+    }
+
+    private void updateDefaultExcludeSpecCache(String[] defaultExcludes) {
+        previousDefaultExcludes = defaultExcludes;
+        List<String> patterns = Arrays.asList(defaultExcludes);
+        for (CaseSensitivity caseSensitivity : CaseSensitivity.values()) {
+            defaultExcludeSpecCache.put(caseSensitivity, createSpec(patterns, false, caseSensitivity.isCaseSensitive()));
+        }
     }
 
     protected Spec<FileTreeElement> createSpec(Collection<String> patterns, boolean include, boolean caseSensitive) {
         if (patterns.isEmpty()) {
-            return include ? Specs.<FileTreeElement>satisfyAll() : Specs.<FileTreeElement>satisfyNone();
+            return include ? Specs.satisfyAll() : Specs.satisfyNone();
         }
 
-        List<Spec<RelativePath>> matchers = new ArrayList<Spec<RelativePath>>(patterns.size());
-        for (String pattern : patterns) {
-            Spec<RelativePath> patternMatcher = PatternMatcherFactory.getPatternMatcher(include, caseSensitive, pattern);
-            matchers.add(patternMatcher);
+        PatternMatcher matcher = PatternMatcherFactory.getPatternsMatcher(include, caseSensitive, patterns);
+
+        return new RelativePathSpec(matcher);
+    }
+
+    private enum CaseSensitivity {
+        CASE_SENSITIVE(true),
+        CASE_INSENSITIVE(false);
+
+        CaseSensitivity(boolean caseSensitive) {
+            this.caseSensitive = caseSensitive;
         }
 
-        return new RelativePathSpec(Specs.union(matchers));
+        public static CaseSensitivity forCaseSensitive(boolean caseSensitive) {
+            return caseSensitive
+                ? CASE_SENSITIVE
+                : CASE_INSENSITIVE;
+        }
+
+        private final boolean caseSensitive;
+
+        public boolean isCaseSensitive() {
+            return caseSensitive;
+        }
     }
 }

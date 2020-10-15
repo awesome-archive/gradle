@@ -17,14 +17,18 @@
 package org.gradle.launcher.continuous
 
 import groovy.transform.TupleConstructor
+import org.gradle.integtests.fixtures.AbstractContinuousIntegrationTest
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.internal.os.OperatingSystem
 import org.gradle.test.fixtures.file.TestFile
+import spock.lang.Ignore
+import spock.lang.Unroll
 
-import static org.gradle.internal.filewatch.DefaultFileWatcherEventListener.SHOW_INDIVIDUAL_CHANGES_LIMIT
 import static org.gradle.internal.filewatch.DefaultFileSystemChangeWaiterFactory.QUIET_PERIOD_SYSPROP
+import static org.gradle.internal.filewatch.DefaultFileWatcherEventListener.SHOW_INDIVIDUAL_CHANGES_LIMIT
 
 // Developer is able to easily determine the file(s) that triggered a rebuild
-class ContinuousBuildChangeReportingIntegrationTest extends Java7RequiringContinuousIntegrationTest {
+class ContinuousBuildChangeReportingIntegrationTest extends AbstractContinuousIntegrationTest {
     TestFile inputDir
     private static int changesLimit = SHOW_INDIVIDUAL_CHANGES_LIMIT
     // Use an extended quiet period in the test to ensure all file events are reported together.
@@ -81,7 +85,8 @@ class ContinuousBuildChangeReportingIntegrationTest extends Java7RequiringContin
         assertReportsChanges(inputFiles.collect { new ChangeEntry('new file', it) }, true)
     }
 
-    def "should report the changes when files are removed"(changesCount) {
+    @Unroll
+    def "should report the changes when files are removed with #changesCount"(changesCount) {
         given:
         def inputFiles = (1..changesCount).collect { inputDir.file("input${it}.txt") }
         inputFiles.each { it.text = 'New input file' }
@@ -100,7 +105,9 @@ class ContinuousBuildChangeReportingIntegrationTest extends Java7RequiringContin
         changesCount << [1, changesLimit, 11]
     }
 
-    def "should report the changes when files are modified"(changesCount) {
+    @Ignore('https://github.com/gradle/gradle-private/issues/3205')
+    @Unroll
+    def "should report the changes when files are modified #changesCount"(changesCount) {
         given:
         def inputFiles = (1..changesCount).collect { inputDir.file("input${it}.txt") }
         inputFiles.each { it.text = 'New input file' }
@@ -119,7 +126,9 @@ class ContinuousBuildChangeReportingIntegrationTest extends Java7RequiringContin
         changesCount << [1, changesLimit, 11]
     }
 
-    def "should report the changes when directories are created"(changesCount) {
+    @Ignore('https://github.com/gradle/gradle-private/issues/3205')
+    @Unroll
+    def "should report the changes when directories are created #changesCount"(changesCount) {
         given:
         def inputDirectories = (1..changesCount).collect { inputDir.file("input${it}Directory") }
         boolean expectMoreChanges = (changesCount > changesLimit)
@@ -137,8 +146,9 @@ class ContinuousBuildChangeReportingIntegrationTest extends Java7RequiringContin
         changesCount << [1, changesLimit, 11]
     }
 
-
-    def "should report the changes when directories are deleted"(changesCount) {
+    @Ignore('https://github.com/gradle/gradle-private/issues/3205')
+    @Unroll
+    def "should report the changes when directories are deleted #changesCount"(changesCount) {
         given:
         def inputDirectories = (1..changesCount).collect { inputDir.file("input${it}Directory").createDir() }
         boolean expectMoreChanges = (changesCount > changesLimit)
@@ -176,6 +186,7 @@ class ContinuousBuildChangeReportingIntegrationTest extends Java7RequiringContin
         assertReportsChanges([new ChangeEntry("new file", newfile1), new ChangeEntry("modified", inputFiles[2]), new ChangeEntry("deleted", inputFiles[7]), new ChangeEntry("new file", newfile2)], true)
     }
 
+    @ToBeFixedForConfigurationCache(because = "taskGraph.afterTask")
     def "should report changes that happen when the build is executing"() {
         given:
         buildFile << """
@@ -196,7 +207,7 @@ class ContinuousBuildChangeReportingIntegrationTest extends Java7RequiringContin
         sendEOT()
         results.size() == 2
         results.each {
-            assert it.executedTasks == [':theTask']
+            assert it.assertTasksExecuted(':theTask')
         }
         assertReportsChanges([new ChangeEntry("new file", file("inputDir/input.txt"))])
     }

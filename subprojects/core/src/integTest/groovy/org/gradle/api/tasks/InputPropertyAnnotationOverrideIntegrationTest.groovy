@@ -46,6 +46,7 @@ class InputPropertyAnnotationOverrideIntegrationTest extends AbstractIntegration
                 @${inputType.name} def input
             }
             custom {
+                def layout = project.layout
                 input = ${inputValue}
             }
         """
@@ -65,7 +66,7 @@ class InputPropertyAnnotationOverrideIntegrationTest extends AbstractIntegration
         InputFile      | 'file("inputs/input")'
         InputDirectory | 'file("inputs")'
         InputFiles     | 'files("inputs")'
-        Input          | '{ file("inputs/input").text }'
+        Input          | '{ layout.projectDirectory.file("inputs/input").asFile.text }'
     }
 
 
@@ -87,6 +88,7 @@ class InputPropertyAnnotationOverrideIntegrationTest extends AbstractIntegration
         then:
         file("build/output").text == "done"
         result.assertTasksExecuted(":custom")
+
         when:
         file("inputs/input").text = "new"
         succeeds("custom")

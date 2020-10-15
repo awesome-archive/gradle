@@ -16,7 +16,6 @@
 package org.gradle.language.nativeplatform.tasks;
 
 import org.gradle.api.DefaultTask;
-import org.gradle.api.Incubating;
 import org.gradle.api.Transformer;
 import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.DirectoryProperty;
@@ -33,9 +32,9 @@ import org.gradle.api.tasks.Nested;
 import org.gradle.api.tasks.OutputDirectory;
 import org.gradle.api.tasks.PathSensitive;
 import org.gradle.api.tasks.PathSensitivity;
+import org.gradle.api.tasks.SkipWhenEmpty;
 import org.gradle.api.tasks.TaskAction;
 import org.gradle.api.tasks.WorkResult;
-import org.gradle.api.tasks.incremental.IncrementalTaskInputs;
 import org.gradle.internal.Cast;
 import org.gradle.internal.operations.logging.BuildOperationLogger;
 import org.gradle.internal.operations.logging.BuildOperationLoggerFactory;
@@ -50,6 +49,8 @@ import org.gradle.nativeplatform.toolchain.NativeToolChain;
 import org.gradle.nativeplatform.toolchain.internal.NativeCompileSpec;
 import org.gradle.nativeplatform.toolchain.internal.NativeToolChainInternal;
 import org.gradle.nativeplatform.toolchain.internal.PlatformToolProvider;
+import org.gradle.work.Incremental;
+import org.gradle.work.InputChanges;
 
 import javax.inject.Inject;
 import java.util.LinkedHashMap;
@@ -58,7 +59,6 @@ import java.util.Map;
 /**
  * Compiles native source files into object files.
  */
-@Incubating
 public abstract class AbstractNativeCompileTask extends DefaultTask {
     private final Property<NativePlatform> targetPlatform;
     private final Property<NativeToolChain> toolChain;
@@ -67,6 +67,7 @@ public abstract class AbstractNativeCompileTask extends DefaultTask {
     private boolean optimize;
     private final DirectoryProperty objectFileDir;
     private final ConfigurableFileCollection includes;
+    private final ConfigurableFileCollection systemIncludes;
     private final ConfigurableFileCollection source;
     private final Map<String, String> macros = new LinkedHashMap<String, String>();
     private final ListProperty<String> compilerArgs;
@@ -75,14 +76,16 @@ public abstract class AbstractNativeCompileTask extends DefaultTask {
     public AbstractNativeCompileTask() {
         ObjectFactory objectFactory = getProject().getObjects();
         this.includes = getProject().files();
+        this.systemIncludes = getProject().files();
         dependsOn(includes);
+        dependsOn(systemIncludes);
 
         this.source = getTaskFileVarFactory().newInputFileCollection(this);
-        this.objectFileDir = newOutputDirectory();
+        this.objectFileDir = objectFactory.directoryProperty();
         this.compilerArgs = getProject().getObjects().listProperty(String.class);
         this.targetPlatform = objectFactory.property(NativePlatform.class);
         this.toolChain = objectFactory.property(NativeToolChain.class);
-        this.incrementalCompiler = getIncrementalCompilerBuilder().newCompiler(this, source, includes, toolChain.map(new Transformer<Boolean, NativeToolChain>() {
+        this.incrementalCompiler = getIncrementalCompilerBuilder().newCompiler(this, source, includes.plus(systemIncludes), macros, toolChain.map(new Transformer<Boolean, NativeToolChain>() {
             @Override
             public Boolean transform(NativeToolChain nativeToolChain) {
                 return nativeToolChain instanceof Gcc || nativeToolChain instanceof Clang;
@@ -111,13 +114,14 @@ public abstract class AbstractNativeCompileTask extends DefaultTask {
     }
 
     @TaskAction
-    public void compile(IncrementalTaskInputs inputs) {
+    protected void compile(InputChanges inputs) {
         BuildOperationLogger operationLogger = getOperationLoggerFactory().newOperationLogger(getName(), getTemporaryDir());
         NativeCompileSpec spec = createCompileSpec();
         spec.setTargetPlatform(targetPlatform.get());
         spec.setTempDir(getTemporaryDir());
         spec.setObjectFileDir(objectFileDir.get().getAsFile());
         spec.include(includes);
+        spec.systemInclude(systemIncludes);
         spec.source(getSource());
         spec.setMacros(getMacros());
         spec.args(getCompilerArgs().get());
@@ -244,8 +248,19 @@ public abstract class AbstractNativeCompileTask extends DefaultTask {
     }
 
     /**
+     * Returns the system include directories to be used for compilation.
+     *
+     * @since 4.8
+     */
+    @Internal("The paths for include directories are tracked via the includePaths property, the contents are tracked via discovered inputs")
+    public ConfigurableFileCollection getSystemIncludes() {
+        return systemIncludes;
+    }
+
+    /**
      * Returns the source files to be compiled.
      */
+    @SkipWhenEmpty
     @InputFiles
     @PathSensitive(PathSensitivity.RELATIVE)
     public ConfigurableFileCollection getSource() {
@@ -287,6 +302,7 @@ public abstract class AbstractNativeCompileTask extends DefaultTask {
      *
      * @since 4.3
      */
+    @Incremental
     @InputFiles
     @PathSensitive(PathSensitivity.NAME_ONLY)
     protected FileCollection getHeaderDependencies() {

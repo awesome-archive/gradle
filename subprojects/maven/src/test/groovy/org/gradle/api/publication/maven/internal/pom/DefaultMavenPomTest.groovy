@@ -37,7 +37,7 @@ class DefaultMavenPomTest extends Specification {
     static final String EXPECTED_VERSION = "v\u00E9rsi\u00F8n"; // note the utf-8 chars
 
     @Rule
-    TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider()
+    TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider(getClass())
 
     Conf2ScopeMappingContainer conf2ScopeMappingContainer = Mock()
     PomDependenciesConverter pomDependenciesConverterStub = Mock()
@@ -185,7 +185,7 @@ class DefaultMavenPomTest extends Specification {
 
     void writeToWritesCorrectPom() {
         mavenPom.configurations = null
-        TestFile pomFile = tmpDir.file('someNonexistingDir').file('someFile')
+        TestFile pomFile = tmpDir.file('someNonexistentDir').file('someFile')
         fileResolver.resolve('file') >> pomFile
 
         when:

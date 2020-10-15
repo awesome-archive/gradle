@@ -22,8 +22,6 @@ import org.gradle.api.file.FileCollection;
 import org.gradle.api.tasks.compile.CompileOptions;
 import org.gradle.api.tasks.compile.DebugOptions;
 import org.gradle.api.tasks.compile.ForkOptions;
-import org.gradle.internal.Factory;
-import org.gradle.util.DeprecationLogger;
 
 import javax.annotation.Nullable;
 import java.io.File;
@@ -45,20 +43,17 @@ public class MinimalJavaCompileOptions implements Serializable {
     private boolean verbose;
     private boolean warnings;
     private File annotationProcessorGeneratedSourcesDirectory;
+    private File headerOutputDirectory;
+    private String javaModuleVersion;
+    private String javaModuleMainClass;
+    private File incrementalCompilationMappingFile;
 
     public MinimalJavaCompileOptions(final CompileOptions compileOptions) {
         FileCollection sourcepath = compileOptions.getSourcepath();
         this.sourcepath = sourcepath == null ? null : ImmutableList.copyOf(sourcepath.getFiles());
         this.compilerArgs = Lists.newArrayList(compileOptions.getAllCompilerArgs());
         this.encoding = compileOptions.getEncoding();
-        this.bootClasspath = DeprecationLogger.whileDisabled(new Factory<String>() {
-            @Nullable
-            @Override
-            @SuppressWarnings("deprecation")
-            public String create() {
-                return compileOptions.getBootClasspath();
-            }
-        });
+        this.bootClasspath = getAsPath(compileOptions.getBootstrapClasspath());
         this.extensionDirs = compileOptions.getExtensionDirs();
         this.forkOptions = compileOptions.getForkOptions();
         this.debugOptions = compileOptions.getDebugOptions();
@@ -68,7 +63,15 @@ public class MinimalJavaCompileOptions implements Serializable {
         this.listFiles = compileOptions.isListFiles();
         this.verbose = compileOptions.isVerbose();
         this.warnings = compileOptions.isWarnings();
-        this.annotationProcessorGeneratedSourcesDirectory = compileOptions.getAnnotationProcessorGeneratedSourcesDirectory();
+        this.annotationProcessorGeneratedSourcesDirectory = compileOptions.getGeneratedSourceOutputDirectory().getAsFile().getOrNull();
+        this.headerOutputDirectory = compileOptions.getHeaderOutputDirectory().getAsFile().getOrNull();
+        this.javaModuleVersion = compileOptions.getJavaModuleVersion().getOrNull();
+        this.javaModuleMainClass = compileOptions.getJavaModuleMainClass().getOrNull();
+    }
+
+    @Nullable
+    private static String getAsPath(@Nullable FileCollection files) {
+        return files == null ? null : files.getAsPath();
     }
 
     public List<File> getSourcepath() {
@@ -87,11 +90,12 @@ public class MinimalJavaCompileOptions implements Serializable {
         this.compilerArgs = compilerArgs;
     }
 
+    @Nullable
     public String getEncoding() {
         return encoding;
     }
 
-    public void setEncoding(String encoding) {
+    public void setEncoding(@Nullable String encoding) {
         this.encoding = encoding;
     }
 
@@ -181,5 +185,41 @@ public class MinimalJavaCompileOptions implements Serializable {
 
     public void setAnnotationProcessorGeneratedSourcesDirectory(File annotationProcessorGeneratedSourcesDirectory) {
         this.annotationProcessorGeneratedSourcesDirectory = annotationProcessorGeneratedSourcesDirectory;
+    }
+
+    @Nullable
+    public File getHeaderOutputDirectory() {
+        return headerOutputDirectory;
+    }
+
+    public void setHeaderOutputDirectory(@Nullable File headerOutputDirectory) {
+        this.headerOutputDirectory = headerOutputDirectory;
+    }
+
+    @Nullable
+    public String getJavaModuleVersion() {
+        return javaModuleVersion;
+    }
+
+    public void setJavaModuleVersion(@Nullable String javaModuleVersion) {
+        this.javaModuleVersion = javaModuleVersion;
+    }
+
+    @Nullable
+    public String getJavaModuleMainClass() {
+        return javaModuleMainClass;
+    }
+
+    public void setJavaModuleMainClass(@Nullable String javaModuleMainClass) {
+        this.javaModuleMainClass = javaModuleMainClass;
+    }
+
+    @Nullable
+    public File getIncrementalCompilationMappingFile() {
+        return incrementalCompilationMappingFile;
+    }
+
+    public void setIncrementalCompilationMappingFile(@Nullable File incrementalCompilationMappingFile) {
+        this.incrementalCompilationMappingFile = incrementalCompilationMappingFile;
     }
 }

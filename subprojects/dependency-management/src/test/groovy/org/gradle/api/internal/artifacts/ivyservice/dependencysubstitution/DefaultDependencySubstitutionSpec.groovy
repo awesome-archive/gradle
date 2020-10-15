@@ -19,21 +19,33 @@ package org.gradle.api.internal.artifacts.ivyservice.dependencysubstitution
 import org.gradle.api.artifacts.component.ComponentSelector
 import org.gradle.api.artifacts.component.ModuleComponentSelector
 import org.gradle.api.artifacts.component.ProjectComponentSelector
-import org.gradle.api.internal.artifacts.ivyservice.resolveengine.result.VersionSelectionReasons
+import org.gradle.api.artifacts.result.ComponentSelectionCause
+import org.gradle.api.internal.artifacts.DependencyManagementTestUtil
 import org.gradle.api.internal.project.ProjectInternal
-import org.gradle.initialization.BuildIdentity
+import org.gradle.internal.build.BuildState
+import org.gradle.internal.component.model.IvyArtifactName
 import org.gradle.internal.service.DefaultServiceRegistry
 import org.gradle.internal.typeconversion.UnsupportedNotationException
+import org.gradle.util.Path
 import spock.lang.Specification
+import spock.lang.Unroll
+
+import static org.gradle.api.internal.artifacts.ivyservice.resolveengine.result.ComponentSelectionReasons.FORCED
+import static org.gradle.api.internal.artifacts.ivyservice.resolveengine.result.ComponentSelectionReasons.SELECTED_BY_RULE
 
 class DefaultDependencySubstitutionSpec extends Specification {
-    def componentSelector = Mock(ComponentSelector)
-    def details = new DefaultDependencySubstitution(componentSelector, null)
+    ComponentSelector componentSelector = Mock(ComponentSelector)
+    List<IvyArtifactName> artifacts = []
+    def details = newSubstitution()
+
+    private DefaultDependencySubstitution newSubstitution() {
+        new DefaultDependencySubstitution(DependencyManagementTestUtil.componentSelectionDescriptorFactory(), componentSelector, artifacts)
+    }
 
     def "can override target and selection reason for project"() {
         when:
-        details.useTarget("org:foo:2.0", VersionSelectionReasons.FORCED)
-        details.useTarget("org:foo:3.0", VersionSelectionReasons.SELECTED_BY_RULE)
+        details.useTarget("org:foo:2.0", FORCED)
+        details.useTarget("org:foo:3.0", SELECTED_BY_RULE)
 
         then:
         details.requested == componentSelector
@@ -41,7 +53,7 @@ class DefaultDependencySubstitutionSpec extends Specification {
         details.target.module == "foo"
         details.target.version == "3.0"
         details.updated
-        details.selectionDescription == VersionSelectionReasons.SELECTED_BY_RULE
+        details.ruleDescriptors == [FORCED, SELECTED_BY_RULE]
     }
 
     def "does not allow null target"() {
@@ -52,7 +64,7 @@ class DefaultDependencySubstitutionSpec extends Specification {
         thrown(UnsupportedNotationException)
 
         when:
-        details.useTarget(null, VersionSelectionReasons.SELECTED_BY_RULE)
+        details.useTarget(null, SELECTED_BY_RULE)
 
         then:
         thrown(UnsupportedNotationException)
@@ -66,7 +78,7 @@ class DefaultDependencySubstitutionSpec extends Specification {
         details.target instanceof ModuleComponentSelector
         details.target.toString() == 'org:bar:2.0'
         details.updated
-        details.selectionDescription == VersionSelectionReasons.SELECTED_BY_RULE
+        details.ruleDescriptors == [SELECTED_BY_RULE]
     }
 
     def "can specify custom selection reason"() {
@@ -77,23 +89,83 @@ class DefaultDependencySubstitutionSpec extends Specification {
         details.target instanceof ModuleComponentSelector
         details.target.toString() == 'org:bar:2.0'
         details.updated
-        details.selectionDescription == VersionSelectionReasons.SELECTED_BY_RULE.withReason('with custom reason')
+        details.ruleDescriptors.last().cause == ComponentSelectionCause.SELECTED_BY_RULE
+        details.ruleDescriptors.last().description == 'with custom reason'
     }
 
     def "can specify target project"() {
         def project = Mock(ProjectInternal)
+        project.identityPath >> Path.path(":id:path")
+        project.projectPath >> Path.path(":bar")
+        project.name >> "bar"
+
         def services = new DefaultServiceRegistry()
-        services.add(BuildIdentity, Stub(BuildIdentity))
+        services.add(BuildState, Stub(BuildState))
 
         when:
         details.useTarget(project)
 
         then:
-        _ * project.path >> ":bar"
         project.getServices() >> services
         details.target instanceof ProjectComponentSelector
         details.target.projectPath == ":bar"
         details.updated
-        details.selectionDescription == VersionSelectionReasons.SELECTED_BY_RULE
+        details.ruleDescriptors == [SELECTED_BY_RULE]
+    }
+
+    @Unroll
+    def "can substitute with a different artifact"() {
+        when:
+        details.artifactSelection {
+            it.selectArtifact(type, ext, classifier)
+        }
+
+        then:
+        details.target == componentSelector
+        details.updated
+        details.artifactSelectionDetails.updated
+        details.artifactSelectionDetails.targetSelectors.size() == 1
+        details.artifactSelectionDetails.targetSelectors[0].type == type
+        details.artifactSelectionDetails.targetSelectors[0].extension == ext
+        details.artifactSelectionDetails.targetSelectors[0].classifier == classifier
+
+        where:
+        type  | ext   | classifier
+        'jar' | 'jar' | 'classy'
+        'zip' | 'zip' | null
+        'jar' | 'zip' | 'classy'
+    }
+
+    def "artifact selection context has information about requested artifacts"() {
+        def artifact = Stub(IvyArtifactName) {
+            getName() >> 'foo'
+            getExtension() >> 'jar'
+            getType() >> 'type'
+            getClassifier() >> 'classy'
+        }
+
+        def selectors = null
+
+        when:
+        details.artifactSelection {
+            selectors = it.requestedSelectors
+        }
+
+        then:
+        selectors == []
+
+        when:
+        artifacts << artifact
+        details = newSubstitution()
+        details.artifactSelection {
+            assert it.hasSelectors()
+            selectors = it.requestedSelectors
+        }
+
+        then:
+        selectors.size() == artifacts.size()
+        selectors[0].type == artifact.type
+        selectors[0].extension == artifact.extension
+        selectors[0].classifier == artifact.classifier
     }
 }

@@ -25,11 +25,11 @@ abstract class ToolingApiVersionSpecification extends ToolingApiSpecification {
     def outputStream
 
     String providerDeprecationMessage(String version) {
-        return "Support for builds using Gradle older than 2.6 was deprecated and will be removed in 5.0. You are currently using Gradle version ${version}. You should upgrade your Gradle build to use Gradle 2.6 or later."
+        return "You are currently using Gradle version ${version}. You should upgrade your Gradle build to use Gradle 2.6 or later."
     }
 
     String consumerDeprecationMessage(String version) {
-        return "Support for clients using a tooling API version older than 3.0 was deprecated and will be removed in Gradle 5.0. You are currently using tooling API version ${version}. You should upgrade your tooling API client to version 3.0 or later"
+        return "You are currently using tooling API version ${version}. You should upgrade your tooling API client to version 3.0 or later"
     }
 
     def setup() {
@@ -69,16 +69,16 @@ abstract class ToolingApiVersionSpecification extends ToolingApiSpecification {
 
     // since 2.6
     def testExecution() {
-        buildFile << """ 
+        buildFile << """
 apply plugin: 'java'
 repositories {
     maven {
-        url '${buildContext.libsRepo.toURI()}'
+        url '${buildContext.localRepository.toURI()}'
     }
 }
 ${mavenCentralRepository()}
 dependencies {
-    testCompile 'junit:junit:4.12'
+    testImplementation 'junit:junit:4.13'
 }
 """
         file('src/test/java/TestClientTest.java') << '''
@@ -90,6 +90,15 @@ public class TestClientTest{
             def launcher = connection.newTestLauncher().withJvmTestClasses("TestClientTest")
             launcher.standardOutput = outputStream
             launcher.run()
+        }
+    }
+
+    // since 6.1
+    def notifyDaemonsAboutChangedPaths() {
+        build()
+
+        withConnection { ProjectConnection connection ->
+            connection.notifyDaemonsAboutChangedPaths([file("some/file").toPath()])
         }
     }
 }

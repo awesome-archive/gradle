@@ -23,11 +23,7 @@ import spock.lang.Unroll
 class CachedPathSensitivityIntegrationTest extends AbstractPathSensitivityIntegrationSpec implements DirectoryBuildCacheFixture {
     def setup() {
         buildFile << """
-            task clean {
-                doLast {
-                    delete(tasks*.outputs*.files)
-                }
-            }
+            apply plugin: 'base'
         """
     }
 
@@ -41,26 +37,33 @@ class CachedPathSensitivityIntegrationTest extends AbstractPathSensitivityIntegr
         run "clean"
     }
 
+    @Override
+    String getStatusForReusedOutput() {
+        return "FROM-CACHE"
+    }
+
     def "single #pathSensitivity input file loaded from cache can be used as input"() {
         file("src/data/input.txt").text = "data"
 
         buildFile << """
             task producer {
                 outputs.cacheIf { true }
-                outputs.file("outputs/producer.txt")
+                outputs.file("build/outputs/producer.txt")
                 doLast {
-                    mkdir("outputs")
-                    file("outputs/producer.txt").text = "alma"
+                    file("build/outputs/producer.txt").text = "alma"
                 }
             }
-            
+
             task consumer {
                 dependsOn producer
                 outputs.cacheIf { true }
-                inputs.file("outputs/producer.txt").withPathSensitivity(PathSensitivity.$pathSensitivity)
-                outputs.file("outputs/consumer.txt")
+                inputs.file("build/outputs/producer.txt")
+                    .withPropertyName("producer")
+                    .withPathSensitivity(PathSensitivity.$pathSensitivity)
+                outputs.file("build/outputs/consumer.txt")
+                    .withPropertyName("consumer")
                 doLast {
-                    file("outputs/consumer.txt").text = file("outputs/producer.txt").text
+                    file("build/outputs/consumer.txt").text = file("build/outputs/producer.txt").text
                 }
             }
         """

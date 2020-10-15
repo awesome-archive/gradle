@@ -17,51 +17,54 @@
 package org.gradle.integtests.tooling
 
 import org.gradle.initialization.BuildCancellationToken
-import org.gradle.integtests.fixtures.RetryRuleUtil
 import org.gradle.integtests.fixtures.daemon.DaemonsFixture
+import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
 import org.gradle.integtests.fixtures.executer.GradleDistribution
 import org.gradle.integtests.fixtures.executer.UnderDevelopmentGradleDistribution
 import org.gradle.integtests.fixtures.versions.ReleasedVersionDistributions
 import org.gradle.integtests.tooling.fixture.ConfigurableOperation
 import org.gradle.integtests.tooling.fixture.ToolingApi
 import org.gradle.internal.classpath.ClassPath
+import org.gradle.internal.jvm.Jvm
 import org.gradle.internal.logging.progress.ProgressLoggerFactory
 import org.gradle.test.fixtures.ConcurrentTestUtil
 import org.gradle.test.fixtures.file.TestFile
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
-import org.gradle.testing.internal.util.RetryRule
 import org.gradle.tooling.GradleConnector
 import org.gradle.tooling.ProjectConnection
 import org.gradle.tooling.internal.consumer.Distribution
 import org.gradle.tooling.internal.protocol.InternalBuildProgressListener
 import org.gradle.tooling.model.GradleProject
 import org.gradle.tooling.model.idea.IdeaProject
+import org.junit.Assume
 import org.junit.Rule
+import spock.lang.IgnoreIf
 import spock.lang.Issue
+import spock.lang.Retry
 import spock.lang.Specification
 
 import java.util.concurrent.CopyOnWriteArrayList
 
+import static org.gradle.integtests.fixtures.RetryConditions.onWindowsSocketDisappearance
+import static spock.lang.Retry.Mode.SETUP_FEATURE_CLEANUP
+
 @Issue("GRADLE-1933")
+@Retry(condition = { onWindowsSocketDisappearance(instance, failure) }, mode = SETUP_FEATURE_CLEANUP, count = 2)
+@IgnoreIf({ GradleContextualExecuter.embedded }) // concurrent tooling api is only supported for forked mode
 class ConcurrentToolingApiIntegrationSpec extends Specification {
 
     @Rule final ConcurrentTestUtil concurrent = new ConcurrentTestUtil()
-    @Rule final TestNameTestDirectoryProvider temporaryFolder = new TestNameTestDirectoryProvider()
+    @Rule final TestNameTestDirectoryProvider temporaryFolder = new TestNameTestDirectoryProvider(getClass())
     final GradleDistribution dist = new UnderDevelopmentGradleDistribution()
     final ToolingApi toolingApi = new ToolingApi(dist, temporaryFolder)
 
     int threads = 3
-
-    @Rule
-    RetryRule retryRule = RetryRuleUtil.retryToolingAPIOnWindowsSocketDisappearance(this)
 
     DaemonsFixture getDaemonsFixture() {
         toolingApi.daemons
     }
 
     def setup() {
-        //concurrent tooling api at the moment is only supported for forked mode
-        toolingApi.requireDaemons()
         concurrent.shortTimeout = 180000
     }
 
@@ -84,6 +87,8 @@ class ConcurrentToolingApiIntegrationSpec extends Specification {
     def "handles different target gradle versions concurrently"() {
         given:
         def last = new ReleasedVersionDistributions().getMostRecentRelease()
+        // When adding support for a new JDK version, the previous release might not work with it yet.
+        Assume.assumeTrue(last.worksWith(Jvm.current()))
         assert dist != last
         println "Combination of versions used: current - $dist, last - $last"
         def oldDistApi = new ToolingApi(last, temporaryFolder)
@@ -131,11 +136,11 @@ project.description = text
 
                     assert model.get().description == "hasta la vista $idx"
 
-                    assert operation.getStandardOutput().contains("out=hasta la vista $idx")
-                    assert operation.getStandardOutput().count("out=hasta la vista") == 1
+                    assert operation.standardOutput.contains("out=hasta la vista $idx")
+                    assert operation.standardOutput.count("out=hasta la vista") == 1
 
-                    assert operation.getStandardError().contains("err=hasta la vista $idx")
-                    assert operation.getStandardError().count("err=hasta la vista") == 1
+                    assert operation.standardError.contains("err=hasta la vista $idx")
+                    assert operation.standardError.count("err=hasta la vista") == 1
                 }
             }
             concurrent.finished()
@@ -320,7 +325,6 @@ logger.lifecycle 'this is lifecycle: $idx'
 
                     assert operation.standardOutput.contains("this is lifecycle: $idx")
                     assert operation.standardOutput.count("this is lifecycle") == 1
-                    assert operation.standardError.count("this is lifecycle") == 0
                 }
             }
         }
@@ -355,7 +359,6 @@ logger.lifecycle 'this is lifecycle: $idx'
 
                     assert operation.standardOutput.contains("this is lifecycle: $idx")
                     assert operation.standardOutput.count("this is lifecycle") == 1
-                    assert operation.standardError.count("this is lifecycle") == 0
                 }
             }
         }

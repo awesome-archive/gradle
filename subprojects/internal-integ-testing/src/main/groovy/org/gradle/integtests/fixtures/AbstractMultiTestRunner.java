@@ -15,6 +15,7 @@
  */
 package org.gradle.integtests.fixtures;
 
+import com.google.common.collect.Iterables;
 import org.gradle.internal.UncheckedException;
 import org.junit.runner.Description;
 import org.junit.runner.RunWith;
@@ -86,6 +87,7 @@ public abstract class AbstractMultiTestRunner extends Runner implements Filterab
         }
     }
 
+    @Override
     public void filter(Filter filter) throws NoTestsRemainException {
         initExecutions();
         for (Execution execution : executions) {
@@ -206,9 +208,7 @@ public abstract class AbstractMultiTestRunner extends Runner implements Filterab
                                 });
                             }
                         }
-                    } catch (IllegalAccessException e) {
-                        // no luck
-                    } catch (InvocationTargetException e) {
+                    } catch (IllegalAccessException | InvocationTargetException e) {
                         // no luck
                     }
                 }
@@ -295,14 +295,18 @@ public abstract class AbstractMultiTestRunner extends Runner implements Filterab
             return descriptionTranslations.containsKey(description) ? descriptionTranslations.get(description) : description;
         }
 
-        public void filter(Filter filter) throws NoTestsRemainException {
-            filters.add(filter);
-            for (Map.Entry<Description, Description> entry : descriptionTranslations.entrySet()) {
-                if (!filter.shouldRun(entry.getKey())) {
-                    enabledTests.remove(entry.getValue());
-                    disabledTests.remove(entry.getValue());
+        @Override
+        public void filter(Filter filter) {
+            filters.add(new Filter() {
+                @Override
+                public boolean shouldRun(Description description) {
+                    return filter.shouldRun(description) || filter.shouldRun(translateDescription(description));
                 }
-            }
+                @Override
+                public String describe() {
+                    return filter.describe();
+                }
+            });
         }
 
         protected void before() {
@@ -442,6 +446,9 @@ public abstract class AbstractMultiTestRunner extends Runner implements Filterab
          */
         @Nullable
         <A extends Annotation> A getAnnotation(Class<A> type);
+
+        Annotation[] getAnnotations();
+
     }
 
     private static class TestDescriptionBackedTestDetails implements TestDetails {
@@ -458,12 +465,18 @@ public abstract class AbstractMultiTestRunner extends Runner implements Filterab
             return test.toString();
         }
 
+        @Override
         public <A extends Annotation> A getAnnotation(Class<A> type) {
             A annotation = test.getAnnotation(type);
             if (annotation != null) {
                 return annotation;
             }
             return parent.getAnnotation(type);
+        }
+
+        @Override
+        public Annotation[] getAnnotations() {
+            return Iterables.toArray(test.getAnnotations(), Annotation.class);
         }
     }
 }

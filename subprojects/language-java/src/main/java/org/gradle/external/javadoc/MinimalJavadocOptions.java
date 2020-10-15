@@ -16,6 +16,7 @@
 
 package org.gradle.external.javadoc;
 
+import org.gradle.api.Incubating;
 import org.gradle.api.tasks.Classpath;
 import org.gradle.api.tasks.Console;
 import org.gradle.api.tasks.Input;
@@ -69,7 +70,7 @@ public interface MinimalJavadocOptions {
 
     void setDocletpath(List<File> docletpath);
 
-    MinimalJavadocOptions docletpath(File ... docletpath);
+    MinimalJavadocOptions docletpath(File... docletpath);
 
     @Nullable @Optional @Input
     String getSource();
@@ -83,23 +84,48 @@ public interface MinimalJavadocOptions {
 
     void setClasspath(List<File> classpath);
 
+    /**
+     * The --module-path.
+     *
+     * @since 6.4
+     */
+    @Incubating
+    @Internal
+    List<File> getModulePath();
+
+    /**
+     * The --module-path.
+     *
+     * @since 6.4
+     */
+    @Incubating
+    void setModulePath(List<File> modulePath);
+
+    /**
+     * The --module-path.
+     *
+     * @since 6.4
+     */
+    @Incubating
+    MinimalJavadocOptions modulePath(List<File> classpath);
+
     MinimalJavadocOptions classpath(List<File> classpath);
 
-    MinimalJavadocOptions classpath(File ... classpath);
+    MinimalJavadocOptions classpath(File... classpath);
 
     @Classpath
     List<File> getBootClasspath();
 
     void setBootClasspath(List<File> bootClasspath);
 
-    MinimalJavadocOptions bootClasspath(File ... bootClasspath);
+    MinimalJavadocOptions bootClasspath(File... bootClasspath);
 
     @Nullable @Optional @PathSensitive(PathSensitivity.RELATIVE) @InputFiles
     List<File> getExtDirs();
 
     void setExtDirs(@Nullable List<File> extDirs);
 
-    MinimalJavadocOptions extDirs(File ... extDirs);
+    MinimalJavadocOptions extDirs(File... extDirs);
 
     @Console
     JavadocOutputLevel getOutputLevel();
@@ -141,14 +167,14 @@ public interface MinimalJavadocOptions {
 
     void setJFlags(@Nullable List<String> jFlags);
 
-    MinimalJavadocOptions jFlags(String ... jFlags);
+    MinimalJavadocOptions jFlags(String... jFlags);
 
     @Nullable @Optional @PathSensitive(PathSensitivity.NONE) @InputFiles
     List<File> getOptionFiles();
 
     void setOptionFiles(@Nullable List<File> optionFiles);
 
-    MinimalJavadocOptions optionFiles(File ... argumentFiles);
+    MinimalJavadocOptions optionFiles(File... argumentFiles);
 
     @Internal
     File getDestinationDirectory();
@@ -179,7 +205,7 @@ public interface MinimalJavadocOptions {
 
     void setSourceNames(@Nullable List<String> sourceNames);
 
-    MinimalJavadocOptions sourceNames(String ... sourceNames);
+    MinimalJavadocOptions sourceNames(String... sourceNames);
 
     void contributeCommandLineOptions(ExecSpec execHandleBuilder);
 }

@@ -49,13 +49,23 @@ class TextUtilTest extends Specification {
     def normaliseLineSeparators() {
         expect:
         TextUtil.normaliseLineSeparators(original) == converted
+        TextUtil.normaliseLineSeparators(converted).is converted
 
         where:
         original                          | converted
+        null                              | null
         ""                                | ""
         "none"                            | "none"
         "one\rtwo\nthree\r\nfour\n\rfive" | "one\ntwo\nthree\nfour\n\nfive"
         "\r\n\n\r"                        | "\n\n\n"
+    }
+
+    def "convertLineSeparatorsToUnix returns same string when already converted"() {
+        expect:
+        TextUtil.convertLineSeparatorsToUnix(original).is original
+
+        where:
+        original << ["", "none", "one\ntwo\nthree"]
     }
 
     def containsWhitespace() {
@@ -93,5 +103,24 @@ class TextUtilTest extends Specification {
         TextUtil.shorterOf("a", "bb") == "a"
         TextUtil.shorterOf("", "bb") == ""
         TextUtil.shorterOf("", "") == ""
+    }
+
+    @Unroll("#camelCase to kebab = #kebabCase")
+    def kebabCase() {
+        expect:
+        TextUtil.camelToKebabCase(camelCase) == kebabCase
+
+        where:
+        camelCase   | kebabCase
+        ""          | ""
+        "foo"       | "foo"
+        "fooBar"    | "foo-bar"
+        "Foo"       | "foo"
+        "fooBarBaz" | "foo-bar-baz"
+        "ABC"       | "a-b-c"
+        "someT"     | "some-t"
+        "sT"        | "s-t"
+        "aBc"       | "a-bc"
+        "aBec"      | "a-bec"
     }
 }

@@ -32,8 +32,11 @@ import org.gradle.internal.HasInternalProtocol;
  * The content and location of the generate project file can be modified by the supplied methods:
  *
  * <pre class='autoTested'>
- *  apply plugin: "cpp"
- *  apply plugin: "visual-studio"
+ *  plugins {
+ *      id 'cpp'
+ *      id 'visual-studio'
+ *  }
+ *
  *  model {
  *      visualStudio {
  *          projects.all {
@@ -47,23 +50,25 @@ import org.gradle.internal.HasInternalProtocol;
  *  }
  * </pre>
  */
-@Incubating
 @HasInternalProtocol
 public interface VisualStudioProject extends Named, Buildable {
     /**
      * Configuration for the generated project file.
      */
     @Internal
+    @Incubating
     XmlConfigFile getProjectFile();
 
     /**
      * Configuration for the generated filters file.
      */
     @Internal
+    @Incubating
     XmlConfigFile getFiltersFile();
 
     @Override
     @Internal
+    @Incubating
     TaskDependency getBuildDependencies();
 
     @Override

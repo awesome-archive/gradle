@@ -14,8 +14,11 @@
  * limitations under the License.
  */
 package org.gradle.integtests.publish.maven
+
 import org.apache.commons.lang.RandomStringUtils
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
+import org.gradle.internal.credentials.DefaultPasswordCredentials
 import org.gradle.test.fixtures.maven.MavenLocalRepository
 import org.gradle.test.fixtures.server.http.AuthScheme
 import org.gradle.test.fixtures.server.http.HttpServer
@@ -29,10 +32,13 @@ import spock.lang.Unroll
 import static org.gradle.test.matchers.UserAgentMatcher.matchesNameAndVersion
 import static org.hamcrest.core.StringContains.containsString
 
+@UnsupportedWithConfigurationCache(because = "legacy maven plugin")
 class MavenPublishIntegrationTest extends AbstractIntegrationSpec {
     @Rule public final HttpServer server = new HttpServer()
 
-    def setup(){
+    def setup() {
+        // the OLD publish plugins work with the OLD deprecated Java plugin configuration (compile/runtime)
+        executer.noDeprecationChecks()
         using m2
     }
 
@@ -62,7 +68,7 @@ uploadArchives {
         succeeds 'uploadArchives'
 
         then:
-        def module = mavenRepo.module('group', 'root', '1.0')
+        def module = mavenRepo.module('group', 'root', '1.0').withoutExtraChecksums()
         module.assertArtifactsPublished('root-1.0.jar', 'root-1.0.pom')
     }
 
@@ -99,7 +105,7 @@ uploadArchives {
     @Issue("GRADLE-2456")
     public void generatesSHA1FileWithLeadingZeros() {
         given:
-        def module = mavenRepo.module("org.gradle", "publish", "2")
+        def module = mavenRepo.module("org.gradle", "publish", "2").withoutExtraChecksums()
         byte[] jarBytes = [0, 0, 0, 5]
         def artifactFile = file("testfile.bin")
         artifactFile << jarBytes
@@ -159,7 +165,7 @@ uploadArchives {
         succeeds 'uploadArchives'
 
         then:
-        def module = mavenRepo.module('group', 'root', '1.0')
+        def module = mavenRepo.module('group', 'root', '1.0').withoutExtraChecksums()
         module.assertPublished()
         module.assertArtifactsPublished('root-1.0.pom', 'root-1.0-source.jar')
     }
@@ -199,7 +205,7 @@ uploadArchives {
         def replacements = file("build/replacements")
         replacements.assertHasDescendants('root-1.0.jar')
 
-        def module = mavenRepo.module('group', 'root', '1.0')
+        def module = mavenRepo.module('group', 'root', '1.0').withoutExtraChecksums()
         module.assertPublished()
         module.assertArtifactsPublished('root-1.0.pom', 'root-1.0.jar')
 
@@ -254,7 +260,7 @@ uploadArchives {
         succeeds 'uploadArchives'
 
         then:
-        def module = mavenRepo.module('group', 'root', '1.0')
+        def module = mavenRepo.module('group', 'root', '1.0').withoutExtraChecksums()
         module.assertArtifactsPublished('root-1.0.jar', 'root-1.0.jar.sig', 'root-1.0.pom', 'root-1.0.pom.sig')
     }
 
@@ -280,7 +286,7 @@ uploadArchives {
         succeeds 'uploadArchives'
 
         then:
-        def module = mavenRepo.module('org.gradle', 'test', '1.0-SNAPSHOT')
+        def module = mavenRepo.module('org.gradle', 'test', '1.0-SNAPSHOT').withoutExtraChecksums()
         module.assertArtifactsPublished("maven-metadata.xml", "test-${module.publishArtifactVersion}.jar", "test-${module.publishArtifactVersion}.pom")
 
         and:
@@ -302,8 +308,7 @@ uploadArchives {
             snapshotBuildNumber == '1'
             lastUpdated == snapshotTimestamp.replace('.', '')
 
-            // Snapshot versions are not published, due to Maven legacy support
-            snapshotVersions == []
+            snapshotVersions == [module.publishArtifactVersion]
         }
     }
 
@@ -318,9 +323,8 @@ apply plugin:'maven'
 version = 1.0
 group =  "org.test"
 
-task sourcesJar(type: Jar) {
-        from sourceSets.main.allSource
-        classifier = 'sources'
+java {
+    withSourcesJar()
 }
 
 task testJar(type: Jar) {
@@ -338,7 +342,6 @@ uploadArchives {
     repositories{
         mavenDeployer {
             repository(url: "http://localhost:${server.port}/repo") {
-               authentication(userName: "testuser", password: "secret")
             }
             addFilter('main') {artifact, file ->
                 !artifact.name.endsWith("-tests")
@@ -351,7 +354,7 @@ uploadArchives {
 }
 """
         when:
-        def module = mavenRepo.module('org.test', 'someCoolProject')
+        def module = mavenRepo.module('org.test', 'someCoolProject').withoutExtraChecksums()
         def moduleDir = module.moduleDir
         moduleDir.mkdirs()
 
@@ -390,7 +393,7 @@ uploadArchives {
 }
 """
         when:
-        def module = mavenRepo.module('org.test', 'root')
+        def module = mavenRepo.module('org.test', 'root').withoutExtraChecksums()
         def moduleDir = module.moduleDir
         moduleDir.mkdirs()
         expectPublishArtifact(moduleDir, "/repo/org/test/root/1.0", "root-1.0.pom")
@@ -439,8 +442,7 @@ uploadArchives {
     @Unroll
     def "can publish to an authenticated HTTP repository using #authScheme auth"() {
         given:
-        def username = 'testuser'
-        def password = 'password'
+        def credentials = new DefaultPasswordCredentials('testuser', 'password')
         server.start()
         server.expectUserAgent(matchesNameAndVersion("Gradle", GradleVersion.current().version))
         def repo = new MavenHttpRepository(server, mavenRepo)
@@ -455,7 +457,7 @@ uploadArchives {
     repositories {
         mavenDeployer {
             repository(url: "${repo.uri}") {
-               authentication(userName: "${username}", password: "${password}")
+               authentication(userName: "${credentials.username}", password: "${credentials.password}")
             }
         }
     }
@@ -466,16 +468,16 @@ uploadArchives {
 
         and:
         def module = repo.module('org.test', 'root')
-        module.artifact.expectPut(username, password)
-        module.artifact.sha1.expectPut(username, password)
-        module.artifact.md5.expectPut(username, password)
-        module.pom.expectPut(username, password)
-        module.pom.sha1.expectPut(username, password)
-        module.pom.md5.expectPut(username, password)
-        module.rootMetaData.expectGetMissing()
-        module.rootMetaData.expectPut(username, password)
-        module.rootMetaData.sha1.expectPut(username, password)
-        module.rootMetaData.md5.expectPut(username, password)
+        module.artifact.expectPut(credentials)
+        module.artifact.sha1.expectPut(credentials)
+        module.artifact.md5.expectPut(credentials)
+        module.pom.expectPut(credentials)
+        module.pom.sha1.expectPut(credentials)
+        module.pom.md5.expectPut(credentials)
+        module.rootMetaData.expectGetMissing(credentials)
+        module.rootMetaData.expectPut(credentials)
+        module.rootMetaData.sha1.expectPut(credentials)
+        module.rootMetaData.md5.expectPut(credentials)
 
         then:
         succeeds 'uploadArchives'
@@ -772,28 +774,30 @@ uploadArchives {
         """.stripIndent()
 
         and:
-        def module1 = mavenRemoteRepo.module(group, name, '1')
-        module1.artifact.expectPublish()
+        def module1 = mavenRemoteRepo.module(group, name, '1').withoutExtraChecksums()
+        module1.artifact.expectPublish(false)
         module1.rootMetaData.expectGetMissing()
-        module1.rootMetaData.expectPublish()
-        module1.pom.expectPublish()
+        module1.rootMetaData.expectPublish(false)
+        module1.pom.expectPublish(false)
 
         when:
         succeeds 'uploadArchives', '-Pversion=1'
+
+        executer.expectDeprecationWarnings(2)
 
         then:
         module1.rootMetaData.verifyChecksums()
         module1.rootMetaData.versions == ["1"]
 
         and:
-        def module2 = mavenRemoteRepo.module(group, name, '2')
-        module2.artifact.expectPublish()
-        module2.pom.expectPublish()
+        def module2 = mavenRemoteRepo.module(group, name, '2').withoutExtraChecksums()
+        module2.artifact.expectPublish(false)
+        module2.pom.expectPublish(false)
 
         and:
         module2.rootMetaData.expectGet()
         module2.rootMetaData.sha1.expectGet()
-        module2.rootMetaData.expectPublish()
+        module2.rootMetaData.expectPublish(false)
 
         when:
         succeeds 'uploadArchives', '-Pversion=2'

@@ -16,19 +16,25 @@
 package org.gradle.util;
 
 import org.apache.commons.io.FileUtils;
-import org.apache.commons.io.IOUtils;
+import org.apache.commons.lang.ArrayUtils;
+import org.apache.commons.lang.StringUtils;
 import org.gradle.api.UncheckedIOException;
+import org.gradle.internal.IoActions;
 import org.gradle.util.internal.LimitedDescription;
 
 import javax.annotation.Nullable;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.IOException;
 import java.net.URL;
 import java.nio.charset.Charset;
+import java.nio.file.Files;
+import java.nio.file.attribute.FileTime;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedList;
@@ -64,8 +70,29 @@ public class GFileUtils {
      * (or directory) must exist.
      */
     public static void touchExisting(File file) {
-        if (!file.setLastModified(System.currentTimeMillis())) {
-            throw new UncheckedIOException("Could not update time stamp for " + file);
+        try {
+            Files.setLastModifiedTime(file.toPath(), FileTime.fromMillis(System.currentTimeMillis()));
+        } catch (IOException e) {
+            if (file.isFile() && file.length() == 0) {
+                // On Linux, users cannot touch files they don't own but have write access to
+                // because the JDK uses futimes() instead of futimens() [note the 'n'!]
+                // see https://github.com/gradle/gradle/issues/7873
+                touchFileByWritingEmptyByteArray(file);
+            } else {
+                throw new UncheckedIOException("Could not update timestamp for " + file, e);
+            }
+        }
+    }
+
+    private static void touchFileByWritingEmptyByteArray(File file) {
+        FileOutputStream out = null;
+        try {
+            out = new FileOutputStream(file);
+            out.write(ArrayUtils.EMPTY_BYTE_ARRAY);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not update timestamp for " + file, e);
+        } finally {
+            IoActions.closeQuietly(out);
         }
     }
 
@@ -182,24 +209,8 @@ public class GFileUtils {
         }
     }
 
-    public static void cleanDirectory(File directory) {
-        try {
-            FileUtils.cleanDirectory(directory);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-    }
-
     public static boolean deleteQuietly(@Nullable File file) {
         return FileUtils.deleteQuietly(file);
-    }
-
-    public static boolean deleteFileQuietly(@Nullable File file) {
-        if (file != null) {
-            return file.delete();
-        } else {
-            return false;
-        }
     }
 
     public static class TailReadingException extends RuntimeException {
@@ -231,16 +242,8 @@ public class GFileUtils {
         } catch (Exception e) {
             throw new TailReadingException(e);
         } finally {
-            IOUtils.closeQuietly(fileReader);
-            IOUtils.closeQuietly(reader);
-        }
-    }
-
-    public static void writeStringToFile(File file, String data) {
-        try {
-            FileUtils.writeStringToFile(file, data);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
+            IoActions.closeQuietly(fileReader);
+            IoActions.closeQuietly(reader);
         }
     }
 
@@ -314,5 +317,39 @@ public class GFileUtils {
         if (!dir.mkdir() && !dir.isDirectory()) {
             throw new UncheckedIOException(String.format("Failed to create directory '%s'", dir));
         }
+    }
+
+    /**
+     * Returns the path of target relative to base.
+     *
+     * @param target target file or directory
+     * @param base base directory
+     * @return the path of target relative to base.
+     */
+    public static String relativePathOf(File target, File base) {
+        String separatorChars = "/" + File.separator;
+        List<String> basePath = splitAbsolutePathOf(base, separatorChars);
+        List<String> targetPath = new ArrayList<String>(splitAbsolutePathOf(target, separatorChars));
+
+        // Find and remove common prefix
+        int maxDepth = Math.min(basePath.size(), targetPath.size());
+        int prefixLen = 0;
+        while (prefixLen < maxDepth && basePath.get(prefixLen).equals(targetPath.get(prefixLen))) {
+            prefixLen++;
+        }
+        basePath = basePath.subList(prefixLen, basePath.size());
+        targetPath = targetPath.subList(prefixLen, targetPath.size());
+
+        for (int i = 0; i < basePath.size(); i++) {
+            targetPath.add(0, "..");
+        }
+        if (targetPath.isEmpty()) {
+            return ".";
+        }
+        return CollectionUtils.join(File.separator, targetPath);
+    }
+
+    private static List<String> splitAbsolutePathOf(File baseDir, String separatorChars) {
+        return Arrays.asList(StringUtils.split(baseDir.getAbsolutePath(), separatorChars));
     }
 }

@@ -20,6 +20,7 @@ import org.gradle.api.attributes.Attribute;
 import org.gradle.api.attributes.AttributeContainer;
 
 import javax.annotation.Nullable;
+import java.util.Map;
 import java.util.Set;
 
 public class ImmutableAttributeContainerWithErrorMessage implements AttributeContainerInternal {
@@ -42,13 +43,18 @@ public class ImmutableAttributeContainerWithErrorMessage implements AttributeCon
     }
 
     @Override
+    public Map<Attribute<?>, ?> asMap() {
+        return delegate.asMap();
+    }
+
+    @Override
     public Set<Attribute<?>> keySet() {
         return delegate.keySet();
     }
 
     @Override
     public <T> AttributeContainer attribute(Attribute<T> key, T value) {
-        throw new IllegalArgumentException(String.format("Cannot change attributes of %s after it has been resolved", owner.getDisplayName()));
+        throw new IllegalArgumentException(String.format("Cannot change attributes of dependency %s after it has been resolved", owner.getDisplayName()));
     }
 
     @Nullable

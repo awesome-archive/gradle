@@ -16,11 +16,12 @@
 
 package org.gradle.internal.nativeintegration.console;
 
-import net.rubygrapefruit.platform.Terminals;
+import net.rubygrapefruit.platform.NativeException;
+import net.rubygrapefruit.platform.terminal.Terminals;
 import org.gradle.internal.os.OperatingSystem;
 
-import static net.rubygrapefruit.platform.Terminals.Output.Stderr;
-import static net.rubygrapefruit.platform.Terminals.Output.Stdout;
+import static net.rubygrapefruit.platform.terminal.Terminals.Output.Stderr;
+import static net.rubygrapefruit.platform.terminal.Terminals.Output.Stdout;
 
 public class NativePlatformConsoleDetector implements ConsoleDetector {
     private final Terminals terminals;
@@ -40,11 +41,24 @@ public class NativePlatformConsoleDetector implements ConsoleDetector {
 
         boolean stdout = terminals.isTerminal(Stdout);
         boolean stderr = terminals.isTerminal(Stderr);
-        if (stdout) {
-            return new NativePlatformConsoleMetaData(stdout, stderr, terminals.getTerminal(Stdout));
-        } else if (stderr) {
-            return new NativePlatformConsoleMetaData(stdout, stderr, terminals.getTerminal(Stderr));
+
+        try {
+            if (stdout) {
+                return new NativePlatformConsoleMetaData(stdout, stderr, terminals.getTerminal(Stdout));
+            } else if (stderr) {
+                return new NativePlatformConsoleMetaData(stdout, stderr, terminals.getTerminal(Stderr));
+            } else {
+                return null;
+            }
+        } catch (NativeException ex) {
+            // if a native terminal exists but cannot be resolved, use dumb terminal settings
+            // this can happen if a terminal is in use that does not have its terminfo installed
+            return null;
         }
-        return null;
+    }
+
+    @Override
+    public boolean isConsoleInput() {
+        return terminals.isTerminalInput();
     }
 }

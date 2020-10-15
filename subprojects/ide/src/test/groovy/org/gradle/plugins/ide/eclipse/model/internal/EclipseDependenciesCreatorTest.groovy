@@ -17,17 +17,19 @@
 package org.gradle.plugins.ide.eclipse.model.internal
 
 import org.gradle.api.internal.project.ProjectInternal
+import org.gradle.api.internal.project.ProjectStateRegistry
 import org.gradle.plugins.ide.eclipse.EclipsePlugin
 import org.gradle.plugins.ide.eclipse.model.EclipseClasspath
 import org.gradle.plugins.ide.internal.IdeArtifactRegistry
+import org.gradle.plugins.ide.internal.resolver.NullGradleApiSourcesResolver
 import org.gradle.test.fixtures.AbstractProjectBuilderSpec
 import org.gradle.util.TestUtil
 
 class EclipseDependenciesCreatorTest extends AbstractProjectBuilderSpec{
     private final ProjectInternal project = TestUtil.createRootProject(temporaryFolder.testDirectory)
-    private final ProjectInternal childProject = TestUtil.createChildProject(project, "child", new File("."))
+    private final childProject = TestUtil.createChildProject(project, "child", temporaryFolder.testDirectory.file("child"))
     private final EclipseClasspath eclipseClasspath = new EclipseClasspath(project)
-    private final dependenciesProvider = new EclipseDependenciesCreator(eclipseClasspath, project.services.get(IdeArtifactRegistry))
+    private final dependenciesProvider = new EclipseDependenciesCreator(eclipseClasspath, project.services.get(IdeArtifactRegistry), project.services.get(ProjectStateRegistry), NullGradleApiSourcesResolver.INSTANCE, false)
 
     def "compile dependency on child project"() {
         applyPluginToProjects()

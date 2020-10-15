@@ -17,6 +17,8 @@
 package org.gradle.integtests.resource.s3.fixtures
 
 import groovy.xml.StreamingMarkupBuilder
+import org.eclipse.jetty.server.Request
+import org.eclipse.jetty.server.handler.AbstractHandler
 import org.gradle.integtests.resource.s3.fixtures.stub.HttpStub
 import org.gradle.integtests.resource.s3.fixtures.stub.StubRequest
 import org.gradle.test.fixtures.file.TestDirectoryProvider
@@ -27,9 +29,8 @@ import org.joda.time.DateTimeZone
 import org.joda.time.format.DateTimeFormat
 import org.joda.time.format.DateTimeFormatter
 import org.joda.time.tz.FixedDateTimeZone
-import org.mortbay.jetty.Request
-import org.mortbay.jetty.handler.AbstractHandler
 
+import javax.servlet.ServletException
 import javax.servlet.http.HttpServletRequest
 import javax.servlet.http.HttpServletResponse
 import java.security.MessageDigest
@@ -44,6 +45,7 @@ class S3Server extends HttpServer implements RepositoryServer {
 
     public static final String ETAG = 'd41d8cd98f00b204e9800998ecf8427e'
     public static final String X_AMZ_REQUEST_ID = '0A398F9A1BAD4027'
+    public static final String X_AMZ_ACL = 'bucket-owner-full-control'
     public static final String X_AMZ_ID_2 = 'nwUZ/n/F2/ZFRTZhtzjYe7mcXkxCaRjfrJSWirV50lN7HuvhF60JpphwoiX/sMnh'
     public static final String DATE_HEADER = 'Mon, 29 Sep 2014 11:04:27 GMT'
     public static final String SERVER_AMAZON_S3 = 'AmazonS3'
@@ -65,6 +67,7 @@ class S3Server extends HttpServer implements RepositoryServer {
         String path = stubRequest.path
         assert path.startsWith('/')
         assert path == request.pathInfo
+        assert stubRequest.headers["x-amz-acl"] == request.getHeader("x-amz-acl")
         assert stubRequest.method == request.method
         assert stubRequest.params.every {
             request.getParameterMap()[it.key] == it.value
@@ -115,7 +118,8 @@ class S3Server extends HttpServer implements RepositoryServer {
                 path = url
                 headers = [
                     'Content-Type': 'application/octet-stream',
-                    'Connection': 'Keep-Alive'
+                    'Connection': 'Keep-Alive',
+                    'x-amz-acl': X_AMZ_ACL,
                 ]
                 body = { InputStream content ->
                     file.parentFile.mkdirs()
@@ -355,7 +359,8 @@ class S3Server extends HttpServer implements RepositoryServer {
                 path = url
                 headers = [
                     'Content-Type': 'application/octet-stream',
-                    'Connection': 'Keep-Alive'
+                    'Connection': 'Keep-Alive',
+                    'x-amz-acl': X_AMZ_ACL,
                 ]
             }
             response {
@@ -468,7 +473,9 @@ class S3Server extends HttpServer implements RepositoryServer {
         HttpServer.HttpExpectOne expectation = new HttpServer.HttpExpectOne(action, [httpStub.request.method], httpStub.request.path)
         expectations << expectation
         addHandler(new AbstractHandler() {
-            void handle(String target, HttpServletRequest request, HttpServletResponse response, int dispatch) {
+            @Override
+            void handle(String target, Request baseRequest, HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
+
                 if (requestMatches(httpStub, request)) {
                     assertRequest(httpStub, request)
                     if (expectation.run) {
@@ -476,7 +483,7 @@ class S3Server extends HttpServer implements RepositoryServer {
                         return
                     }
                     if (!((Request) request).isHandled()) {
-                        expectation.run = true
+                        expectation.atomicRun.set(true)
                         action.handle(request, response)
                         ((Request) request).setHandled(true)
                     }

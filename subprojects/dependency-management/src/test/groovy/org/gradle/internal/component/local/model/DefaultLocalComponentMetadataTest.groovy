@@ -16,24 +16,25 @@
 
 package org.gradle.internal.component.local.model
 
+import com.google.common.collect.ImmutableSet
 import org.gradle.api.artifacts.PublishArtifact
-import org.gradle.api.internal.artifacts.DefaultImmutableModuleIdentifierFactory
 import org.gradle.api.internal.artifacts.DefaultModuleIdentifier
 import org.gradle.api.internal.artifacts.DefaultModuleVersionIdentifier
 import org.gradle.api.internal.artifacts.DefaultPublishArtifactSet
-import org.gradle.api.internal.artifacts.configurations.OutgoingVariant
-import org.gradle.api.internal.artifacts.ivyservice.resolveengine.excludes.ModuleExclusions
 import org.gradle.api.internal.artifacts.publish.DefaultPublishArtifact
 import org.gradle.api.internal.attributes.AttributeContainerInternal
 import org.gradle.api.internal.attributes.AttributesSchemaInternal
 import org.gradle.api.internal.attributes.ImmutableAttributes
 import org.gradle.api.internal.file.TestFiles
 import org.gradle.api.tasks.TaskDependency
+import org.gradle.internal.DisplayName
 import org.gradle.internal.component.external.descriptor.DefaultExclude
 import org.gradle.internal.component.external.model.DefaultModuleComponentIdentifier
+import org.gradle.internal.component.external.model.ImmutableCapabilities
 import org.gradle.internal.component.model.DefaultIvyArtifactName
 import org.gradle.internal.component.model.IvyArtifactName
 import org.gradle.internal.component.model.LocalOriginDependencyMetadata
+import org.gradle.internal.component.model.VariantResolveMetadata
 import org.gradle.util.WrapUtil
 import spock.lang.Specification
 
@@ -44,8 +45,8 @@ class DefaultLocalComponentMetadataTest extends Specification {
 
     def "can lookup configuration after it has been added"() {
         when:
-        metadata.addConfiguration("super", "description", [] as Set, ["super"] as Set, false, false, null, true, true)
-        metadata.addConfiguration("conf", "description", ["super"] as Set, ["super", "conf"] as Set, true, true, null, true, true)
+        metadata.addConfiguration("super", "description", [] as Set<String>, ImmutableSet.of("super"), false, false, null, true, null, true, ImmutableCapabilities.EMPTY)
+        metadata.addConfiguration("conf", "description", ["super"] as Set, ImmutableSet.of("super", "conf"), true, true, null, true, null, true, ImmutableCapabilities.EMPTY)
 
         then:
         metadata.configurationNames == ['conf', 'super'] as Set
@@ -64,10 +65,9 @@ class DefaultLocalComponentMetadataTest extends Specification {
     }
 
     def "configuration has no dependencies or artifacts when none have been added"() {
-        def moduleExclusions = new ModuleExclusions(new DefaultImmutableModuleIdentifierFactory())
         when:
-        metadata.addConfiguration("super", "description", [] as Set, ["super"] as Set, false, false, null, true, true)
-        metadata.addConfiguration("conf", "description", ["super"] as Set, ["super", "conf"] as Set, true, true, null, true, true)
+        metadata.addConfiguration("super", "description", [] as Set<String>, ImmutableSet.of("super"), false, false, ImmutableAttributes.EMPTY, true, null, true, ImmutableCapabilities.EMPTY)
+        metadata.addConfiguration("conf", "description", ["super"] as Set, ImmutableSet.of("super", "conf"), true, true, ImmutableAttributes.EMPTY, true, null, true, ImmutableCapabilities.EMPTY)
 
         then:
         def conf = metadata.getConfiguration('conf')
@@ -125,7 +125,7 @@ class DefaultLocalComponentMetadataTest extends Specification {
     }
 
     private addConfiguration(String name, Collection<String> extendsFrom = [], AttributeContainerInternal attributes = ImmutableAttributes.EMPTY) {
-        metadata.addConfiguration(name, "", extendsFrom as Set, (extendsFrom + [name]) as Set, true, true, attributes, true, true)
+        metadata.addConfiguration(name, "", extendsFrom as Set, ImmutableSet.copyOf(extendsFrom + [name]), true, true, attributes as ImmutableAttributes, true, null, true, ImmutableCapabilities.EMPTY)
     }
 
     def addArtifact(String configuration, IvyArtifactName name, File file, TaskDependency buildDeps = null) {
@@ -218,35 +218,33 @@ class DefaultLocalComponentMetadataTest extends Specification {
     }
 
     def "variants are attached to configuration but not its children"() {
-        def variant1 = Stub(OutgoingVariant)
-        def variant2 = Stub(OutgoingVariant)
-        variant1.attributes >> attributes()
-        variant1.artifacts >> ([Stub(PublishArtifact)] as Set)
-        variant2.attributes >> attributes()
-        variant2.artifacts >> ([Stub(PublishArtifact)] as Set)
+        def variant1Attrs = attributes()
+        def variant1Artifacts = ([Stub(PublishArtifact)] as Set)
+        def variant2Attrs = attributes()
+        def variant2Artifacts = ([Stub(PublishArtifact)] as Set)
 
         when:
         addConfiguration("conf1")
         addConfiguration("conf2", ["conf1"])
-        metadata.addVariant("conf1", variant1)
-        metadata.addVariant("conf2", variant2)
+        metadata.addVariant("conf1", "variant1", Stub(VariantResolveMetadata.Identifier), Stub(DisplayName), variant1Attrs, variant1Artifacts)
+        metadata.addVariant("conf2", "variant2", Stub(VariantResolveMetadata.Identifier), Stub(DisplayName), variant2Attrs, variant2Artifacts)
 
         then:
         def config1 = metadata.getConfiguration("conf1")
         config1.variants.size() == 1
-        config1.variants.first().attributes == variant1.attributes
+        config1.variants.first().name == "variant1"
+        config1.variants.first().attributes == variant1Attrs
         config1.variants.first().artifacts.size() == 1
 
         def config2 = metadata.getConfiguration("conf2")
         config2.variants.size() == 1
-        config2.variants.first().attributes == variant2.attributes
+        config2.variants.first().name == "variant2"
+        config2.variants.first().attributes == variant2Attrs
         config2.variants.first().artifacts.size() == 1
     }
 
-    private AttributeContainerInternal attributes() {
-        def attrs = ImmutableAttributes.EMPTY
-        attrs.asImmutable() >> attrs
-        return attrs
+    private ImmutableAttributes attributes() {
+        return Stub(ImmutableAttributes)
     }
 
     def "files attached to configuration and its children"() {
@@ -301,8 +299,8 @@ class DefaultLocalComponentMetadataTest extends Specification {
 
     def "builds and caches exclude rules for a configuration"() {
         given:
-        def compile = metadata.addConfiguration("compile", null, [] as Set, ["compile"] as Set, true, true, null, true, true)
-        def runtime = metadata.addConfiguration("runtime", null, ["compile"] as Set, ["compile", "runtime"] as Set, true, true, null, true, true)
+        def compile = metadata.addConfiguration("compile", null, [] as Set<String>, ImmutableSet.of("compile"), true, true, null, true, null, true, ImmutableCapabilities.EMPTY)
+        def runtime = metadata.addConfiguration("runtime", null, ["compile"] as Set, ImmutableSet.of("compile", "runtime"), true, true, null, true, null, true, ImmutableCapabilities.EMPTY)
 
         def rule1 = new DefaultExclude(DefaultModuleIdentifier.newId("group1", "module1"))
         def rule2 = new DefaultExclude(DefaultModuleIdentifier.newId("group1", "module1"))

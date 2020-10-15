@@ -15,14 +15,14 @@ $(document).ready(function () {
                 var startCol = currentCol;
                 currentCol += parseInt(e.attr('colspan'));
                 var endCol = currentCol;
-                if (title.length == 0) {
+                if (title.length === 0) {
                     return;
                 }
                 var id = title.replace(/[^\w]/g, '-').toLowerCase();
                 if (groups.indexOf(id) < 0) {
                     groups.push(id);
                     var div = controls.append("<div/>");
-                    div.append("<label for='" + id + "'>" + title + "</label>");
+                    div.append($("<label>", {for: id}).text(title));
                     var checkbox = $("<input>", {type: "checkbox", id: id, checked: true});
                     div.append(checkbox);
                     checkbox.change(function () {
@@ -48,16 +48,20 @@ $(document).ready(function () {
     // Add alternate row styles for tables
     $("table").each(function () {
         var counter = 0;
-        $(this).find("tr").each(function () {
-            var e = $(this);
-            if (e.children("th").length > 0) {
-                counter = 0;
-                return;
-            }
-            if (counter % 2 == 0) {
-                e.addClass("table-row-even");
-            }
-            counter++;
-        })
+        var rows = $(this).find("tr");
+        if (rows.length != 1) {
+            rows.each(function () {
+                var e = $(this);
+                if (e.children("th").length > 0) {
+                    counter = 0;
+                    return;
+                }
+                if (counter % 2 == 0) {
+                    e.addClass("table-row-even");
+                }
+                counter++;
+            })
+        }
+
     });
 });

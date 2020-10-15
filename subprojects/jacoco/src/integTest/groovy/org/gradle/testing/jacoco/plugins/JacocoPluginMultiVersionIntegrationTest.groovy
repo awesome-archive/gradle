@@ -19,12 +19,12 @@ package org.gradle.testing.jacoco.plugins
 import org.gradle.api.Project
 import org.gradle.api.reporting.ReportingExtension
 import org.gradle.integtests.fixtures.TargetCoverage
-import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.testing.jacoco.plugins.fixtures.JacocoCoverage
-import spock.lang.IgnoreIf
+import org.gradle.testing.jacoco.plugins.fixtures.JacocoReportFixture
 import spock.lang.Issue
 
-@TargetCoverage({ JacocoCoverage.SUPPORTS_JDK_8_OR_HIGHER })
+@TargetCoverage({ JacocoCoverage.supportedVersionsByJdk })
 class JacocoPluginMultiVersionIntegrationTest extends JacocoMultiVersionIntegrationTest {
 
     private static final String REPORTING_BASE = "${Project.DEFAULT_BUILD_DIR_NAME}/${ReportingExtension.DEFAULT_REPORTS_DIR_NAME}"
@@ -98,7 +98,7 @@ class JacocoPluginMultiVersionIntegrationTest extends JacocoMultiVersionIntegrat
                 reports.csv.enabled = true
             }
             jacoco {
-                reportsDir = new File(buildDir, "$customReportDirectory")
+                reportsDirectory = new File(buildDir, "$customReportDirectory")
             }
             """
 
@@ -118,13 +118,12 @@ class JacocoPluginMultiVersionIntegrationTest extends JacocoMultiVersionIntegrat
         executionResult.assertTaskSkipped(':jacocoTestReport')
     }
 
-    @IgnoreIf({GradleContextualExecuter.parallel})
     void canUseCoverageDataFromPreviousRunForCoverageReport() {
         when:
         succeeds('jacocoTestReport')
 
         then:
-        skippedTasks.contains(":jacocoTestReport")
+        skipped(":jacocoTestReport")
         !file(REPORT_HTML_DEFAULT_PATH).exists()
 
         when:
@@ -134,18 +133,17 @@ class JacocoPluginMultiVersionIntegrationTest extends JacocoMultiVersionIntegrat
         succeeds('jacocoTestReport')
 
         then:
-        executedTasks.contains(":jacocoTestReport")
+        executed(":jacocoTestReport")
         htmlReport().totalCoverage() == 100
     }
 
-    @IgnoreIf({GradleContextualExecuter.parallel})
     void canMergeCoverageData() {
         given:
         file("src/otherMain/java/Thing.java") << """
 public class Thing {
     Thing() { printMessage("hi"); }
     Thing(String msg) { printMessage(msg); }
-    
+
     private void printMessage(String msg) {
         System.out.println(msg);
     }
@@ -162,7 +160,7 @@ public class ThingTest {
                 otherMain
                 otherTest
             }
-            sourceSets.otherTest.compileClasspath = configurations.testCompile + sourceSets.otherMain.output
+            sourceSets.otherTest.compileClasspath = configurations.testCompileClasspath + sourceSets.otherMain.output
             sourceSets.otherTest.runtimeClasspath = sourceSets.otherTest.compileClasspath + sourceSets.otherTest.output
 
             task otherTests(type: Test) {
@@ -178,22 +176,25 @@ public class ThingTest {
             task mergedReport(type: JacocoReport) {
                 executionData jacocoMerge.destinationFile
                 dependsOn jacocoMerge
-                sourceDirectories = files(sourceSets.main.java.srcDirs, sourceSets.otherMain.java.srcDirs)
-                classDirectories = files(sourceSets.main.output.classesDirs, sourceSets.otherMain.output.classesDirs)
+                sourceDirectories.from(sourceSets.main.java.sourceDirectories)
+                sourceDirectories.from(sourceSets.otherMain.java.sourceDirectories)
+                classDirectories.from(sourceSets.main.output)
+                classDirectories.from(sourceSets.otherMain.output)
             }
         """
         when:
         succeeds 'mergedReport'
 
         then:
-        ":jacocoMerge" in nonSkippedTasks
-        ":test" in nonSkippedTasks
-        ":otherTests" in nonSkippedTasks
+        executedAndNotSkipped(":jacocoMerge")
+        executedAndNotSkipped(":test")
+        executedAndNotSkipped(":otherTests")
         file("build/jacoco/jacocoMerge.exec").exists()
         htmlReport("build/reports/jacoco/mergedReport/html").totalCoverage() == 71
     }
 
     @Issue("GRADLE-2917")
+    @ToBeFixedForConfigurationCache(because = ":dependencies")
     void "configures default jacoco dependencies even if the configuration was resolved before"() {
         expect:
         //dependencies task forces resolution of the configurations
@@ -206,7 +207,6 @@ public class ThingTest {
         buildFile << """
         test {
             jacoco {
-                append = false
                 destinationFile = file("\$buildDir/tmp/jacoco/jacocoTest.exec")
                 classDumpDir = file("\$buildDir/tmp/jacoco/classpathdumps")
             }
@@ -226,14 +226,14 @@ public class ThingTest {
         succeeds 'test', 'jacocoTestReport'
 
         then:
-        ':jacocoTestReport' in nonSkippedTasks
+        executedAndNotSkipped ':jacocoTestReport'
     }
 
-    def "skips report task if none of the execution data files does not exist"() {
+    def "skips report task if all of the execution data files do not exist"() {
         given:
         buildFile << """
             jacocoTestReport {
-                executionData = files('unknown.exec', 'data/test.exec')
+                executionData.from = files('unknown.exec', 'data/test.exec')
             }
         """
 
@@ -241,8 +241,8 @@ public class ThingTest {
         succeeds 'test', 'jacocoTestReport'
 
         then:
-        ':test' in nonSkippedTasks
-        ':jacocoTestReport' in skippedTasks
+        executedAndNotSkipped ':test'
+        skipped ':jacocoTestReport'
     }
 
     def "fails report task if only some of the execution data files do not exist"() {
@@ -258,9 +258,18 @@ public class ThingTest {
         fails 'test', 'jacocoTestReport'
 
         then:
-        ':test' in nonSkippedTasks
-        ':jacocoTestReport' in executedTasks
-        errorOutput.contains("Unable to read execution data file ${new File(testDirectory, execFileName)}")
+        executedAndNotSkipped(':test')
+        executed(':jacocoTestReport')
+        failure.assertHasCause("Unable to read execution data file ${new File(testDirectory, execFileName)}")
+    }
+
+    def "coverage data is aggregated from many tests"() {
+        javaProjectUnderTest.writeSourceFiles(2000)
+
+        expect:
+        succeeds 'test', 'jacocoTestReport', '--info'
+        htmlReport().totalCoverage() == 100
+        htmlReport().numberOfClasses() == 2000
     }
 
     private JacocoReportFixture htmlReport(String basedir = "${REPORTING_BASE}/jacoco/test/html") {

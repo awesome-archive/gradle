@@ -15,24 +15,30 @@
  */
 package org.gradle.api.internal.artifacts.ivyservice;
 
+import com.google.common.collect.ImmutableList;
+import org.gradle.cache.GlobalCache;
 import org.gradle.cache.internal.CacheScopeMapping;
+import org.gradle.cache.internal.CacheVersion;
 import org.gradle.cache.internal.VersionStrategy;
-import org.gradle.internal.classpath.CachedJarFileStore;
-import org.gradle.util.VersionNumber;
 
 import java.io.File;
-import java.util.Arrays;
 import java.util.List;
 
-public class DefaultArtifactCacheMetadata implements ArtifactCacheMetadata, CachedJarFileStore {
+public class DefaultArtifactCacheMetadata implements ArtifactCacheMetadata, GlobalCache {
 
-    public static final VersionNumber CACHE_LAYOUT_VERSION = CacheLayout.META_DATA.getVersion();
+    public static final CacheVersion CACHE_LAYOUT_VERSION = CacheLayout.META_DATA.getVersion();
     private final File cacheDir;
     private final File transformsDir;
+    private final File baseDir;
 
     public DefaultArtifactCacheMetadata(CacheScopeMapping cacheScopeMapping) {
-        cacheDir = cacheScopeMapping.getBaseDirectory(null, CacheLayout.ROOT.getKey(), VersionStrategy.SharedCache);
-        transformsDir = cacheScopeMapping.getBaseDirectory(null, CacheLayout.TRANSFORMS.getKey(), VersionStrategy.SharedCache);
+        this(cacheScopeMapping, null);
+    }
+
+    public DefaultArtifactCacheMetadata(CacheScopeMapping cacheScopeMapping, File baseDir) {
+        this.baseDir = baseDir;
+        this.cacheDir = cacheScopeMapping.getBaseDirectory(baseDir, CacheLayout.ROOT.getKey(), VersionStrategy.SharedCache);
+        this.transformsDir = cacheScopeMapping.getBaseDirectory(baseDir, CacheLayout.TRANSFORMS.getKey(), VersionStrategy.SharedCache);
     }
 
     @Override
@@ -43,11 +49,6 @@ public class DefaultArtifactCacheMetadata implements ArtifactCacheMetadata, Cach
     @Override
     public File getTransformsStoreDirectory() {
         return transformsDir;
-    }
-
-    @Override
-    public List<File> getFileStoreRoots() {
-        return Arrays.asList(getFileStoreDirectory(), getTransformsStoreDirectory());
     }
 
     @Override
@@ -67,5 +68,10 @@ public class DefaultArtifactCacheMetadata implements ArtifactCacheMetadata, Cach
 
     private File createCacheRelativeDir(CacheLayout cacheLayout) {
         return cacheLayout.getPath(getCacheDir());
+    }
+
+    @Override
+    public List<File> getGlobalCacheRoots() {
+        return ImmutableList.of(baseDir);
     }
 }

@@ -21,11 +21,12 @@ import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import static org.gradle.integtests.fixtures.executer.TaskOrderSpecs.any
 
 class TaskFilePropertiesIntegrationTest extends AbstractIntegrationSpec {
+
     def "task can use Path to represent input and output locations on annotated properties"() {
         buildFile << """
             import java.nio.file.Path
             import java.nio.file.Files
-            
+
             class TransformTask extends DefaultTask {
                 @InputFile
                 Path inputFile
@@ -35,14 +36,14 @@ class TaskFilePropertiesIntegrationTest extends AbstractIntegrationSpec {
                 Path outputFile
                 @OutputDirectory
                 Path outputDir
-                
+
                 @TaskAction
                 def go() {
-                    outputFile.text = inputFile.text
-                    inputDir.toFile().listFiles().each { f -> outputDir.resolve(f.name).text = f.text }
+                    outputFile.toFile().text = inputFile.toFile().text
+                    inputDir.toFile().listFiles().each { f -> outputDir.resolve(f.name).toFile().text = f.text }
                 }
             }
-            
+
             task transform(type: TransformTask) {
                 inputFile = file("file1.txt").toPath()
                 inputDir = file("dir1").toPath()
@@ -91,7 +92,7 @@ class TaskFilePropertiesIntegrationTest extends AbstractIntegrationSpec {
         buildFile << """
             import java.nio.file.Path
             import java.nio.file.Files
-            
+
             task transform {
                 def inputFile = file("file1.txt").toPath()
                 def inputDir = file("dir1").toPath()
@@ -104,8 +105,8 @@ class TaskFilePropertiesIntegrationTest extends AbstractIntegrationSpec {
                 doLast {
                     Files.createDirectories(outputFile.parent)
                     Files.createDirectories(outputDir)
-                    outputFile.text = inputFile.text
-                    inputDir.toFile().listFiles().each { f -> outputDir.resolve(f.name).text = f.text }
+                    outputFile.toFile().text = inputFile.toFile().text
+                    inputDir.toFile().listFiles().each { f -> outputDir.resolve(f.name).toFile().text = f.text }
                 }
             }
 """
@@ -171,11 +172,16 @@ task jar {
 }
 
 task otherJar(type: Jar) {
-    destinationDir = buildDir
+    destinationDirectory = buildDir
 }
 
-configurations { archives }
-dependencies { archives files('b.jar') { builtBy jar } }
+configurations {
+    deps
+    archives {
+        extendsFrom deps
+    }
+}
+dependencies { deps files('b.jar') { builtBy jar } }
 artifacts { archives otherJar }
 '''
 

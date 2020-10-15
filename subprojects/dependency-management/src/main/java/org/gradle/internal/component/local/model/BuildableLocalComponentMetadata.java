@@ -16,40 +16,47 @@
 
 package org.gradle.internal.component.local.model;
 
+import com.google.common.collect.ImmutableSet;
 import org.gradle.api.artifacts.PublishArtifact;
 import org.gradle.api.artifacts.component.ComponentIdentifier;
 import org.gradle.api.internal.artifacts.configurations.ConfigurationInternal;
-import org.gradle.api.internal.artifacts.configurations.OutgoingVariant;
 import org.gradle.api.internal.artifacts.ivyservice.moduleconverter.dependencies.LocalConfigurationMetadataBuilder;
 import org.gradle.api.internal.attributes.ImmutableAttributes;
+import org.gradle.internal.DisplayName;
+import org.gradle.internal.component.external.model.ImmutableCapabilities;
+import org.gradle.internal.component.model.VariantResolveMetadata;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Set;
 
 public interface BuildableLocalComponentMetadata {
     /**
      * Returns the identifier for this component.
      */
-    ComponentIdentifier getComponentId();
+    ComponentIdentifier getId();
 
     /**
      * Adds some artifacts to this component. Artifacts are attached to the given configuration and each of its children. These are used only for publishing.
      */
-    void addArtifacts(String configuration, Iterable<? extends PublishArtifact> artifacts);
+    void addArtifacts(String configuration, Collection<? extends PublishArtifact> artifacts);
 
     /**
      * Adds a variant to this component, extending from the given configuration. Every configuration should include at least one variant.
      */
-    void addVariant(String configuration, OutgoingVariant variant);
+    void addVariant(String configuration, String name, VariantResolveMetadata.Identifier identifier, DisplayName displayName, ImmutableAttributes attributes, Collection<? extends PublishArtifact> artifacts);
 
     /**
      * Adds a configuration to this component.
+     *
      * @param hierarchy Must include name
      * @param attributes the attributes of the configuration.
      */
-    BuildableLocalConfigurationMetadata addConfiguration(String name, String description, Set<String> extendsFrom, Set<String> hierarchy, boolean visible, boolean transitive, ImmutableAttributes attributes, boolean canBeConsumed, boolean canBeResolved);
+    BuildableLocalConfigurationMetadata addConfiguration(String name, String description, Set<String> extendsFrom, ImmutableSet<String> hierarchy, boolean visible, boolean transitive, ImmutableAttributes attributes, boolean canBeConsumed, List<String> consumptionAlternatives, boolean canBeResolved, ImmutableCapabilities capabilities);
 
     /**
      * Provides a backing configuration instance from which dependencies and excludes will be sourced.
+     *
      * @param configuration The configuration instance that provides dependencies and excludes
      * @param localConfigurationMetadataBuilder A builder for translating Configuration to LocalConfigurationMetadata
      */

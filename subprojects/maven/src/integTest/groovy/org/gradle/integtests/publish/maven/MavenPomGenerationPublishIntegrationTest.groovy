@@ -17,14 +17,18 @@
 package org.gradle.integtests.publish.maven
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
 import spock.lang.Unroll
 
 import static org.gradle.util.TextUtil.normaliseLineSeparators
 
 // this spec documents the status quo, not a desired behavior
+@UnsupportedWithConfigurationCache(because = "legacy maven plugin")
 class MavenPomGenerationPublishIntegrationTest extends AbstractIntegrationSpec {
 
     def setup() {
+        // the OLD publish plugins work with the OLD deprecated Java plugin configuration (compile/runtime)
+        executer.noDeprecationChecks()
         using m2 //uploadArchives leaks into local ~/.m2
     }
 

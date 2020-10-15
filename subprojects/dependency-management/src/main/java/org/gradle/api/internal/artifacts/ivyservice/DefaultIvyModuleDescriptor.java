@@ -18,6 +18,7 @@ package org.gradle.api.internal.artifacts.ivyservice;
 import org.gradle.api.artifacts.ivy.IvyExtraInfo;
 import org.gradle.api.artifacts.ivy.IvyModuleDescriptor;
 
+import javax.annotation.Nullable;
 import java.util.Map;
 
 public class DefaultIvyModuleDescriptor implements IvyModuleDescriptor {
@@ -25,20 +26,23 @@ public class DefaultIvyModuleDescriptor implements IvyModuleDescriptor {
     private final String ivyStatus;
     private final IvyExtraInfo extraInfo;
 
-    public DefaultIvyModuleDescriptor(Map<NamespaceId, String> extraInfo, String branch, String ivyStatus) {
+    public DefaultIvyModuleDescriptor(Map<NamespaceId, String> extraInfo, @Nullable String branch, String ivyStatus) {
         this.extraInfo = new DefaultIvyExtraInfo(extraInfo);
         this.branch = branch;
         this.ivyStatus = ivyStatus;
     }
 
+    @Override
     public String getBranch() {
         return branch;
     }
 
+    @Override
     public String getIvyStatus() {
         return ivyStatus;
     }
 
+    @Override
     public IvyExtraInfo getExtraInfo() {
         return extraInfo;
     }

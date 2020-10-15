@@ -16,34 +16,40 @@
 
 package org.gradle.api.internal.artifacts;
 
-import org.gradle.api.Project;
+import org.gradle.api.artifacts.component.ProjectComponentIdentifier;
+import org.gradle.api.internal.project.ProjectInternal;
 
 public class ProjectBackedModule implements Module {
 
-    private final Project project;
+    private final ProjectInternal project;
 
-    public ProjectBackedModule(Project project) {
+    public ProjectBackedModule(ProjectInternal project) {
         this.project = project;
     }
 
+    @Override
     public String getGroup() {
         return project.getGroup().toString();
     }
 
+    @Override
     public String getName() {
         return project.getName();
     }
 
+    @Override
     public String getVersion() {
         return project.getVersion().toString();
     }
 
+    @Override
     public String getStatus() {
         return project.getStatus().toString();
     }
 
-    public String getProjectPath() {
-        return project.getPath();
+    @Override
+    public ProjectComponentIdentifier getProjectId() {
+        return project.getMutationState().getComponentIdentifier();
     }
 
     @Override

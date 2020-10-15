@@ -16,20 +16,22 @@
 
 package org.gradle.api.internal.tasks.properties.annotations;
 
-import org.gradle.api.internal.tasks.PropertySpecFactory;
-import org.gradle.api.internal.tasks.TaskValidationContext;
-import org.gradle.api.internal.tasks.ValidatingValue;
-import org.gradle.api.internal.tasks.ValidationAction;
+import com.google.common.collect.ImmutableSet;
+import org.gradle.api.internal.tasks.TaskDependencyContainer;
 import org.gradle.api.internal.tasks.properties.BeanPropertyContext;
 import org.gradle.api.internal.tasks.properties.PropertyValue;
 import org.gradle.api.internal.tasks.properties.PropertyVisitor;
+import org.gradle.api.provider.Provider;
 import org.gradle.api.tasks.Nested;
+import org.gradle.api.tasks.Optional;
 import org.gradle.internal.UncheckedException;
+import org.gradle.internal.reflect.AnnotationCategory;
+import org.gradle.internal.reflect.PropertyMetadata;
 
 import javax.annotation.Nullable;
 import java.lang.annotation.Annotation;
 
-import static org.gradle.api.internal.tasks.TaskValidationContext.Severity.ERROR;
+import static org.gradle.api.internal.tasks.properties.ModifierAnnotationCategory.OPTIONAL;
 
 public class NestedBeanAnnotationHandler implements PropertyAnnotationHandler {
 
@@ -39,51 +41,98 @@ public class NestedBeanAnnotationHandler implements PropertyAnnotationHandler {
     }
 
     @Override
-    public void visitPropertyValue(PropertyValue propertyValue, PropertyVisitor visitor, PropertySpecFactory specFactory, BeanPropertyContext context) {
+    public ImmutableSet<? extends AnnotationCategory> getAllowedModifiers() {
+        return ImmutableSet.of(OPTIONAL);
+    }
+
+    @Override
+    public boolean isPropertyRelevant() {
+        return true;
+    }
+
+    @Override
+    public boolean shouldVisit(PropertyVisitor visitor) {
+        return true;
+    }
+
+    @Override
+    public void visitPropertyValue(String propertyName, PropertyValue value, PropertyMetadata propertyMetadata, PropertyVisitor visitor, BeanPropertyContext context) {
         Object nested;
         try {
-            nested = propertyValue.getValue();
+            nested = unpackProvider(value.call());
         } catch (Exception e) {
-            visitor.visitInputProperty(specFactory.createInputPropertySpec(propertyValue.getPropertyName(), new InvalidPropertyValue(e)));
+            visitor.visitInputProperty(propertyName, new InvalidValue(e), false);
             return;
         }
         if (nested != null) {
-            context.addNested(propertyValue.getPropertyName(), nested);
-        } else if (!propertyValue.isOptional()) {
-            visitor.visitInputProperty(specFactory.createInputPropertySpec(propertyValue.getPropertyName(), new AbsentPropertyValue()));
+            context.addNested(propertyName, nested);
+        } else if (!propertyMetadata.isAnnotationPresent(Optional.class)) {
+            visitor.visitInputProperty(propertyName, new AbsentValue(), false);
         }
     }
 
-    private static class InvalidPropertyValue implements ValidatingValue {
+    @Nullable
+    private static Object unpackProvider(@Nullable Object value) {
+        // Only unpack one level of Providers, since Provider<Provider<>> is not supported - we don't need two levels of laziness.
+        if (value instanceof Provider) {
+            return ((Provider<?>) value).get();
+        }
+        return value;
+    }
+
+    private static class InvalidValue implements PropertyValue {
         private final Exception exception;
 
-        public InvalidPropertyValue(Exception exception) {
+        public InvalidValue(Exception exception) {
             this.exception = exception;
         }
 
         @Nullable
         @Override
         public Object call() {
-            return null;
+            throw UncheckedException.throwAsUncheckedException(exception);
+        }
+
+        @Nullable
+        @Override
+        public Object getUnprocessedValue() {
+            return call();
         }
 
         @Override
-        public void validate(String propertyName, boolean optional, ValidationAction valueValidator, TaskValidationContext context) {
-            throw UncheckedException.throwAsUncheckedException(exception);
+        public TaskDependencyContainer getTaskDependencies() {
+            // Ignore
+            return TaskDependencyContainer.EMPTY;
+        }
+
+        @Override
+        public void maybeFinalizeValue() {
+            // Ignore
         }
     }
 
-    private static class AbsentPropertyValue implements ValidatingValue {
+    private static class AbsentValue implements PropertyValue {
         @Nullable
         @Override
         public Object call() {
             return null;
         }
 
+        @Nullable
         @Override
-        public void validate(String propertyName, boolean optional, ValidationAction valueValidator, TaskValidationContext context) {
-            context.recordValidationMessage(ERROR, String.format("No value has been specified for property '%s'.", propertyName));
+        public Object getUnprocessedValue() {
+            return null;
         }
 
+        @Override
+        public TaskDependencyContainer getTaskDependencies() {
+            // Ignore
+            return TaskDependencyContainer.EMPTY;
+        }
+
+        @Override
+        public void maybeFinalizeValue() {
+            // Ignore
+        }
     }
 }

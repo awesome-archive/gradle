@@ -16,7 +16,7 @@
 
 package org.gradle.testing.junit
 
-import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.AbstractSampleIntegrationTest
 import org.gradle.integtests.fixtures.DefaultTestExecutionResult
 import org.gradle.integtests.fixtures.TestResources
 import org.gradle.util.Requires
@@ -25,9 +25,9 @@ import org.junit.Rule
 import spock.lang.Issue
 import spock.lang.Unroll
 
-import static org.hamcrest.Matchers.startsWith
+import static org.hamcrest.CoreMatchers.startsWith
 
-public class JUnitCategoriesIntegrationSpec extends AbstractIntegrationSpec {
+class JUnitCategoriesIntegrationSpec extends AbstractSampleIntegrationTest {
 
     @Rule TestResources resources = new TestResources(temporaryFolder)
 
@@ -63,7 +63,7 @@ public class JUnitCategoriesIntegrationSpec extends AbstractIntegrationSpec {
         succeeds("test")
 
         then:
-        ":test" in nonSkippedTasks
+        executedAndNotSkipped(":test")
         DefaultTestExecutionResult result = new DefaultTestExecutionResult(testDirectory)
         def testClass = result.testClass("Not a real class name")
         testClass.assertTestCount(1, 0, 0)
@@ -71,7 +71,7 @@ public class JUnitCategoriesIntegrationSpec extends AbstractIntegrationSpec {
     }
 
     @Issue('https://github.com/gradle/gradle/issues/3189')
-    @Requires(TestPrecondition.FIX_TO_WORK_ON_JAVA9)
+    @Requires(TestPrecondition.JDK8_OR_EARLIER)
     def canWorkWithPowerMock() {
         given:
         buildFile << """
@@ -80,9 +80,9 @@ apply plugin: 'java'
 ${mavenCentralRepository()}
 
 dependencies {
-    testCompile "junit:junit:4.12"
-    testCompile "org.powermock:powermock-api-mockito:1.6.5"
-    testCompile "org.powermock:powermock-module-junit4:1.6.5"
+    testImplementation "junit:junit:4.13"
+    testImplementation "org.powermock:powermock-api-mockito:1.6.5"
+    testImplementation "org.powermock:powermock-module-junit4:1.6.5"
 }
 
 test {
@@ -114,5 +114,32 @@ public class MyTest {
 
         then:
         outputContains('MyTest > testMyMethod FAILED')
+    }
+
+    @Unroll
+    @Issue('https://github.com/gradle/gradle/issues/4924')
+    def "re-executes test when #type is changed"() {
+        given:
+        resources.maybeCopy("JUnitCategoriesIntegrationSpec/reExecutesWhenPropertyIsChanged")
+        buildFile << "test.useJUnit { ${type} 'org.gradle.CategoryA' }"
+
+        when:
+        succeeds ':test'
+
+        then:
+        executedAndNotSkipped ':test'
+
+        when:
+        resources.maybeCopy("JUnitCategoriesIntegrationSpec/reExecutesWhenPropertyIsChanged")
+        buildFile << "test.useJUnit()"
+
+        and:
+        succeeds ':test'
+
+        then:
+        executedAndNotSkipped ':test'
+
+        where:
+        type << ['includeCategories', 'excludeCategories']
     }
 }

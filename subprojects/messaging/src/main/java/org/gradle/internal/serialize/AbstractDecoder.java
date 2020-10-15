@@ -16,6 +16,7 @@
 
 package org.gradle.internal.serialize;
 
+import javax.annotation.Nullable;
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
@@ -23,6 +24,7 @@ import java.io.InputStream;
 public abstract class AbstractDecoder implements Decoder {
     private DecoderStream stream;
 
+    @Override
     public InputStream getInputStream() {
         if (stream == null) {
             stream = new DecoderStream();
@@ -30,10 +32,12 @@ public abstract class AbstractDecoder implements Decoder {
         return stream;
     }
 
+    @Override
     public void readBytes(byte[] buffer) throws IOException {
         readBytes(buffer, 0, buffer.length);
     }
 
+    @Override
     public byte[] readBinary() throws EOFException, IOException {
         int size = readSmallInt();
         byte[] result = new byte[size];
@@ -41,14 +45,27 @@ public abstract class AbstractDecoder implements Decoder {
         return result;
     }
 
+    @Override
     public int readSmallInt() throws EOFException, IOException {
         return readInt();
     }
 
+    @Override
     public long readSmallLong() throws EOFException, IOException {
         return readLong();
     }
 
+    @Nullable
+    @Override
+    public Integer readNullableSmallInt() throws IOException {
+        if (readBoolean()) {
+            return readSmallInt();
+        } else {
+            return null;
+        }
+    }
+
+    @Override
     public String readNullableString() throws EOFException, IOException {
         if (readBoolean()) {
             return readString();
@@ -57,6 +74,7 @@ public abstract class AbstractDecoder implements Decoder {
         }
     }
 
+    @Override
     public void skipBytes(long count) throws EOFException, IOException {
         long remaining = count;
         while (remaining > 0) {
@@ -69,6 +87,16 @@ public abstract class AbstractDecoder implements Decoder {
         if (remaining > 0) {
             throw new EOFException();
         }
+    }
+
+    @Override
+    public <T> T decodeChunked(DecodeAction<Decoder, T> decodeAction) throws EOFException, Exception {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void skipChunked() throws EOFException, IOException {
+        throw new UnsupportedOperationException();
     }
 
     protected abstract int maybeReadBytes(byte[] buffer, int offset, int count) throws IOException;

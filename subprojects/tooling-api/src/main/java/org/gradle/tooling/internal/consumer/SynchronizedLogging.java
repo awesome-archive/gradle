@@ -21,6 +21,8 @@ import org.gradle.internal.event.ListenerManager;
 import org.gradle.internal.logging.progress.DefaultProgressLoggerFactory;
 import org.gradle.internal.logging.progress.ProgressListener;
 import org.gradle.internal.logging.progress.ProgressLoggerFactory;
+import org.gradle.internal.operations.BuildOperationIdFactory;
+import org.gradle.internal.service.scopes.Scope.Global;
 import org.gradle.internal.time.Clock;
 
 /**
@@ -29,15 +31,19 @@ import org.gradle.internal.time.Clock;
 public class SynchronizedLogging implements LoggingProvider {
     private final ThreadLocal<ThreadLoggingServices> services = new ThreadLocal<ThreadLoggingServices>();
     private final Clock clock;
+    private final BuildOperationIdFactory buildOperationIdFactory;
 
-    public SynchronizedLogging(Clock clock) {
+    public SynchronizedLogging(Clock clock, BuildOperationIdFactory buildOperationIdFactory) {
         this.clock = clock;
+        this.buildOperationIdFactory = buildOperationIdFactory;
     }
 
+    @Override
     public ListenerManager getListenerManager() {
         return services().listenerManager;
     }
 
+    @Override
     public ProgressLoggerFactory getProgressLoggerFactory() {
         return services().progressLoggerFactory;
     }
@@ -45,8 +51,8 @@ public class SynchronizedLogging implements LoggingProvider {
     private ThreadLoggingServices services() {
         ThreadLoggingServices threadServices = services.get();
         if (threadServices == null) {
-            DefaultListenerManager manager = new DefaultListenerManager();
-            DefaultProgressLoggerFactory progressLoggerFactory = new DefaultProgressLoggerFactory(manager.getBroadcaster(ProgressListener.class), clock);
+            DefaultListenerManager manager = new DefaultListenerManager(Global.class);
+            DefaultProgressLoggerFactory progressLoggerFactory = new DefaultProgressLoggerFactory(manager.getBroadcaster(ProgressListener.class), clock, buildOperationIdFactory);
             threadServices = new ThreadLoggingServices(manager, progressLoggerFactory);
             services.set(threadServices);
         }

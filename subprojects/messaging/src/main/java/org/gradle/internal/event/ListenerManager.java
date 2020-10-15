@@ -16,6 +16,9 @@
 
 package org.gradle.internal.event;
 
+import org.gradle.internal.service.scopes.Scope;
+import org.gradle.internal.service.scopes.ServiceScope;
+
 /**
  * Unified manager for all Gradle events.  Provides a simple way to find all listeners of a given type in the
  * system.
@@ -25,9 +28,10 @@ package org.gradle.internal.event;
  * <p>Implementations are thread-safe: A listener is notified by at most 1 thread at a time, and so do not need to be thread-safe. All listeners
  * of a given type received events in the same order. Listeners can be added and removed at any time.
  */
+@ServiceScope(Scope.Global.class)
 public interface ListenerManager {
     /**
-     * Added a listener.  A single object can implement multiple interfaces, and all interfaces are registered by a
+     * Adds a listener.  A single object can implement multiple interfaces, and all interfaces are registered by a
      * single invocation of this method.  There is no order dependency: if a broadcaster has already been made for type
      * T, the listener will be registered with it if <code>(listener instanceof T)</code> returns true.
      *
@@ -49,6 +53,17 @@ public interface ListenerManager {
      * @param listener the listener to remove.
      */
     void removeListener(Object listener);
+
+    /**
+     * Allows a client to query if any listeners of a particular type are currently registered.
+     * If no, then the broadcaster for this listener type will not forward calls to any listeners.
+     *
+     * <p>Calling this method will instantiate a broadcaster for the type, if none yet exists.</p>
+     *
+     * @param listenerClass The type of listener to check.
+     * @return True if a listener of the specified type is currently registered, false otherwise.
+     */
+    <T> boolean hasListeners(Class<T> listenerClass);
 
     /**
      * Returns a broadcaster for the given listenerClass. Any method invoked on the broadcaster is forwarded to all registered
@@ -82,7 +97,7 @@ public interface ListenerManager {
      * @return A broadcaster that forwards method calls to all listeners assigned to it, or of the same type that have
      *         been (or will be) registered with this manager.
      */
-    <T> ListenerBroadcast<T> createAnonymousBroadcaster(Class<T> listenerClass);
+    <T> AnonymousListenerBroadcast<T> createAnonymousBroadcaster(Class<T> listenerClass);
 
     /**
      * Uses the given object as a logger. Each listener class has exactly one logger associated with it. Any existing
@@ -99,5 +114,5 @@ public interface ListenerManager {
      *
      * @return The child
      */
-    ListenerManager createChild();
+    ListenerManager createChild(Class<? extends Scope> scope);
 }

@@ -57,6 +57,7 @@ abstract class AbstractResourcePattern implements ResourcePattern {
         this.typeIsOptional = isOptionalToken(IvyPatternHelper.TYPE_KEY);
     }
 
+    @Override
     public String getPattern() {
         return pattern.getDecoded();
     }
@@ -82,7 +83,7 @@ abstract class AbstractResourcePattern implements ResourcePattern {
     }
 
     protected Map<String, String> toAttributes(IvyArtifactName ivyArtifact) {
-        HashMap<String, String> attributes = new HashMap<String, String>();
+        HashMap<String, String> attributes = new HashMap<>();
         attributes.put(IvyPatternHelper.ARTIFACT_KEY, ivyArtifact.getName());
         attributes.put(IvyPatternHelper.TYPE_KEY, ivyArtifact.getType());
         attributes.put(IvyPatternHelper.EXT_KEY, ivyArtifact.getExtension());
@@ -91,14 +92,14 @@ abstract class AbstractResourcePattern implements ResourcePattern {
     }
 
     protected Map<String, String> toAttributes(ModuleIdentifier module) {
-        HashMap<String, String> attributes = new HashMap<String, String>();
+        HashMap<String, String> attributes = new HashMap<>();
         attributes.put(IvyPatternHelper.ORGANISATION_KEY, module.getGroup());
         attributes.put(IvyPatternHelper.MODULE_KEY, module.getName());
         return attributes;
     }
 
     protected Map<String, String> toAttributes(ModuleComponentIdentifier componentIdentifier) {
-        HashMap<String, String> attributes = new HashMap<String, String>();
+        HashMap<String, String> attributes = new HashMap<>();
         attributes.put(IvyPatternHelper.ORGANISATION_KEY, componentIdentifier.getGroup());
         attributes.put(IvyPatternHelper.MODULE_KEY, componentIdentifier.getModule());
         attributes.put(IvyPatternHelper.REVISION_KEY, componentIdentifier.getVersion());

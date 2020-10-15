@@ -16,21 +16,16 @@
 package org.gradle.internal.exceptions;
 
 import org.apache.commons.lang.StringUtils;
-import org.gradle.api.GradleException;
 import org.gradle.groovy.scripts.ScriptSource;
 import org.gradle.initialization.BuildClientMetaData;
 import org.gradle.internal.logging.text.StyledTextOutput;
 import org.gradle.internal.scan.UsedByScanPlugin;
-import org.gradle.util.TreeVisitor;
-
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * A {@code LocationAwareException} is an exception which can be annotated with a location in a script.
  */
 @UsedByScanPlugin
-public class LocationAwareException extends GradleException implements FailureResolutionAware {
+public class LocationAwareException extends ContextAwareException implements FailureResolutionAware {
     private final String sourceDisplayName;
     private final Integer lineNumber;
 
@@ -39,13 +34,14 @@ public class LocationAwareException extends GradleException implements FailureRe
     }
 
     public LocationAwareException(Throwable cause, String sourceDisplayName, Integer lineNumber) {
+        super(cause);
         this.sourceDisplayName = sourceDisplayName;
         this.lineNumber = lineNumber;
-        initCause(cause);
     }
 
     /**
      * <p>Returns the display name of the script where this exception occurred.</p>
+     *
      * @return The source display name. May return null.
      */
     public String getSourceDisplayName() {
@@ -82,6 +78,7 @@ public class LocationAwareException extends GradleException implements FailureRe
      *
      * @return the message. May return null.
      */
+    @Override
     public String getMessage() {
         String location = getLocation();
         String message = getCause().getMessage();
@@ -97,6 +94,7 @@ public class LocationAwareException extends GradleException implements FailureRe
         return String.format("%s%n%s", location, message);
     }
 
+    @Override
     public void appendResolution(StyledTextOutput output, BuildClientMetaData clientMetaData) {
         if (getCause() instanceof FailureResolutionAware) {
             FailureResolutionAware resolutionAware = (FailureResolutionAware) getCause();
@@ -104,70 +102,12 @@ public class LocationAwareException extends GradleException implements FailureRe
         }
     }
 
-    /**
-     * Returns the reportable causes for this failure.
-     *
-     * @return The causes. Never returns null, returns an empty list if this exception has no reportable causes.
-     */
-    public List<Throwable> getReportableCauses() {
-        final List<Throwable> causes = new ArrayList<Throwable>();
-        visitCauses(getCause(), new TreeVisitor<Throwable>(){
-            @Override
-            public void node(Throwable node) {
-                causes.add(node);
-            }
-        });
-        return causes;
-    }
-
-    /**
-     * Visits the reportable causes for this failure.
-     */
-    public void visitReportableCauses(TreeVisitor<? super Throwable> visitor) {
-        visitor.node(this);
-        visitCauses(getCause(), visitor);
-    }
-
-    private void visitCauses(Throwable t, TreeVisitor<? super Throwable> visitor) {
-        if (t instanceof MultiCauseException) {
-            MultiCauseException multiCauseException = (MultiCauseException) t;
-            List<? extends Throwable> causes = multiCauseException.getCauses();
-            if (!causes.isEmpty()) {
-                visitor.startChildren();
-                for (Throwable cause : causes) {
-                    visitor.node(cause);
-                    if (cause.getClass().getAnnotation(Contextual.class) != null) {
-                        visitCauses(cause, visitor);
-                    }
-                }
-                visitor.endChildren();
-            }
-            return;
+    @Override
+    public void accept(ExceptionContextVisitor contextVisitor) {
+        super.accept(contextVisitor);
+        String location = getLocation();
+        if (location != null) {
+            contextVisitor.visitLocation(location);
         }
-
-        if (t.getCause() != null) {
-            visitor.startChildren();
-            Throwable next = findNearestContextualCause(t);
-            if (next != null) {
-                // Show any contextual cause recursively
-                visitor.node(next);
-                visitCauses(next, visitor);
-            } else {
-                // Show the direct cause of the last contextual cause.
-                visitor.node(t.getCause());
-            }
-            visitor.endChildren();
-        }
-    }
-
-    private Throwable findNearestContextualCause(Throwable t) {
-        if (t.getCause() == null) {
-            return null;
-        }
-        Throwable cause = t.getCause();
-        if (cause.getClass().getAnnotation(Contextual.class) != null) {
-            return cause;
-        }
-        return findNearestContextualCause(cause);
     }
 }

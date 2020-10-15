@@ -20,6 +20,7 @@ import com.google.common.collect.ImmutableSet;
 import org.gradle.authentication.Authentication;
 import org.gradle.authentication.http.BasicAuthentication;
 import org.gradle.authentication.http.DigestAuthentication;
+import org.gradle.authentication.http.HttpHeaderAuthentication;
 import org.gradle.internal.authentication.AllSchemesAuthentication;
 import org.gradle.internal.resource.connector.ResourceConnectorFactory;
 import org.gradle.internal.resource.connector.ResourceConnectorSpecification;
@@ -33,13 +34,16 @@ public class HttpConnectorFactory implements ResourceConnectorFactory {
     private final static Set<Class<? extends Authentication>> SUPPORTED_AUTHENTICATION = ImmutableSet.of(
         BasicAuthentication.class,
         DigestAuthentication.class,
+        HttpHeaderAuthentication.class,
         AllSchemesAuthentication.class
     );
 
     private SslContextFactory sslContextFactory;
+    private HttpClientHelper.Factory httpClientHelperFactory;
 
-    public HttpConnectorFactory(SslContextFactory sslContextFactory) {
+    public HttpConnectorFactory(SslContextFactory sslContextFactory, HttpClientHelper.Factory httpClientHelperFactory) {
         this.sslContextFactory = sslContextFactory;
+        this.httpClientHelperFactory = httpClientHelperFactory;
     }
 
     @Override
@@ -54,9 +58,10 @@ public class HttpConnectorFactory implements ResourceConnectorFactory {
 
     @Override
     public ExternalResourceConnector createResourceConnector(ResourceConnectorSpecification connectionDetails) {
-        HttpClientHelper http = new HttpClientHelper(DefaultHttpSettings.builder()
+        HttpClientHelper http = httpClientHelperFactory.create(DefaultHttpSettings.builder()
             .withAuthenticationSettings(connectionDetails.getAuthentications())
             .withSslContextFactory(sslContextFactory)
+            .withRedirectVerifier(connectionDetails.getRedirectVerifier())
             .build()
         );
         HttpResourceAccessor accessor = new HttpResourceAccessor(http);

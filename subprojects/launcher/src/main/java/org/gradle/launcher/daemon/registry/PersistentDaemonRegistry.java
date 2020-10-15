@@ -24,8 +24,9 @@ import org.gradle.cache.PersistentStateCache;
 import org.gradle.cache.internal.FileIntegrityViolationSuppressingPersistentStateCacheDecorator;
 import org.gradle.cache.internal.OnDemandFileAccess;
 import org.gradle.cache.internal.SimpleStateCache;
-import org.gradle.internal.nativeintegration.filesystem.Chmod;
+import org.gradle.internal.file.Chmod;
 import org.gradle.internal.remote.Address;
+import org.gradle.internal.remote.internal.inet.InetEndpoint;
 import org.gradle.launcher.daemon.context.DaemonContext;
 
 import java.io.File;
@@ -63,6 +64,7 @@ public class PersistentDaemonRegistry implements DaemonRegistry {
             ));
     }
 
+    @Override
     public List<DaemonInfo> getAll() {
         lock.lock();
         try {
@@ -77,6 +79,7 @@ public class PersistentDaemonRegistry implements DaemonRegistry {
         }
     }
 
+    @Override
     public List<DaemonInfo> getIdle() {
         return getDaemonsMatching(new Spec<DaemonInfo>() {
             @Override
@@ -86,6 +89,7 @@ public class PersistentDaemonRegistry implements DaemonRegistry {
         });
     }
 
+    @Override
     public List<DaemonInfo> getNotIdle() {
         return getDaemonsMatching(new Spec<DaemonInfo>() {
             @Override
@@ -95,6 +99,7 @@ public class PersistentDaemonRegistry implements DaemonRegistry {
         });
     }
 
+    @Override
     public List<DaemonInfo> getCanceled() {
         return getDaemonsMatching(new Spec<DaemonInfo>() {
             @Override
@@ -120,16 +125,18 @@ public class PersistentDaemonRegistry implements DaemonRegistry {
         }
     }
 
+    @Override
     public void remove(final Address address) {
         lock.lock();
         LOGGER.debug("Removing daemon address: {}", address);
         try {
             cache.update(new PersistentStateCache.UpdateAction<DaemonRegistryContent>() {
+                @Override
                 public DaemonRegistryContent update(DaemonRegistryContent oldValue) {
                     if (oldValue == null) {
                         return oldValue;
                     }
-                    oldValue.removeInfo(address);
+                    oldValue.removeInfo(((InetEndpoint)address).getPort());
                     return oldValue;
                 }
             });
@@ -138,11 +145,13 @@ public class PersistentDaemonRegistry implements DaemonRegistry {
         }
     }
 
+    @Override
     public void markState(final Address address, final State state) {
         lock.lock();
         LOGGER.debug("Marking busy by address: {}", address);
         try {
             cache.update(new PersistentStateCache.UpdateAction<DaemonRegistryContent>() {
+                @Override
                 public DaemonRegistryContent update(DaemonRegistryContent oldValue) {
                     DaemonInfo daemonInfo = oldValue != null ? oldValue.getInfo(address) : null;
                     if (daemonInfo != null) {
@@ -162,6 +171,7 @@ public class PersistentDaemonRegistry implements DaemonRegistry {
         LOGGER.debug("Storing daemon stop event with timestamp {}", stopEvent.getTimestamp().getTime());
         try {
             cache.update(new PersistentStateCache.UpdateAction<DaemonRegistryContent>() {
+                @Override
                 public DaemonRegistryContent update(DaemonRegistryContent content) {
                     if (content == null) { // registry doesn't exist yet
                         content = new DaemonRegistryContent();
@@ -196,6 +206,7 @@ public class PersistentDaemonRegistry implements DaemonRegistry {
         LOGGER.info("Removing {} daemon stop events from registry", events.size());
         try {
             cache.update(new PersistentStateCache.UpdateAction<DaemonRegistryContent>() {
+                @Override
                 public DaemonRegistryContent update(DaemonRegistryContent content) {
                     if (content != null) { // no daemon process has started yet
                         content.removeStopEvents(events);
@@ -208,6 +219,7 @@ public class PersistentDaemonRegistry implements DaemonRegistry {
         }
     }
 
+    @Override
     public void store(final DaemonInfo info) {
         final Address address = info.getAddress();
         final DaemonContext daemonContext = info.getContext();
@@ -218,12 +230,14 @@ public class PersistentDaemonRegistry implements DaemonRegistry {
         LOGGER.debug("Storing daemon address: {}, context: {}", address, daemonContext);
         try {
             cache.update(new PersistentStateCache.UpdateAction<DaemonRegistryContent>() {
+                @Override
                 public DaemonRegistryContent update(DaemonRegistryContent oldValue) {
                     if (oldValue == null) {
                         //it means the registry didn't exist yet
                         oldValue = new DaemonRegistryContent();
                     }
                     DaemonInfo daemonInfo = new DaemonInfo(address, daemonContext, token, state);
+                    oldValue.removeInfo(((InetEndpoint) address).getPort());
                     oldValue.setStatus(address, daemonInfo);
                     return oldValue;
                 }

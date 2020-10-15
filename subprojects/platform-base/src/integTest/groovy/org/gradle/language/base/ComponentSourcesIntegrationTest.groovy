@@ -17,7 +17,9 @@
 package org.gradle.language.base
 
 import org.gradle.api.reporting.model.ModelReportOutput
+import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
 
+@UnsupportedWithConfigurationCache(because = "software model")
 class ComponentSourcesIntegrationTest extends AbstractComponentModelIntegrationTest {
 
     def "setup"() {

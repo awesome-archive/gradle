@@ -16,6 +16,7 @@
 
 package org.gradle.integtests.composite
 
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.integtests.fixtures.build.BuildTestFile
 import org.gradle.integtests.fixtures.resolve.ResolveTestFixture
 import spock.lang.Unroll
@@ -34,7 +35,7 @@ class CompositeBuildMinimalConfigurationIntegrationTest extends AbstractComposit
         buildB = multiProjectBuild("buildB", ['b1', 'b2']) {
             buildFile << """
                 allprojects {
-                    apply plugin: 'java'
+                    apply plugin: 'java-library'
                     version "2.0"
                 }
 """
@@ -42,11 +43,12 @@ class CompositeBuildMinimalConfigurationIntegrationTest extends AbstractComposit
 
         buildC = singleProjectBuild("buildC") {
             buildFile << """
-                apply plugin: 'java'
+                apply plugin: 'java-library'
 """
         }
     }
 
+    @ToBeFixedForConfigurationCache(because = "Resolve test fixture doesn't support configuration cache")
     def "does not configure build with declared substitutions that is not required for dependency substitution"() {
         given:
         dependency "org.test:buildB:1.0"

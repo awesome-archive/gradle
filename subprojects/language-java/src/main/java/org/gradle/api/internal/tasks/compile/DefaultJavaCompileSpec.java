@@ -16,6 +16,8 @@
 
 package org.gradle.api.internal.tasks.compile;
 
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Lists;
 import org.gradle.api.internal.tasks.compile.processing.AnnotationProcessorDeclaration;
 import org.gradle.api.tasks.compile.CompileOptions;
 
@@ -27,6 +29,9 @@ public class DefaultJavaCompileSpec extends DefaultJvmLanguageCompileSpec implem
     private MinimalJavaCompileOptions compileOptions;
     private List<File> annotationProcessorPath;
     private Set<AnnotationProcessorDeclaration> effectiveAnnotationProcessors;
+    private Set<String> classes;
+    private List<File> modulePath;
+    private List<File> sourceRoots;
 
     @Override
     public MinimalJavaCompileOptions getCompileOptions() {
@@ -55,5 +60,48 @@ public class DefaultJavaCompileSpec extends DefaultJvmLanguageCompileSpec implem
     @Override
     public void setEffectiveAnnotationProcessors(Set<AnnotationProcessorDeclaration> annotationProcessors) {
         this.effectiveAnnotationProcessors = annotationProcessors;
+    }
+
+    @Override
+    public Set<String> getClasses() {
+        return classes;
+    }
+
+    @Override
+    public void setClasses(Set<String> classes) {
+        this.classes = classes;
+    }
+
+    @Override
+    public List<File> getModulePath() {
+        if (modulePath == null || modulePath.isEmpty()) {
+            int i = compileOptions.getCompilerArgs().indexOf("--module-path");
+            if (i >= 0) {
+                // This is kept for backward compatibility - may be removed in the future
+                String[] modules = compileOptions.getCompilerArgs().get(i + 1).split(File.pathSeparator);
+                modulePath = Lists.newArrayListWithCapacity(modules.length);
+                for (String module : modules) {
+                    modulePath.add(new File(module));
+                }
+            } else if (modulePath == null) {
+                modulePath = ImmutableList.of();
+            }
+        }
+        return modulePath;
+    }
+
+    @Override
+    public void setModulePath(List<File> modulePath) {
+        this.modulePath = modulePath;
+    }
+
+    @Override
+    public List<File> getSourceRoots() {
+        return sourceRoots;
+    }
+
+    @Override
+    public void setSourcesRoots(List<File> sourcesRoots) {
+        this.sourceRoots = sourcesRoots;
     }
 }

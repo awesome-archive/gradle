@@ -21,7 +21,9 @@ import org.gradle.api.internal.tasks.testing.results.DefaultTestResult
 import org.gradle.integtests.fixtures.JUnitTestClassExecutionResult
 import org.gradle.integtests.fixtures.TestResultOutputAssociation
 import org.gradle.internal.SystemProperties
+import spock.lang.Issue
 import spock.lang.Specification
+import spock.lang.Unroll
 
 import static TestOutputAssociation.WITH_SUITE
 import static TestOutputAssociation.WITH_TESTCASE
@@ -29,7 +31,7 @@ import static java.util.Collections.emptyList
 import static org.gradle.api.tasks.testing.TestOutputEvent.Destination.StdErr
 import static org.gradle.api.tasks.testing.TestOutputEvent.Destination.StdOut
 import static org.gradle.api.tasks.testing.TestResult.ResultType.*
-import static org.hamcrest.Matchers.equalTo
+import static org.hamcrest.CoreMatchers.equalTo
 
 class JUnitXmlResultWriterSpec extends Specification {
 
@@ -56,7 +58,7 @@ class JUnitXmlResultWriterSpec extends Specification {
         def xml = getXml(result)
 
         then:
-        new JUnitTestClassExecutionResult(xml, "com.foo.FooTest", TestResultOutputAssociation.WITH_SUITE)
+        new JUnitTestClassExecutionResult(xml, "com.foo.FooTest", "com.foo.FooTest", TestResultOutputAssociation.WITH_SUITE)
                 .assertTestCount(4, 1, 1, 0)
                 .assertTestFailed("some failing test", equalTo('failure message'))
                 .assertTestsSkipped("some skipped test")
@@ -107,19 +109,19 @@ class JUnitXmlResultWriterSpec extends Specification {
 
     def "encodes xml"() {
         TestClassResult result = new TestClassResult(1, "com.foo.FooTest", startTime)
-        result.add(new TestMethodResult(1, "some test", FAILURE, 200, 300).addFailure("<> encoded!", "<non ascii: \u0302>", "<Exception>"))
-        provider.writeAllOutput(_, StdErr, _) >> { args -> args[2].write("with CDATA end token: ]]> some ascii: ż") }
-        provider.writeAllOutput(_, StdOut, _) >> { args -> args[2].write("with CDATA end token: ]]> some ascii: ż") }
+        result.add(new TestMethodResult(1, "some \ud8d3\ude01 test", FAILURE, 200, 300).addFailure("<> encoded!\ud8d3\ude02", "<non ascii:\ud8d3\ude02 \u0302>", "<Exception\ud8d3\ude29>"))
+        provider.writeAllOutput(_, StdErr, _) >> { args -> args[2].write("with \ud8d3\ude31CDATA end token: ]]> some ascii: ż") }
+        provider.writeAllOutput(_, StdOut, _) >> { args -> args[2].write("with CDATA end token: ]]> some ascii: \ud8d3\udd20ż") }
 
         when:
         def xml = getXml(result)
 
         then:
         //attribute and text is encoded:
-        xml.contains('message="&lt;&gt; encoded!" type="&lt;Exception&gt;">&lt;non ascii: \u0302&gt;')
+        xml.contains('message="&lt;&gt; encoded!&#x44e02;" type="&lt;Exception&#x44e29;&gt;">&lt;non ascii:&#x44e02; \u0302&gt;')
         //output encoded:
-        xml.contains('<system-out><![CDATA[with CDATA end token: ]]]]><![CDATA[> some ascii: ż]]></system-out>')
-        xml.contains('<system-err><![CDATA[with CDATA end token: ]]]]><![CDATA[> some ascii: ż]]></system-err>')
+        xml.contains('<system-out><![CDATA[with CDATA end token: ]]]]><![CDATA[> some ascii: ]]>&#x44d20;<![CDATA[ż]]></system-out>')
+        xml.contains('<system-err><![CDATA[with ]]>&#x44e31;<![CDATA[CDATA end token: ]]]]><![CDATA[> some ascii: ż]]></system-err>')
     }
 
     def "writes results with no tests"() {
@@ -178,6 +180,57 @@ class JUnitXmlResultWriterSpec extends Specification {
   <system-err><![CDATA[class-err]]></system-err>
 </testsuite>
 """
+    }
+
+    @Unroll
+    @Issue("gradle/gradle#11445")
+    def "writes #writtenName as class display name when #displayName is specified"() {
+        TestClassResult result = new TestClassResult(1, "com.foo.FooTest", displayName, startTime)
+        result.add(new TestMethodResult(1, "some test", "some test displayName", SUCCESS, 15, startTime + 25))
+        result.add(new TestMethodResult(2, "some test two", "some test two displayName", SUCCESS, 15, startTime + 30))
+        result.add(new TestMethodResult(3, "some failing test", "some failing test displayName", FAILURE, 10, startTime + 40).addFailure("failure message", "[stack-trace]", "ExceptionType"))
+        result.add(new TestMethodResult(4, "some skipped test", "some skipped test displayName", SKIPPED, 10, startTime + 45))
+
+        provider.writeAllOutput(1, StdOut, _) >> { args -> args[2].write("1st output message\n2nd output message\n") }
+        provider.writeAllOutput(1, StdErr, _) >> { args -> args[2].write("err") }
+
+        when:
+        def xml = getXml(result)
+
+        then:
+        new JUnitTestClassExecutionResult(xml, "com.foo.FooTest", writtenName, TestResultOutputAssociation.WITH_SUITE)
+            .assertTestCount(4, 1, 1, 0)
+            .assertTestFailed("some failing test displayName", equalTo('failure message'))
+            .assertTestsSkipped("some skipped test displayName")
+            .assertTestsExecuted("some test displayName", "some test two displayName", "some failing test displayName")
+            .assertStdout(equalTo("""1st output message
+2nd output message
+"""))
+            .assertStderr(equalTo("err"))
+
+        and:
+        xml == """<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="$writtenName" tests="4" skipped="1" failures="1" errors="0" timestamp="2012-11-19T17:09:28" hostname="localhost" time="0.045">
+  <properties/>
+  <testcase name="some test displayName" classname="com.foo.FooTest" time="0.015"/>
+  <testcase name="some test two displayName" classname="com.foo.FooTest" time="0.015"/>
+  <testcase name="some failing test displayName" classname="com.foo.FooTest" time="0.01">
+    <failure message="failure message" type="ExceptionType">[stack-trace]</failure>
+  </testcase>
+  <testcase name="some skipped test displayName" classname="com.foo.FooTest" time="0.01">
+    <skipped/>
+  </testcase>
+  <system-out><![CDATA[1st output message
+2nd output message
+]]></system-out>
+  <system-err><![CDATA[err]]></system-err>
+</testsuite>
+"""
+
+        where:
+        displayName           | writtenName
+        'FooTest'             | 'com.foo.FooTest'
+        'custom display name' | 'custom display name'
     }
 
     def getXml(TestClassResult result) {

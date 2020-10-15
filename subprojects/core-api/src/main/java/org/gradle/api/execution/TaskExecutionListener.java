@@ -18,12 +18,15 @@ package org.gradle.api.execution;
 
 import org.gradle.api.Task;
 import org.gradle.api.tasks.TaskState;
+import org.gradle.internal.service.scopes.EventScope;
+import org.gradle.internal.service.scopes.Scopes;
 
 /**
  * <p>A {@code TaskExecutionListener} is notified of the execution of the tasks in a build.</p>
  *
  * <p>You can add a {@code TaskExecutionListener} to a build using {@link org.gradle.api.execution.TaskExecutionGraph#addTaskExecutionListener}
  */
+@EventScope(Scopes.Build.class)
 public interface TaskExecutionListener {
     /**
      * This method is called immediately before a task is executed.
@@ -33,7 +36,7 @@ public interface TaskExecutionListener {
     void beforeExecute(Task task);
 
     /**
-     * This method is call immediately after a task has been executed. It is always called, regardless of whether the
+     * This method is called immediately after a task has been executed. It is always called, regardless of whether the
      * task completed successfully, or failed with an exception.
      *
      * @param task The task which was executed. Never null.

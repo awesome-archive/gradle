@@ -19,8 +19,7 @@ import com.google.common.collect.ImmutableList;
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier;
 import org.gradle.api.internal.attributes.ImmutableAttributesFactory;
 import org.gradle.internal.component.model.ComponentResolveMetadata;
-import org.gradle.internal.component.model.ModuleSource;
-import org.gradle.internal.hash.HashValue;
+import org.gradle.internal.component.model.ModuleSources;
 
 import javax.annotation.Nullable;
 
@@ -33,19 +32,28 @@ public interface ModuleComponentResolveMetadata extends ComponentResolveMetadata
     /**
      * {@inheritDoc}
      */
-    ModuleComponentIdentifier getComponentId();
-
-    /**
-     * {@inheritDoc}
-     */
-    ModuleComponentResolveMetadata withSource(ModuleSource source);
+    @Override
+    ModuleComponentIdentifier getId();
 
     /**
      * Creates a mutable copy of this metadata.
      *
-     * Note that this method can be expensive. Often it is more efficient to use a more specialised mutation method such as {@link #withSource(ModuleSource)} rather than this method.
+     * Note that this method can be expensive. Often it is more efficient to use a more specialised mutation method such as {@link #withSources(ModuleSources)} rather than this method.
      */
     MutableModuleComponentResolveMetadata asMutable();
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    ModuleComponentResolveMetadata withSources(ModuleSources sources);
+
+
+    /**
+     * Creates a copy of this meta-data with the given derivation strategy.
+     */
+    ModuleComponentResolveMetadata withDerivationStrategy(VariantDerivationStrategy derivationStrategy);
+
 
     /**
      * Creates an artifact for this module. Does not mutate this metadata.
@@ -53,15 +61,16 @@ public interface ModuleComponentResolveMetadata extends ComponentResolveMetadata
     ModuleComponentArtifactMetadata artifact(String type, @Nullable String extension, @Nullable String classifier);
 
     /**
-     * Returns the hash of the resource(s) from which this metadata was created.
-     */
-    HashValue getContentHash();
-
-    /**
      * Returns the variants of this component
      */
     ImmutableList<? extends ComponentVariant> getVariants();
 
+    @Nullable
     ImmutableAttributesFactory getAttributesFactory();
 
+    VariantMetadataRules getVariantMetadataRules();
+
+    VariantDerivationStrategy getVariantDerivationStrategy();
+
+    boolean isExternalVariant();
 }

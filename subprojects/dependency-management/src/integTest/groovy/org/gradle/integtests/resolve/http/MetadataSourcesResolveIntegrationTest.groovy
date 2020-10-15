@@ -18,15 +18,13 @@ package org.gradle.integtests.resolve.http
 
 import org.gradle.integtests.fixtures.GradleMetadataResolveRunner
 import org.gradle.integtests.fixtures.RequiredFeature
-import org.gradle.integtests.fixtures.RequiredFeatures
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.integtests.resolve.AbstractModuleDependencyResolveTest
 import org.gradle.test.fixtures.HttpRepository
 
 class MetadataSourcesResolveIntegrationTest extends AbstractModuleDependencyResolveTest {
 
-    @RequiredFeatures([
-        @RequiredFeature(feature = GradleMetadataResolveRunner.GRADLE_METADATA, value = "true")
-    ])
+    @RequiredFeature(feature = GradleMetadataResolveRunner.GRADLE_METADATA, value = "true")
     def "can resolve with only gradle metadata"() {
         buildFile << """
             repositories.all {
@@ -48,7 +46,7 @@ class MetadataSourcesResolveIntegrationTest extends AbstractModuleDependencyReso
         }
         // We are resolving with `gradleMetadata()` metadata: always use a directory listing (and not maven-metadata.xml)
         repository.directoryList('org.test', 'projectA').expectGet()
-        repositoryInteractions {
+        repositoryInteractions(HttpRepository.MetadataType.ONLY_GRADLE) {
             'org.test:projectA' {
 
                 '1.2' {
@@ -100,7 +98,7 @@ class MetadataSourcesResolveIntegrationTest extends AbstractModuleDependencyReso
         succeeds ":checkDeps"
 
         // We are resolving with "legacy" metadata: always gives default configuration, unless we derive Java library variants for maven repositories
-        resolve.expectDefaultConfiguration(isExperimentalEnabled() && useMaven() ? "runtime" : "default")
+        resolve.expectDefaultConfiguration(useMaven() ? "runtime" : "default")
         resolve.expectGraph {
             root(":", ":test:") {
                 edge("org.test:projectA:1.+", "org.test:projectA:1.2")
@@ -142,7 +140,7 @@ class MetadataSourcesResolveIntegrationTest extends AbstractModuleDependencyReso
         succeeds ":checkDeps"
 
         // We are resolving with `artifact()` metadata: always gives default configuration, unless we derive Java library variants for maven repositories
-        resolve.expectDefaultConfiguration(isExperimentalEnabled() && useMaven() ? "runtime" : "default")
+        resolve.expectDefaultConfiguration(useMaven() ? "runtime" : "default")
         resolve.expectGraph {
             root(":", ":test:") {
                 edge("org.test:projectA:1.+", "org.test:projectA:1.2")
@@ -150,10 +148,11 @@ class MetadataSourcesResolveIntegrationTest extends AbstractModuleDependencyReso
         }
     }
 
+    @ToBeFixedForConfigurationCache
     def "will only search for defined metadata sources"() {
-        def metadataSource = isGradleMetadataEnabled() ? "gradleMetadata" : useIvy() ? "ivyDescriptor" : "mavenPom"
-        def metadataType = isGradleMetadataEnabled() ? HttpRepository.MetadataType.ONLY_GRADLE : HttpRepository.MetadataType.ONLY_ORIGINAL
-        def metadataUri = isGradleMetadataEnabled() ? metadataURI("org.test", "projectA", "1.1"): legacyMetadataURI("org.test", "projectA", "1.1")
+        def metadataSource = isGradleMetadataPublished() ? "gradleMetadata" : useIvy() ? "ivyDescriptor" : "mavenPom"
+        def metadataType = isGradleMetadataPublished() ? HttpRepository.MetadataType.ONLY_GRADLE : HttpRepository.MetadataType.ONLY_ORIGINAL
+        def metadataUri = isGradleMetadataPublished() ? gradleMetadataURI("org.test", "projectA", "1.1"): legacyMetadataURI("org.test", "projectA", "1.1")
         buildFile << """
             repositories.all {
                 metadataSources {
@@ -176,9 +175,12 @@ class MetadataSourcesResolveIntegrationTest extends AbstractModuleDependencyReso
         fails ":checkDeps"
 
         and:
+        def format = metadataSource == 'ivyDescriptor' ? 'ivy.xml' :
+            (metadataSource == 'mavenPom' ? 'Maven POM' : 'Gradle module')
         failure.assertHasCause("""Could not find org.test:projectA:1.1.
 Searched in the following locations:
-    ${metadataUri}
+  - ${metadataUri}
+If the artifact you are trying to retrieve can be found in the repository but without metadata in '$format' format, you need to adjust the 'metadataSources { ... }' of the repository declaration.
 Required by:""")
     }
 }

@@ -17,14 +17,21 @@
 package org.gradle.execution.taskgraph
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
 import org.gradle.model.internal.core.ModelNode
 
 class RuleTaskExecutionIntegrationTest extends AbstractIntegrationSpec implements WithRuleBasedTasks {
 
     def setup() {
         buildFile << """
-            gradle.buildFinished {
-                file("tasks.txt").text = allprojects*.tasks.flatten()*.path.join("\\n")
+            def tasksFile = file("tasks.txt")
+            tasksFile.text = ''
+            gradle.taskGraph.whenReady {
+                allprojects {
+                    tasks.matching { it.group == "mygroup" }.all {
+                        tasksFile << path + '\\n'
+                    }
+                }
             }
         """
     }
@@ -45,7 +52,9 @@ class RuleTaskExecutionIntegrationTest extends AbstractIntegrationSpec implement
             allprojects {
                 model {
                     tasks {
-                        create("t1")
+                        create("t1") {
+                            group = "mygroup"
+                        }
                     }
                 }
             }
@@ -64,8 +73,12 @@ class RuleTaskExecutionIntegrationTest extends AbstractIntegrationSpec implement
             ${ruleBasedTasks()}
             model {
                 tasks {
-                    create("t1")
-                    create("t2", BrokenTask)
+                    create("t1") {
+                        group = "mygroup"
+                    }
+                    create("t2", BrokenTask) {
+                        group = "mygroup"
+                    }
                 }
             }
         """
@@ -74,6 +87,7 @@ class RuleTaskExecutionIntegrationTest extends AbstractIntegrationSpec implement
         createdTasksFor("t1") == [":t1"]
     }
 
+    @UnsupportedWithConfigurationCache
     def "task container is self closed by task selection and can be later graph closed"() {
         when:
         buildFile << '''
@@ -176,7 +190,7 @@ class RuleTaskExecutionIntegrationTest extends AbstractIntegrationSpec implement
         succeeds ":a:executed"
 
         then:
-        ":b:dependency" in executedTasks
+        executed(":b:dependency")
     }
 
     def "can get name of task defined in rules only script plugin after configuration"() {

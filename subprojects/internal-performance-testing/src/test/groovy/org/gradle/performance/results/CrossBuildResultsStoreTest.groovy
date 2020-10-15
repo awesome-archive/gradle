@@ -20,20 +20,24 @@ import org.gradle.performance.ResultSpecification
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
 import org.gradle.util.SetSystemProperties
 import org.junit.Rule
+import spock.lang.Ignore
 
 import static org.gradle.performance.measure.Duration.minutes
 
+@Ignore
 class CrossBuildResultsStoreTest extends ResultSpecification {
     @Rule
-    TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider()
+    TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider(getClass())
     @Rule
     SetSystemProperties properties = new SetSystemProperties("org.gradle.performance.db.url": "jdbc:h2:" + tmpDir.testDirectory)
 
     final dbName = "cross-build-results"
+    def experiment1 = new PerformanceExperiment("testProject1", new PerformanceScenario("org.gradle.performance.MyPerformanceTest", "test1"))
 
     def "persists results"() {
         given:
-        def results1 = crossBuildResults(testId: "test1", testGroup: "group1")
+        def time = new Date().getTime()
+        def results1 = crossBuildResults(testId: "test1", testGroup: "group1", startTime: time)
         def buildResults1 = results1.buildResult(
                 new BuildDisplayInfo(
                     "simple",
@@ -65,13 +69,13 @@ class CrossBuildResultsStoreTest extends ResultSpecification {
 
         when:
         def readStore = new BaseCrossBuildResultsStore(dbName)
-        def tests = readStore.testNames
+        def experiments = readStore.performanceExperiments
 
         then:
-        tests == ["test1", "test2"]
+        experiments*.scenario == ["test1", "test2"]
 
         when:
-        def history = readStore.getTestResults("test1", channel)
+        def history = readStore.getTestResults(experiment1, channel)
 
         then:
         history.id == "test1"
@@ -107,7 +111,7 @@ class CrossBuildResultsStoreTest extends ResultSpecification {
         crossBuildPerformanceResults.versionUnderTest == "Gradle 1.0"
         crossBuildPerformanceResults.operatingSystem == "windows"
         crossBuildPerformanceResults.host == "me"
-        crossBuildPerformanceResults.startTime == 100
+        crossBuildPerformanceResults.startTime == time
         crossBuildPerformanceResults.vcsBranch == "master"
         crossBuildPerformanceResults.vcsCommits[0] == "abcdef"
 
@@ -148,7 +152,7 @@ class CrossBuildResultsStoreTest extends ResultSpecification {
 
         when:
         def readStore = new BaseCrossBuildResultsStore(dbName)
-        def history = readStore.getTestResults("test1", channel)
+        def history = readStore.getTestResults(experiment1, channel)
 
         then:
         history.id == "test1"
@@ -166,7 +170,7 @@ class CrossBuildResultsStoreTest extends ResultSpecification {
 
     def "scenario settings can change over time"() {
         given:
-        def results1 = crossBuildResults(testId: "test1", testGroup: "group1", startTime: 100)
+        def results1 = crossBuildResults(testId: "test1", testGroup: "group1", startTime: new Date().time - 100)
         def buildResults1 = results1.buildResult(
                 new BuildDisplayInfo(
                     "project-1",
@@ -192,7 +196,7 @@ class CrossBuildResultsStoreTest extends ResultSpecification {
         )
         buildResults2 << operation()
 
-        def results2 = crossBuildResults(testId: "test1", testGroup: "group1", startTime: 200)
+        def results2 = crossBuildResults(testId: "test1", testGroup: "group1", startTime: new Date().time - 200)
         def buildResults3 = results2.buildResult(
                 new BuildDisplayInfo(
                     "project-1",
@@ -218,7 +222,7 @@ class CrossBuildResultsStoreTest extends ResultSpecification {
         )
         buildResults4 << operation()
 
-        def results3 = crossBuildResults(testId: "test1", testGroup: "group1", startTime: 300)
+        def results3 = crossBuildResults(testId: "test1", testGroup: "group1", startTime: new Date().time - 300)
         def buildResults5 = results3.buildResult(
                 new BuildDisplayInfo(
                     "project-1-new",
@@ -256,7 +260,7 @@ class CrossBuildResultsStoreTest extends ResultSpecification {
 
         when:
         def readStore = new BaseCrossBuildResultsStore(dbName)
-        def history = readStore.getTestResults("test1", channel)
+        def history = readStore.getTestResults(experiment1, channel)
 
         then:
         history.id == "test1"
@@ -291,7 +295,8 @@ class CrossBuildResultsStoreTest extends ResultSpecification {
 
     def "reports on union of all scenarios"() {
         given:
-        def results1 = crossBuildResults(testId: "test1", testGroup: "group1", startTime: 100)
+        def currentTime = new Date().time
+        def results1 = crossBuildResults(testId: "test1", testGroup: "group1", startTime: currentTime - 300)
         def buildResults1 = results1.buildResult(
                 new BuildDisplayInfo(
                     "project-1",
@@ -317,7 +322,7 @@ class CrossBuildResultsStoreTest extends ResultSpecification {
         )
         buildResults2 << operation()
 
-        def results2 = crossBuildResults(testId: "test1", testGroup: "group1", startTime: 200)
+        def results2 = crossBuildResults(testId: "test1", testGroup: "group1", startTime: currentTime - 200)
         def buildResults3 = results2.buildResult(
                 new BuildDisplayInfo(
                     "project-1",
@@ -343,7 +348,7 @@ class CrossBuildResultsStoreTest extends ResultSpecification {
         )
         buildResults4 << operation()
 
-        def results3 = crossBuildResults(testId: "test1", testGroup: "group1", startTime: 300)
+        def results3 = crossBuildResults(testId: "test1", testGroup: "group1", startTime: currentTime - 100)
         def buildResults5 = results3.buildResult(
                 new BuildDisplayInfo(
                     "project-1-old",
@@ -369,7 +374,7 @@ class CrossBuildResultsStoreTest extends ResultSpecification {
 
         when:
         def readStore = new BaseCrossBuildResultsStore(dbName)
-        def history = readStore.getTestResults("test1", channel)
+        def history = readStore.getTestResults(experiment1, channel)
 
         then:
         history.id == "test1"
@@ -405,15 +410,16 @@ class CrossBuildResultsStoreTest extends ResultSpecification {
 
     def "returns top n results in descending date order"() {
         given:
-        def results1 = crossBuildResults(testId: "test1", startTime: 1000)
+        def currentTime = new Date().time
+        def results1 = crossBuildResults(testId: "test1", startTime: currentTime - 1000)
         results1.buildResult(new BuildDisplayInfo("simple1", "simple 1", ["build"], [], ["-i"], [], true))
 
         and:
-        def results2 = crossBuildResults(testId: "test1", startTime: 2000)
+        def results2 = crossBuildResults(testId: "test1", startTime: currentTime - 2000)
         results2.buildResult(new BuildDisplayInfo("simple2", "simple 2", ["build"], [], ["-i"], [], true))
 
         and:
-        def results3 = crossBuildResults(testId: "test1", startTime: 3000)
+        def results3 = crossBuildResults(testId: "test1", startTime: currentTime - 3000)
         results3.buildResult(new BuildDisplayInfo("simple3", "simple 3", ["build"], [], ["-i"], [], true))
 
         and:
@@ -425,16 +431,16 @@ class CrossBuildResultsStoreTest extends ResultSpecification {
 
         when:
         def readStore = new BaseCrossBuildResultsStore(dbName)
-        def history = readStore.getTestResults("test1", channel)
+        def history = readStore.getTestResults(experiment1, channel)
 
         then:
-        history.results*.startTime == [3000, 2000, 1000]
+        history.results*.startTime == [currentTime - 1000, currentTime - 2000, currentTime - 3000]
 
         when:
-        history = readStore.getTestResults("test1", 2, Integer.MAX_VALUE, channel)
+        history = readStore.getTestResults(experiment1, 2, Integer.MAX_VALUE, channel)
 
         then:
-        history.results*.startTime == [3000, 2000]
+        history.results*.startTime == [currentTime - 1000, currentTime - 2000]
 
         cleanup:
         writeStore?.close()

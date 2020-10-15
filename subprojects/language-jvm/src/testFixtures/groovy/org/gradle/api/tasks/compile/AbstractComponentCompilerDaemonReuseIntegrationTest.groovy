@@ -16,7 +16,10 @@
 
 package org.gradle.api.tasks.compile
 
+import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
 
+
+@UnsupportedWithConfigurationCache(because = "software model")
 abstract class AbstractComponentCompilerDaemonReuseIntegrationTest extends AbstractCompilerDaemonReuseIntegrationTest {
     @Override
     String newSourceSet(String name) {

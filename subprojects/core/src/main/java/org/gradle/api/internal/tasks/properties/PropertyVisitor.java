@@ -16,47 +16,43 @@
 
 package org.gradle.api.internal.tasks.properties;
 
-import org.gradle.api.internal.tasks.TaskDestroyablePropertySpec;
-import org.gradle.api.internal.tasks.TaskInputFilePropertySpec;
-import org.gradle.api.internal.tasks.TaskInputPropertySpec;
-import org.gradle.api.internal.tasks.TaskLocalStatePropertySpec;
-import org.gradle.api.internal.tasks.TaskOutputFilePropertySpec;
+import org.gradle.api.tasks.FileNormalizer;
+
+import javax.annotation.Nullable;
 
 /**
  * Visits properties of beans which are inputs, outputs, destroyables or local state.
  */
 public interface PropertyVisitor {
+    void visitInputFileProperty(String propertyName, boolean optional, boolean skipWhenEmpty, boolean incremental, @Nullable Class<? extends FileNormalizer> fileNormalizer, PropertyValue value, InputFilePropertyType filePropertyType);
 
-    void visitInputFileProperty(TaskInputFilePropertySpec inputFileProperty);
+    void visitInputProperty(String propertyName, PropertyValue value, boolean optional);
 
-    void visitInputProperty(TaskInputPropertySpec inputProperty);
+    void visitOutputFileProperty(String propertyName, boolean optional, PropertyValue value, OutputFilePropertyType filePropertyType);
 
-    void visitOutputFileProperty(TaskOutputFilePropertySpec outputFileProperty);
+    void visitDestroyableProperty(Object value);
 
-    void visitDestroyableProperty(TaskDestroyablePropertySpec destroyableProperty);
-
-    void visitLocalStateProperty(TaskLocalStatePropertySpec localStateProperty);
+    void visitLocalStateProperty(Object value);
 
     class Adapter implements PropertyVisitor {
-
         @Override
-        public void visitInputFileProperty(TaskInputFilePropertySpec inputFileProperty) {
+        public void visitInputFileProperty(String propertyName, boolean optional, boolean skipWhenEmpty, boolean incremental, @Nullable Class<? extends FileNormalizer> fileNormalizer, PropertyValue value, InputFilePropertyType filePropertyType) {
         }
 
         @Override
-        public void visitInputProperty(TaskInputPropertySpec inputProperty) {
+        public void visitInputProperty(String propertyName, PropertyValue value, boolean optional) {
         }
 
         @Override
-        public void visitOutputFileProperty(TaskOutputFilePropertySpec outputFileProperty) {
+        public void visitOutputFileProperty(String propertyName, boolean optional, PropertyValue value, OutputFilePropertyType filePropertyType) {
         }
 
         @Override
-        public void visitDestroyableProperty(TaskDestroyablePropertySpec destroyableProperty) {
+        public void visitDestroyableProperty(Object value) {
         }
 
         @Override
-        public void visitLocalStateProperty(TaskLocalStatePropertySpec localStateProperty) {
+        public void visitLocalStateProperty(Object value) {
         }
     }
 }

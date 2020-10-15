@@ -17,9 +17,9 @@ package org.gradle.integtests.fixtures
 
 import org.gradle.test.fixtures.file.TestFile
 
-import static org.hamcrest.Matchers.*
+import static org.hamcrest.CoreMatchers.*
 import static org.hamcrest.core.StringStartsWith.startsWith
-import static org.junit.Assert.assertThat
+import static org.hamcrest.MatcherAssert.assertThat
 
 class JUnitXmlTestExecutionResult implements TestExecutionResult {
     private final TestFile testResultsDir
@@ -56,12 +56,12 @@ class JUnitXmlTestExecutionResult implements TestExecutionResult {
     }
 
     TestClassExecutionResult testClass(String testClass) {
-        return new JUnitTestClassExecutionResult(findTestClass(testClass), testClass, outputAssociation)
+        return new JUnitTestClassExecutionResult(findTestClass(testClass), testClass, testClass, outputAssociation)
     }
 
     TestClassExecutionResult testClassStartsWith(String testClass) {
         def matching = findTestClassStartsWith(testClass)
-        return new JUnitTestClassExecutionResult(matching[1], matching[0], outputAssociation)
+        return new JUnitTestClassExecutionResult(matching[1], matching[0], matching[0], outputAssociation)
     }
 
     @Override

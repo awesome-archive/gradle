@@ -21,6 +21,12 @@ import org.gradle.api.Action;
 import org.gradle.api.Incubating;
 import org.gradle.api.file.FileCollection;
 import org.gradle.api.file.FileTree;
+import org.gradle.api.file.ProjectLayout;
+import org.gradle.api.internal.file.FileTreeInternal;
+import org.gradle.api.internal.tasks.compile.CompilationSourceDirs;
+import org.gradle.api.jvm.ModularitySpec;
+import org.gradle.api.model.ObjectFactory;
+import org.gradle.api.provider.Property;
 import org.gradle.api.tasks.CacheableTask;
 import org.gradle.api.tasks.Classpath;
 import org.gradle.api.tasks.Input;
@@ -33,22 +39,30 @@ import org.gradle.api.tasks.PathSensitivity;
 import org.gradle.api.tasks.SourceTask;
 import org.gradle.api.tasks.TaskAction;
 import org.gradle.api.tasks.javadoc.internal.JavadocSpec;
+import org.gradle.api.tasks.javadoc.internal.JavadocToolAdapter;
 import org.gradle.external.javadoc.MinimalJavadocOptions;
 import org.gradle.external.javadoc.StandardJavadocDocletOptions;
+import org.gradle.internal.file.Deleter;
+import org.gradle.internal.jvm.DefaultModularitySpec;
+import org.gradle.internal.jvm.JavaModuleDetector;
 import org.gradle.jvm.internal.toolchain.JavaToolChainInternal;
 import org.gradle.jvm.platform.JavaPlatform;
 import org.gradle.jvm.platform.internal.DefaultJavaPlatform;
 import org.gradle.jvm.toolchain.JavaToolChain;
+import org.gradle.jvm.toolchain.JavadocTool;
 import org.gradle.language.base.internal.compile.Compiler;
 import org.gradle.util.ConfigureUtil;
-import org.gradle.util.GUtil;
 
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 import java.io.File;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+
+import static org.gradle.util.GUtil.isTrue;
 
 /**
  * <p>Generates HTML API documentation for Java classes.</p>
@@ -56,7 +70,9 @@ import java.util.List;
  * If you create your own Javadoc tasks remember to specify the 'source' property!
  * Without source the Javadoc task will not create any documentation. Example:
  * <pre class='autoTested'>
- * apply plugin: 'java'
+ * plugins {
+ *     id 'java'
+ * }
  *
  * task myJavadocs(type: Javadoc) {
  *   source = sourceSets.main.allJava
@@ -66,7 +82,9 @@ import java.util.List;
  * <p>
  * An example how to create a task that runs a custom doclet implementation:
  * <pre class='autoTested'>
- * apply plugin: 'java'
+ * plugins {
+ *     id 'java'
+ * }
  *
  * configurations {
  *   jaxDoclet
@@ -87,6 +105,7 @@ import java.util.List;
  */
 @CacheableTask
 public class Javadoc extends SourceTask {
+
     private File destinationDir;
 
     private boolean failOnError = true;
@@ -98,12 +117,24 @@ public class Javadoc extends SourceTask {
     private final StandardJavadocDocletOptions options = new StandardJavadocDocletOptions();
 
     private FileCollection classpath = getProject().files();
+    private final ModularitySpec modularity;
 
     private String executable;
+    private final Property<JavadocTool> javadocTool;
+
+    public Javadoc() {
+        this.modularity = getObjectFactory().newInstance(DefaultModularitySpec.class);
+        this.javadocTool = getObjectFactory().property(JavadocTool.class);
+    }
 
     @TaskAction
     protected void generate() {
-        final File destinationDir = getDestinationDir();
+        File destinationDir = getDestinationDir();
+        try {
+            getDeleter().ensureEmptyDirectory(destinationDir);
+        } catch (IOException ex) {
+            throw new UncheckedIOException(ex);
+        }
 
         StandardJavadocDocletOptions options = new StandardJavadocDocletOptions((StandardJavadocDocletOptions) getOptions());
 
@@ -111,12 +142,15 @@ public class Javadoc extends SourceTask {
             options.destinationDirectory(destinationDir);
         }
 
-        options.classpath(new ArrayList<File>(getClasspath().getFiles()));
+        boolean isModule = isModule();
+        JavaModuleDetector javaModuleDetector = getJavaModuleDetector();
+        options.classpath(new ArrayList<>(javaModuleDetector.inferClasspath(isModule, getClasspath()).getFiles()));
+        options.modulePath(new ArrayList<>(javaModuleDetector.inferModulePath(isModule, getClasspath()).getFiles()));
 
-        if (!GUtil.isTrue(options.getWindowTitle()) && GUtil.isTrue(getTitle())) {
+        if (!isTrue(options.getWindowTitle()) && isTrue(getTitle())) {
             options.windowTitle(getTitle());
         }
-        if (!GUtil.isTrue(options.getDocTitle()) && GUtil.isTrue(getTitle())) {
+        if (!isTrue(options.getDocTitle()) && isTrue(getTitle())) {
             options.setDocTitle(getTitle());
         }
 
@@ -136,13 +170,22 @@ public class Javadoc extends SourceTask {
             }
         }
 
-        List<String> sourceNames = new ArrayList<String>();
+        options.setSourceNames(sourceNames());
+
+        executeExternalJavadoc(options);
+    }
+
+    private boolean isModule() {
+        List<File> sourcesRoots = CompilationSourceDirs.inferSourceRoots((FileTreeInternal) getSource());
+        return JavaModuleDetector.isModuleSource(modularity.getInferModulePath().get(), sourcesRoots);
+    }
+
+    private List<String> sourceNames() {
+        List<String> sourceNames = new ArrayList<>();
         for (File sourceFile : getSource()) {
             sourceNames.add(sourceFile.getAbsolutePath());
         }
-        options.setSourceNames(sourceNames);
-
-        executeExternalJavadoc(options);
+        return sourceNames;
     }
 
     private void executeExternalJavadoc(StandardJavadocDocletOptions options) {
@@ -150,11 +193,16 @@ public class Javadoc extends SourceTask {
         spec.setExecutable(getExecutable());
         spec.setOptions(options);
         spec.setIgnoreFailures(!isFailOnError());
-        spec.setWorkingDir(getProject().getProjectDir());
+        spec.setWorkingDir(getProjectLayout().getProjectDirectory().getAsFile());
         spec.setOptionsFile(getOptionsFile());
 
-        Compiler<JavadocSpec> generator = ((JavaToolChainInternal) getToolChain()).select(getPlatform()).newCompiler(JavadocSpec.class);
-        generator.execute(spec);
+        final JavadocToolAdapter tool = (JavadocToolAdapter) javadocTool.getOrNull();
+        if (tool != null) {
+            tool.execute(spec);
+        } else {
+            Compiler<JavadocSpec> generator = ((JavaToolChainInternal) getToolChain()).select(getPlatform()).newCompiler(JavadocSpec.class);
+            generator.execute(spec);
+        }
     }
 
     /**
@@ -169,7 +217,8 @@ public class Javadoc extends SourceTask {
     /**
      * Returns the tool chain that will be used to generate the Javadoc.
      */
-    @Incubating @Inject
+    @Inject
+    @Deprecated
     public JavaToolChain getToolChain() {
         // Implementation is generated
         throw new UnsupportedOperationException();
@@ -178,7 +227,7 @@ public class Javadoc extends SourceTask {
     /**
      * Sets the tool chain to use to generate the Javadoc.
      */
-    @Incubating
+    @Deprecated
     public void setToolChain(@SuppressWarnings("unused") JavaToolChain toolChain) {
         // Implementation is generated
         throw new UnsupportedOperationException();
@@ -186,6 +235,18 @@ public class Javadoc extends SourceTask {
 
     private JavaPlatform getPlatform() {
         return DefaultJavaPlatform.current();
+    }
+
+    /**
+     * Configures the javadoc executable to be used to generate javadoc documentation.
+     *
+     * @since 6.7
+     */
+    @Incubating
+    @Nested
+    @Optional
+    public Property<JavadocTool> getJavadocTool() {
+        return javadocTool;
     }
 
     /**
@@ -294,6 +355,17 @@ public class Javadoc extends SourceTask {
     }
 
     /**
+     * Returns the module path handling of this javadoc task.
+     *
+     * @since 6.4
+     */
+    @Incubating
+    @Nested
+    public ModularitySpec getModularity() {
+        return modularity;
+    }
+
+    /**
      * Returns the Javadoc generation options.
      *
      * @return The options. Never returns null.
@@ -342,16 +414,39 @@ public class Javadoc extends SourceTask {
 
     /**
      * Returns the Javadoc executable to use to generate the Javadoc. When {@code null}, the Javadoc executable for
-     * the current JVM is used.
+     * the current JVM is used or from the toolchain if configured.
      *
      * @return The executable. May be null.
+     * @see #getJavadocTool()
      */
-    @Nullable @Optional @Input
+    @Nullable
+    @Optional
+    @Input
     public String getExecutable() {
         return executable;
     }
 
     public void setExecutable(@Nullable String executable) {
         this.executable = executable;
+    }
+
+    @Inject
+    protected Deleter getDeleter() {
+        throw new UnsupportedOperationException("Decorator takes care of injection");
+    }
+
+    @Inject
+    protected ProjectLayout getProjectLayout() {
+        throw new UnsupportedOperationException();
+    }
+
+    @Inject
+    protected ObjectFactory getObjectFactory() {
+        throw new UnsupportedOperationException();
+    }
+
+    @Inject
+    protected JavaModuleDetector getJavaModuleDetector() {
+        throw new UnsupportedOperationException();
     }
 }

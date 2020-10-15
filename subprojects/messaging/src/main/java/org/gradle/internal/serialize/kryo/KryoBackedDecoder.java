@@ -34,6 +34,7 @@ public class KryoBackedDecoder extends AbstractDecoder implements Decoder, Close
     private final Input input;
     private final InputStream inputStream;
     private long extraSkipped;
+    private KryoBackedDecoder nested;
 
     public KryoBackedDecoder(InputStream inputStream) {
         this(inputStream, 4096);
@@ -75,6 +76,7 @@ public class KryoBackedDecoder extends AbstractDecoder implements Decoder, Close
         throw e;
     }
 
+    @Override
     public byte readByte() throws EOFException {
         try {
             return input.readByte();
@@ -83,6 +85,7 @@ public class KryoBackedDecoder extends AbstractDecoder implements Decoder, Close
         }
     }
 
+    @Override
     public void readBytes(byte[] buffer, int offset, int count) throws EOFException {
         try {
             input.readBytes(buffer, offset, count);
@@ -91,6 +94,7 @@ public class KryoBackedDecoder extends AbstractDecoder implements Decoder, Close
         }
     }
 
+    @Override
     public long readLong() throws EOFException {
         try {
             return input.readLong();
@@ -99,6 +103,7 @@ public class KryoBackedDecoder extends AbstractDecoder implements Decoder, Close
         }
     }
 
+    @Override
     public long readSmallLong() throws EOFException, IOException {
         try {
             return input.readLong(true);
@@ -107,6 +112,7 @@ public class KryoBackedDecoder extends AbstractDecoder implements Decoder, Close
         }
     }
 
+    @Override
     public int readInt() throws EOFException {
         try {
             return input.readInt();
@@ -115,6 +121,7 @@ public class KryoBackedDecoder extends AbstractDecoder implements Decoder, Close
         }
     }
 
+    @Override
     public int readSmallInt() throws EOFException {
         try {
             return input.readInt(true);
@@ -123,6 +130,7 @@ public class KryoBackedDecoder extends AbstractDecoder implements Decoder, Close
         }
     }
 
+    @Override
     public boolean readBoolean() throws EOFException {
         try {
             return input.readBoolean();
@@ -131,16 +139,61 @@ public class KryoBackedDecoder extends AbstractDecoder implements Decoder, Close
         }
     }
 
+    @Override
     public String readString() throws EOFException {
         return readNullableString();
     }
 
+    @Override
     public String readNullableString() throws EOFException {
         try {
             return input.readString();
         } catch (KryoException e) {
             throw maybeEndOfStream(e);
         }
+    }
+
+    @Override
+    public void skipChunked() throws EOFException, IOException {
+        while (true) {
+            int count = readSmallInt();
+            if (count == 0) {
+                break;
+            }
+            skipBytes(count);
+        }
+    }
+
+    @Override
+    public <T> T decodeChunked(DecodeAction<Decoder, T> decodeAction) throws EOFException, Exception {
+        if (nested == null) {
+            nested = new KryoBackedDecoder(new InputStream() {
+                @Override
+                public int read() throws IOException {
+                    throw new UnsupportedOperationException();
+                }
+
+                @Override
+                public int read(byte[] buffer, int offset, int length) throws IOException {
+                    int count = readSmallInt();
+                    if (count == 0) {
+                        // End of stream has been reached
+                        return -1;
+                    }
+                    if (count > length) {
+                        // For now, assume same size buffers used to read and write
+                        throw new UnsupportedOperationException();
+                    }
+                    readBytes(buffer, offset, count);
+                    return count;
+                }
+            });
+        }
+        T value = decodeAction.read(nested);
+        if (readSmallInt() != 0) {
+            throw new IllegalStateException("Expecting the end of nested stream.");
+        }
+        return value;
     }
 
     /**
@@ -150,6 +203,7 @@ public class KryoBackedDecoder extends AbstractDecoder implements Decoder, Close
         return input.total() + extraSkipped;
     }
 
+    @Override
     public void close() throws IOException {
         input.close();
     }

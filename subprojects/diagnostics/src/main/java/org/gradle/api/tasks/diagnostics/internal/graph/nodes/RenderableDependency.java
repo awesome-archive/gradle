@@ -18,19 +18,29 @@ package org.gradle.api.tasks.diagnostics.internal.graph.nodes;
 
 import org.gradle.api.artifacts.result.ResolvedVariantResult;
 
+import javax.annotation.Nullable;
+import java.util.List;
 import java.util.Set;
 
+/**
+ * A renderable dependency may be a dependency OR something related
+ * to a dependency, like a header. In practice, for a single actual
+ * dependency, we may render multiple renderable dependencies.
+ */
 public interface RenderableDependency {
     Object getId();
     String getName();
+    @Nullable
     String getDescription();
-    ResolvedVariantResult getResolvedVariant();
+    List<ResolvedVariantResult> getResolvedVariants();
     ResolutionState getResolutionState();
     Set<? extends RenderableDependency> getChildren();
+    List<Section> getExtraDetails();
 
     enum ResolutionState {
         FAILED,
         RESOLVED,
+        RESOLVED_CONSTRAINT,
         UNRESOLVED
     }
 }

@@ -16,29 +16,41 @@
 
 package org.gradle.tooling.internal.provider.runner;
 
+import org.gradle.internal.build.event.BuildEventListenerFactory;
+import org.gradle.internal.build.event.OperationResultPostProcessorFactory;
 import org.gradle.internal.invocation.BuildActionRunner;
+import org.gradle.internal.operations.BuildOperationAncestryTracker;
+import org.gradle.internal.operations.BuildOperationIdFactory;
 import org.gradle.internal.operations.BuildOperationListenerManager;
 import org.gradle.internal.service.ServiceRegistration;
 import org.gradle.internal.service.scopes.AbstractPluginServiceRegistry;
 import org.gradle.launcher.exec.ChainingBuildActionRunner;
 
 import java.util.Arrays;
+import java.util.List;
 
 public class ToolingBuilderServices extends AbstractPluginServiceRegistry {
     @Override
     public void registerGlobalServices(ServiceRegistration registration) {
-
         registration.addProvider(new Object() {
-            BuildActionRunner createBuildActionRunner(final BuildOperationListenerManager buildOperationListenerManager) {
+            BuildActionRunner createBuildActionRunner(
+                BuildOperationAncestryTracker ancestryTracker,
+                BuildOperationListenerManager buildOperationListenerManager
+            ) {
                 return new ChainingBuildActionRunner(
                     Arrays.asList(
                         new BuildModelActionRunner(),
-                        new TestExecutionRequestActionRunner(buildOperationListenerManager),
-                        new ClientProvidedBuildActionRunner()));
+                        new TestExecutionRequestActionRunner(ancestryTracker, buildOperationListenerManager),
+                        new ClientProvidedBuildActionRunner(),
+                        new ClientProvidedPhasedActionRunner()));
             }
 
-            ToolingApiSubscribableBuildActionRunnerRegistration createToolingApiSubscribableBuildActionRunnerRegistration() {
-                return new ToolingApiSubscribableBuildActionRunnerRegistration();
+            BuildEventListenerFactory createToolingApiSubscribableBuildActionRunnerRegistration(
+                BuildOperationAncestryTracker ancestryTracker,
+                BuildOperationIdFactory buildOperationIdFactory,
+                List<OperationResultPostProcessorFactory> postProcessorFactories
+            ) {
+                return new ToolingApiBuildEventListenerFactory(ancestryTracker, buildOperationIdFactory, postProcessorFactories);
             }
         });
     }

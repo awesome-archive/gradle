@@ -22,9 +22,9 @@ import org.gradle.test.fixtures.file.TestFile
 import org.gradle.util.GradleVersion
 import org.hamcrest.Matcher
 
-import static BuildInitDsl.GROOVY
-import static BuildInitDsl.KOTLIN
-import static org.hamcrest.Matchers.containsString
+import static org.gradle.buildinit.plugins.internal.modifiers.BuildInitDsl.GROOVY
+import static org.gradle.buildinit.plugins.internal.modifiers.BuildInitDsl.KOTLIN
+import static org.hamcrest.CoreMatchers.containsString
 
 @CompileStatic
 class ScriptDslFixture {
@@ -35,16 +35,18 @@ class ScriptDslFixture {
         return ([SCRIPT_DSLS] * count).combinations()
     }
 
-    static ScriptDslFixture of(BuildInitDsl scriptDsl, TestFile rootDir) {
-        new ScriptDslFixture(scriptDsl, rootDir)
+    static ScriptDslFixture of(BuildInitDsl scriptDsl, TestFile rootDir, String subprojectName) {
+        new ScriptDslFixture(scriptDsl, rootDir, subprojectName)
     }
 
     final BuildInitDsl scriptDsl
     final TestFile rootDir
+    final String subprojectName
 
-    ScriptDslFixture(BuildInitDsl scriptDsl, TestFile rootDir) {
+    ScriptDslFixture(BuildInitDsl scriptDsl, TestFile rootDir, String subprojectName) {
         this.scriptDsl = scriptDsl
         this.rootDir = rootDir
+        this.subprojectName = subprojectName
     }
 
     String fileNameFor(String fileNameWithoutExtension) {
@@ -60,7 +62,12 @@ class ScriptDslFixture {
     }
 
     TestFile getBuildFile(TestFile parentFolder = rootDir) {
-        parentFolder.file(buildFileName)
+        if (subprojectName) {
+            parentFolder.file(subprojectName).file(buildFileName)
+        } else {
+            parentFolder.file(buildFileName)
+        }
+
     }
 
     TestFile getSettingsFile(TestFile parentFolder = rootDir) {
@@ -76,8 +83,7 @@ class ScriptDslFixture {
         assert getBuildFile(parentFolder).exists()
         assert getSettingsFile(parentFolder).exists()
         def gradleVersion = GradleVersion.current().version
-        def distributionType = scriptDsl.wrapperDistributionType.name().toLowerCase()
-        new WrapperTestFixture(parentFolder).generated(gradleVersion, distributionType)
+        new WrapperTestFixture(parentFolder).generated(gradleVersion)
     }
 
     void assertWrapperNotGenerated(TestFile parentFolder = rootDir) {
@@ -88,7 +94,6 @@ class ScriptDslFixture {
         switch (scriptDsl) {
             case KOTLIN:
                 return containsString("$target = \"$string\"")
-            case GROOVY:
             default:
                 return containsString("$target = '$string'")
         }
@@ -102,7 +107,6 @@ class ScriptDslFixture {
                 } else {
                     return containsString("\"$configuration\"(\"$notation")
                 }
-            case GROOVY:
             default:
                 return containsString("$configuration '$notation")
         }

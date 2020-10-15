@@ -16,31 +16,30 @@
 
 package org.gradle.play.internal.run;
 
-import com.google.common.collect.Sets;
+import com.google.common.collect.ImmutableSet;
 import org.gradle.api.file.FileCollection;
-import org.gradle.api.internal.changedetection.state.ClasspathSnapshotter;
-import org.gradle.api.internal.changedetection.state.InputPathNormalizationStrategy;
-import org.gradle.api.internal.file.collections.SimpleFileCollection;
+import org.gradle.api.internal.file.FileCollectionFactory;
 import org.gradle.deployment.internal.Deployment;
+import org.gradle.internal.fingerprint.FileCollectionFingerprinter;
 import org.gradle.internal.hash.HashCode;
-import org.gradle.normalization.internal.InputNormalizationStrategy;
 import org.gradle.process.internal.JavaExecHandleBuilder;
 import org.gradle.process.internal.worker.WorkerProcess;
 import org.gradle.process.internal.worker.WorkerProcessBuilder;
 import org.gradle.process.internal.worker.WorkerProcessFactory;
 
 import java.io.File;
-import java.util.Set;
 
 public class PlayApplicationRunner {
     private final WorkerProcessFactory workerFactory;
     private final VersionedPlayRunAdapter adapter;
-    private final ClasspathSnapshotter snapshotter;
+    private final FileCollectionFingerprinter fingerprinter;
+    private final FileCollectionFactory fileCollectionFactory;
 
-    public PlayApplicationRunner(WorkerProcessFactory workerFactory, VersionedPlayRunAdapter adapter, ClasspathSnapshotter snapshotter) {
+    public PlayApplicationRunner(WorkerProcessFactory workerFactory, VersionedPlayRunAdapter adapter, FileCollectionFingerprinter fingerprinter, FileCollectionFactory fileCollectionFactory) {
         this.workerFactory = workerFactory;
         this.adapter = adapter;
-        this.snapshotter = snapshotter;
+        this.fingerprinter = fingerprinter;
+        this.fileCollectionFactory = fileCollectionFactory;
     }
 
     public PlayApplication start(PlayRunSpec spec, Deployment deployment) {
@@ -48,7 +47,7 @@ public class PlayApplicationRunner {
         process.start();
 
         PlayRunWorkerServerProtocol workerServer = process.getConnection().addOutgoing(PlayRunWorkerServerProtocol.class);
-        PlayApplication playApplication = new PlayApplication(new PlayClassloaderMonitorDeploymentDecorator(deployment, spec, adapter), workerServer, process);
+        PlayApplication playApplication = new PlayApplication(new PlayClassloaderMonitorDeploymentDecorator(deployment, spec, fileCollectionFactory), workerServer, process);
         process.getConnection().addIncoming(PlayRunWorkerClientProtocol.class, playApplication);
         process.getConnection().connect();
         playApplication.waitForRunning();
@@ -58,29 +57,26 @@ public class PlayApplicationRunner {
     private class PlayClassloaderMonitorDeploymentDecorator implements Deployment {
         private final Deployment delegate;
         private final FileCollection applicationClasspath;
-        private final boolean isPlay22;
-        private HashCode snapshot;
+        private final FileCollectionFactory fileCollectionFactory;
+        private HashCode classpathHash;
 
-        private PlayClassloaderMonitorDeploymentDecorator(Deployment delegate, PlayRunSpec runSpec, VersionedPlayRunAdapter adapter) {
+        private PlayClassloaderMonitorDeploymentDecorator(Deployment delegate, PlayRunSpec runSpec, FileCollectionFactory fileCollectionFactory) {
             this.delegate = delegate;
+            this.fileCollectionFactory = fileCollectionFactory;
             this.applicationClasspath = collectApplicationClasspath(runSpec);
-            this.isPlay22 = adapter instanceof PlayRunAdapterV22X;
         }
 
         private FileCollection collectApplicationClasspath(PlayRunSpec runSpec) {
-            Set<File> applicationClasspath = Sets.newLinkedHashSet(runSpec.getChangingClasspath());
-            applicationClasspath.add(runSpec.getApplicationJar());
-            return new SimpleFileCollection(applicationClasspath);
+            ImmutableSet<File> applicationClasspath = ImmutableSet.<File>builder()
+                .addAll(runSpec.getChangingClasspath())
+                .add(runSpec.getApplicationJar())
+                .build();
+            return fileCollectionFactory.fixed(applicationClasspath);
         }
 
         @Override
         public Status status() {
             final Status delegateStatus = delegate.status();
-
-            if (isPlay22) {
-                // PlayRunAdapterV22X doesn't load assets from directory directly
-                return delegateStatus;
-            }
 
             if (!delegateStatus.hasChanged()) {
                 return delegateStatus;
@@ -104,9 +100,9 @@ public class PlayApplicationRunner {
         }
 
         private boolean applicationClasspathChanged() {
-            HashCode oldSnapshot = snapshot;
-            snapshot = snapshotter.snapshot(applicationClasspath, InputPathNormalizationStrategy.NONE, InputNormalizationStrategy.NOT_CONFIGURED).getHash();
-            return !snapshot.equals(oldSnapshot);
+            HashCode oldClasspathHash = classpathHash;
+            classpathHash = fingerprinter.fingerprint(applicationClasspath).getHash();
+            return !classpathHash.equals(oldClasspathHash);
         }
     }
 

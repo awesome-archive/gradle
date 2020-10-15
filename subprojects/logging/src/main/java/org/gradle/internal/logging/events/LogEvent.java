@@ -33,21 +33,24 @@ public class LogEvent extends RenderableOutputEvent implements LogEventBuildOper
         this(timestamp, category, logLevel, message, throwable, null);
     }
 
-    public LogEvent(long timestamp, String category, LogLevel logLevel, String message, @Nullable Throwable throwable, @Nullable OperationIdentifier operationIdentifier) {
-        super(timestamp, category, logLevel, operationIdentifier);
+    public LogEvent(long timestamp, String category, LogLevel logLevel, String message, @Nullable Throwable throwable, @Nullable OperationIdentifier buildOperationIdentifier) {
+        super(timestamp, category, logLevel, buildOperationIdentifier);
         this.message = message;
         this.throwable = throwable;
     }
 
+    @Override
     public String getMessage() {
         return message;
     }
 
+    @Override
     @Nullable
     public Throwable getThrowable() {
         return throwable;
     }
 
+    @Override
     public void render(StyledTextOutput output) {
         output.text(message);
         output.println();
@@ -59,5 +62,10 @@ public class LogEvent extends RenderableOutputEvent implements LogEventBuildOper
     @Override
     public String toString() {
         return "[" + getLogLevel() + "] [" + getCategory() + "] " + message;
+    }
+
+    @Override
+    public RenderableOutputEvent withBuildOperationId(OperationIdentifier buildOperationId) {
+        return new LogEvent(getTimestamp(), getCategory(), getLogLevel(), message, throwable, buildOperationId);
     }
 }

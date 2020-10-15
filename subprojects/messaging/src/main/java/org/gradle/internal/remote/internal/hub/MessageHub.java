@@ -17,6 +17,7 @@
 package org.gradle.internal.remote.internal.hub;
 
 import org.gradle.api.Action;
+import org.gradle.internal.Cast;
 import org.gradle.internal.concurrent.AsyncStoppable;
 import org.gradle.internal.concurrent.ExecutorFactory;
 import org.gradle.internal.concurrent.ManagedExecutor;
@@ -40,6 +41,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * Use {@link #addHandler(String, Object)} to create a worker for incoming messages on a given channel.
  * Use {@link #addConnection(RemoteConnection)} to attach another router to this router.
  *
+ * TODO - this type could be simplified, as there is no longer any need to send/receive messages to/from multiple connections
  */
 public class MessageHub implements AsyncStoppable {
     private enum State {Running, Stopping, Stopped}
@@ -55,7 +57,7 @@ public class MessageHub implements AsyncStoppable {
     private final ConnectionSet connections = new ConnectionSet(incomingQueue, outgoingQueue);
 
     /**
-     * @param errorHandler Notified when some asynch. activity fails. Must be thread-safe.
+     * @param errorHandler Notified when some async activity fails. Must be thread-safe.
      */
     public MessageHub(String displayName, ExecutorFactory executorFactory, Action<? super Throwable> errorHandler) {
         this.displayName = displayName;
@@ -110,13 +112,13 @@ public class MessageHub implements AsyncStoppable {
             }
             Dispatch<Object> dispatch;
             if (handler instanceof Dispatch) {
-                dispatch = (Dispatch) handler;
+                dispatch = Cast.uncheckedNonnullCast(handler);
             } else {
                 dispatch = DISCARD;
             }
             BoundedDispatch<Object> boundedDispatch;
             if (dispatch instanceof BoundedDispatch) {
-                boundedDispatch = (BoundedDispatch) dispatch;
+                boundedDispatch = Cast.uncheckedNonnullCast(dispatch);
             } else {
                 boundedDispatch = DISCARD;
             }
@@ -180,6 +182,7 @@ public class MessageHub implements AsyncStoppable {
      *
      * </ul>
      */
+    @Override
     public void requestStop() {
         lock.lock();
         try {
@@ -210,6 +213,7 @@ public class MessageHub implements AsyncStoppable {
      *
      * </ul>
      */
+    @Override
     public void stop() {
         try {
             lock.lock();
@@ -230,6 +234,7 @@ public class MessageHub implements AsyncStoppable {
     }
 
     private static class Discard implements BoundedDispatch<Object>, RejectedMessageListener, StreamFailureHandler {
+        @Override
         public void dispatch(Object message) {
         }
 
@@ -237,6 +242,7 @@ public class MessageHub implements AsyncStoppable {
         public void endStream() {
         }
 
+        @Override
         public void messageDiscarded(Object message) {
         }
 
@@ -254,6 +260,7 @@ public class MessageHub implements AsyncStoppable {
             this.connectionState = connectionState;
         }
 
+        @Override
         public void run() {
             try {
                 try {
@@ -304,6 +311,7 @@ public class MessageHub implements AsyncStoppable {
             this.connectionState = connectionState;
         }
 
+        @Override
         public void run() {
             try {
                 List<InterHubMessage> messages = new ArrayList<InterHubMessage>();
@@ -357,6 +365,7 @@ public class MessageHub implements AsyncStoppable {
             return "Dispatch " + type.getSimpleName() + " to " + displayName + " channel " + channelIdentifier;
         }
 
+        @Override
         public void dispatch(T message) {
             lock.lock();
             try {
@@ -383,6 +392,7 @@ public class MessageHub implements AsyncStoppable {
             this.streamFailureHandler = streamFailureHandler;
         }
 
+        @Override
         public void run() {
             try {
                 List<InterHubMessage> messages = new ArrayList<InterHubMessage>();

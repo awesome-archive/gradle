@@ -18,29 +18,23 @@
 
 // As this script is also accessed from the buildSrc project,
 // we can't use rootProject for the path as both builds share the same config directory.
-// Work around https://github.com/gradle/kotlin-dsl/issues/736, remove this once fixed
-val effectiveRootDir: File =
-    if (rootDir.name == "buildSrc") rootDir.parentFile
-    else rootDir
-
-val codeQualityConfigDir = effectiveRootDir.resolve("config")
+val codeQualityConfigDir = buildscript.sourceFile!!.parentFile.parentFile.parentFile.resolve("config")
 
 configureCheckstyle(codeQualityConfigDir)
 configureCodenarc(codeQualityConfigDir)
 configureCodeQualityTasks()
 
 fun Project.configureCheckstyle(codeQualityConfigDir: File) {
-    apply {
-        plugin("checkstyle")
-    }
+    apply(plugin = "checkstyle")
 
     val checkStyleConfigDir = codeQualityConfigDir.resolve("checkstyle")
     configure<CheckstyleExtension> {
-        configDir = checkStyleConfigDir
+        configDirectory.set(checkStyleConfigDir)
+        toolVersion = "8.12"
 
         plugins.withType<GroovyBasePlugin> {
             java.sourceSets.all {
-                tasks.create<Checkstyle>(getTaskName("checkstyle", "groovy")) {
+                tasks.register(getTaskName("checkstyle", "groovy"), Checkstyle::class.java) {
                     configFile = checkStyleConfigDir.resolve("checkstyle-groovy.xml")
                     source(allGroovy)
                     classpath = compileClasspath
@@ -51,25 +45,26 @@ fun Project.configureCheckstyle(codeQualityConfigDir: File) {
     }
 }
 
-fun Project.configureCodenarc(codeQualityConfigDir: File) {
-    apply {
-        plugin("codenarc")
+fun getIntegrationTestFixturesRule(): Class<*>? {
+    try {
+        return Class.forName("gradlebuild.codenarc.rules.IntegrationTestFixturesRule", false, this.javaClass.classLoader)
+    } catch (e: Throwable) {
+        return null
     }
+}
+
+fun Project.configureCodenarc(codeQualityConfigDir: File) {
+    apply(plugin = "codenarc")
 
     dependencies {
-        "codenarc"("org.codenarc:CodeNarc:1.0")
+        "codenarc"("org.codenarc:CodeNarc:1.5")
         components {
-            withModule("org.codenarc:CodeNarc") {
-                allVariants {
-                    withDependencies {
-                        removeAll { it.group == "org.codehaus.groovy" }
-                        add("org.codehaus.groovy:groovy-all") {
-                            version { prefer("2.4.12") }
-                            because("We use groovy-all everywhere")
-                        }
-                    }
-                }
-            }
+            withModule("org.codenarc:CodeNarc", CodeNarcRule::class.java)
+        }
+        val ruleClass = getIntegrationTestFixturesRule()
+        if (ruleClass != null) {
+            "codenarc"(files(ruleClass.protectionDomain!!.codeSource!!.location))
+            "codenarc"(embeddedKotlin("stdlib"))
         }
     }
 
@@ -77,22 +72,24 @@ fun Project.configureCodenarc(codeQualityConfigDir: File) {
         configFile = codeQualityConfigDir.resolve("codenarc.xml")
     }
 
-    tasks.withType<CodeNarc> {
+    tasks.withType(CodeNarc::class.java).configureEach {
         reports.xml.isEnabled = true
+        if (name.contains("IntegTest")) {
+            configFile = codeQualityConfigDir.resolve("codenarc-integtests.xml")
+        }
     }
 }
 
 
-fun Project.configureCodeQualityTasks() =
-    tasks {
-        val codeQualityTasks = matching { it is CodeNarc || it is Checkstyle }
-        "codeQuality" {
-            dependsOn(codeQualityTasks)
-        }
-        withType<Test> {
-            shouldRunAfter(codeQualityTasks)
-        }
+fun Project.configureCodeQualityTasks() {
+    val codeQualityTasks = tasks.matching { it is CodeNarc || it is Checkstyle || it.name == "classycle" || it is ValidatePlugins }
+    tasks.register("codeQuality").configure {
+        dependsOn(codeQualityTasks)
     }
+    tasks.withType(Test::class.java).configureEach {
+        shouldRunAfter(codeQualityTasks)
+    }
+}
 
 
 val Project.java
@@ -100,3 +97,17 @@ val Project.java
 
 val SourceSet.allGroovy: SourceDirectorySet
     get() = withConvention(GroovySourceSet::class) { allGroovy }
+
+open class CodeNarcRule : ComponentMetadataRule {
+    override fun execute(context: ComponentMetadataContext) {
+        context.details.allVariants {
+            withDependencies {
+                removeAll { it.group == "org.codehaus.groovy" }
+                add("org.gradle.groovy:groovy-all") {
+                    version { prefer("1.3-" + groovy.lang.GroovySystem.getVersion()) }
+                    because("We use groovy-all everywhere")
+                }
+            }
+        }
+    }
+}

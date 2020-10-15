@@ -26,36 +26,47 @@ class CrashingBuildsArtifactTransformIntegrationTest extends AbstractDependencyR
 enum Color { Red, Green, Blue }
 def type = Attribute.of("artifactType", String)
 
-class ToColor extends ArtifactTransform {
-    Color color
+abstract class ToColor implements TransformAction<Parameters> {
+    interface Parameters extends TransformParameters {
+        @Input
+        Property<Color> getColor()
 
-    @javax.inject.Inject
-    ToColor(Color color) { this.color = color }
+        @Input
+        Property<Boolean> getBroken()
+    }
 
-    List<File> transform(File input) {
+    @InputArtifact
+    abstract Provider<FileSystemLocation> getInputArtifact()
+
+    void transform(TransformOutputs outputs) {
+        def input = inputArtifact.get().asFile
+        def color = parameters.color.get()
+        def one = outputs.file("one")
+        def outputDirectory = one.parentFile
         assert outputDirectory.directory && outputDirectory.list().length == 0
         println "Transforming \$input.name to \$color"
-        def one = new File(outputDirectory, "one")
         one.text = "one"
         // maybe killed here
-        if (System.getProperty("crash")) {
+        if (parameters.broken.get()) {
             Runtime.runtime.halt(1)
         }
-        def two = new File(outputDirectory, "two")
+        def two = outputs.file("two")
         two.text = "two"
-        [one, two]
     }
 }
 
 dependencies {
-    registerTransform {
+    registerTransform(ToColor) {
         from.attribute(type, "jar")
         to.attribute(type, "red")
-        artifactTransform(ToColor) { params(Color.Red) }
+        parameters {
+            color = Color.Red
+            broken = providers.systemProperty("crash").map { true }.orElse(false)
+        }
     }
 }
 
-configurations { 
+configurations {
     compile
 }
 dependencies {
@@ -65,10 +76,9 @@ dependencies {
 }
 
 task redThings {
+    def fileCollection = configurations.compile.incoming.artifactView { attributes { it.attribute(type, "red") } }.files
     doLast {
-        configurations.compile.incoming.artifactView {
-            attributes { it.attribute(type, "red") }
-        }.files.files
+        fileCollection.files
     }
 }
 """

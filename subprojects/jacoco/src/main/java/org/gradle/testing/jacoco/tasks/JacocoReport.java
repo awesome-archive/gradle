@@ -18,14 +18,16 @@ package org.gradle.testing.jacoco.tasks;
 import groovy.lang.Closure;
 import org.gradle.api.Action;
 import org.gradle.api.Incubating;
-import org.gradle.api.internal.ClosureBackedAction;
+import org.gradle.api.provider.Property;
 import org.gradle.api.reporting.Reporting;
 import org.gradle.api.specs.Spec;
 import org.gradle.api.tasks.CacheableTask;
+import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.Nested;
 import org.gradle.api.tasks.TaskAction;
 import org.gradle.internal.jacoco.AntJacocoReport;
 import org.gradle.internal.jacoco.JacocoReportsContainerImpl;
+import org.gradle.util.ClosureBackedAction;
 
 import java.io.File;
 
@@ -33,14 +35,27 @@ import java.io.File;
  * Task to generate HTML, Xml and CSV reports of Jacoco coverage data.
  */
 @CacheableTask
-@Incubating
 public class JacocoReport extends JacocoReportBase implements Reporting<JacocoReportsContainer> {
 
+    private final Property<String> projectName = getProject().getObjects().property(String.class);
     private final JacocoReportsContainer reports;
 
     public JacocoReport() {
         super();
-        reports = getInstantiator().newInstance(JacocoReportsContainerImpl.class, this);
+        projectName.value(getProject().getName()).disallowChanges();
+        reports = getInstantiator().newInstance(JacocoReportsContainerImpl.class, this, getCallbackActionDecorator());
+    }
+
+    /**
+     * The reported project name.
+     *
+     * @return the reported project name
+     * @since 6.4
+     */
+    @Input
+    @Incubating
+    public Property<String> getReportProjectName() {
+        return projectName;
     }
 
     /**
@@ -77,7 +92,7 @@ public class JacocoReport extends JacocoReportBase implements Reporting<JacocoRe
 
         new AntJacocoReport(getAntBuilder()).execute(
             getJacocoClasspath(),
-            getProject().getName(),
+            projectName.get(),
             getAllClassDirs().filter(fileExistsSpec),
             getAllSourceDirs().filter(fileExistsSpec),
             getExecutionData(),

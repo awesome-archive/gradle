@@ -17,44 +17,70 @@
 package org.gradle.buildinit.plugins
 
 import org.gradle.buildinit.plugins.fixtures.ScriptDslFixture
-import org.gradle.integtests.fixtures.DefaultTestExecutionResult
 import spock.lang.Unroll
 
 class ScalaLibraryInitIntegrationTest extends AbstractInitIntegrationSpec {
 
-    public static final String SAMPLE_LIBRARY_CLASS = "src/main/scala/Library.scala"
-    public static final String SAMPLE_LIBRARY_TEST_CLASS = "src/test/scala/LibrarySuite.scala"
+    public static final String SAMPLE_LIBRARY_CLASS = "some/thing/Library.scala"
+    public static final String SAMPLE_LIBRARY_TEST_CLASS = "some/thing/LibrarySuite.scala"
+
+    @Override
+    String subprojectName() { 'lib' }
 
     @Unroll
     def "creates sample source if no source present with #scriptDsl build scripts"() {
         when:
-        succeeds('init', '--type', 'scala-library', '--dsl', scriptDsl.id)
+        run('init', '--type', 'scala-library', '--dsl', scriptDsl.id)
 
         then:
-        file(SAMPLE_LIBRARY_CLASS).exists()
-        file(SAMPLE_LIBRARY_TEST_CLASS).exists()
-        dslFixtureFor(scriptDsl).assertGradleFilesGenerated()
+        subprojectDir.file("src/main/scala").assertHasDescendants(SAMPLE_LIBRARY_CLASS)
+        subprojectDir.file("src/test/scala").assertHasDescendants(SAMPLE_LIBRARY_TEST_CLASS)
+
+        and:
+        commonJvmFilesGenerated(scriptDsl)
 
         when:
         run("build")
 
         then:
-        new DefaultTestExecutionResult(testDirectory).testClass("LibrarySuite").assertTestPassed("someLibraryMethod is always true")
+        assertTestPassed("some.thing.LibrarySuite", "someLibraryMethod is always true")
 
         where:
         scriptDsl << ScriptDslFixture.SCRIPT_DSLS
     }
 
     @Unroll
-    def "setupProjectLayout is skipped when scala sources detected with #scriptDsl build scripts"() {
+    def "creates sample source with package and #scriptDsl build scripts"() {
+        when:
+        run('init', '--type', 'scala-library', '--package', 'my.lib', '--dsl', scriptDsl.id)
+
+        then:
+        subprojectDir.file("src/main/scala").assertHasDescendants("my/lib/Library.scala")
+        subprojectDir.file("src/test/scala").assertHasDescendants("my/lib/LibrarySuite.scala")
+
+        and:
+        commonJvmFilesGenerated(scriptDsl)
+
+        when:
+        run("build")
+
+        then:
+        assertTestPassed("my.lib.LibrarySuite", "someLibraryMethod is always true")
+
+        where:
+        scriptDsl << ScriptDslFixture.SCRIPT_DSLS
+    }
+
+    @Unroll
+    def "source generation is skipped when scala sources detected with #scriptDsl build scripts"() {
         setup:
-        file("src/main/scala/org/acme/SampleMain.scala") << """
+        subprojectDir.file("src/main/scala/org/acme/SampleMain.scala") << """
             package org.acme;
 
             class SampleMain{
             }
     """
-        file("src/test/scala/org/acme/SampleMainTest.scala") << """
+        subprojectDir.file("src/test/scala/org/acme/SampleMainTest.scala") << """
                     package org.acme;
 
                     class SampleMainTest{
@@ -62,12 +88,18 @@ class ScalaLibraryInitIntegrationTest extends AbstractInitIntegrationSpec {
             """
 
         when:
-        succeeds('init', '--type', 'scala-library', '--dsl', scriptDsl.id)
+        run('init', '--type', 'scala-library', '--dsl', scriptDsl.id)
 
         then:
-        !file(SAMPLE_LIBRARY_CLASS).exists()
-        !file(SAMPLE_LIBRARY_TEST_CLASS).exists()
+        subprojectDir.file("src/main/scala").assertHasDescendants("org/acme/SampleMain.scala")
+        subprojectDir.file("src/test/scala").assertHasDescendants("org/acme/SampleMainTest.scala")
         dslFixtureFor(scriptDsl).assertGradleFilesGenerated()
+
+        when:
+        run("build")
+
+        then:
+        executed(":lib:test")
 
         where:
         scriptDsl << ScriptDslFixture.SCRIPT_DSLS

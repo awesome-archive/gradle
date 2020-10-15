@@ -16,29 +16,14 @@
 
 package org.gradle.plugin.use
 
-import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.test.fixtures.file.LeaksFileHandles
 import org.gradle.test.fixtures.plugin.PluginBuilder
-import org.gradle.test.fixtures.server.http.MavenHttpModule
-import org.gradle.test.fixtures.server.http.MavenHttpPluginRepository
-import org.junit.Rule
 
-import static org.hamcrest.Matchers.containsString
-import static org.hamcrest.Matchers.startsWith
+import static org.hamcrest.CoreMatchers.containsString
+import static org.hamcrest.CoreMatchers.startsWith
 
 @LeaksFileHandles
-class NonDeclarativePluginUseIntegrationSpec extends AbstractIntegrationSpec {
-
-    public static final String PLUGIN_ID = "org.myplugin"
-    public static final String VERSION = "1.0"
-    public static final String GROUP = "my"
-    public static final String ARTIFACT = "plugin"
-    public static final String USE = "plugins { id '$PLUGIN_ID' version '$VERSION' }"
-
-    @Rule
-    MavenHttpPluginRepository pluginRepo = MavenHttpPluginRepository.asGradlePluginPortal(executer, mavenRepo)
-
-    def pluginBuilder = new PluginBuilder(file("plugin"))
+class NonDeclarativePluginUseIntegrationSpec extends AbstractPluginSpec {
 
     def setup() {
         executer.requireOwnGradleUserHomeDir()
@@ -82,12 +67,12 @@ class NonDeclarativePluginUseIntegrationSpec extends AbstractIntegrationSpec {
         }
 
         publishPlugin """
-                // can load plugin dependended on
+                // can load plugin dependent on
                 project.apply plugin: 'test-plugin-2'
-    
+
                 // Can see dependency classes
                 getClass().classLoader.loadClass('${pluginBuilder2.packageName}.TestPlugin2')
-    
+
                 project.task('pluginTask')
             """
 
@@ -159,7 +144,7 @@ class NonDeclarativePluginUseIntegrationSpec extends AbstractIntegrationSpec {
         """
 
         then:
-        succeeds("tasks")
+        succeeds("help")
     }
 
     def "dependencies of non declarative plugins influence buildscript dependency resolution"() {
@@ -205,8 +190,9 @@ class NonDeclarativePluginUseIntegrationSpec extends AbstractIntegrationSpec {
             }
 
             task buildscriptDependencies {
+                def moduleVersion = buildscript.configurations.classpath.resolvedConfiguration.resolvedArtifacts.find { it.name == "test" }.moduleVersion.id.version
                 doLast {
-                    println "buildscriptDependencies - " + buildscript.configurations.classpath.resolvedConfiguration.resolvedArtifacts.find { it.name == "test" }.moduleVersion.id.version
+                    println "buildscriptDependencies - " + moduleVersion
                 }
             }
         """
@@ -269,7 +255,7 @@ class NonDeclarativePluginUseIntegrationSpec extends AbstractIntegrationSpec {
     def "failure due to plugin instantiation throwing"() {
         when:
         pluginBuilder.with {
-            addNonConstructablePlugin(PLUGIN_ID, "OtherPlugin")
+            addNonConstructiblePlugin(PLUGIN_ID, "OtherPlugin")
             publishAs(GROUP, ARTIFACT, VERSION, pluginRepo, executer).allowAll()
         }
 
@@ -306,10 +292,4 @@ class NonDeclarativePluginUseIntegrationSpec extends AbstractIntegrationSpec {
         failure.assertHasLineNumber(2)
     }
 
-    MavenHttpModule publishPlugin(String impl) {
-        pluginBuilder.with {
-            addPlugin(impl, PLUGIN_ID)
-            publishAs(GROUP, ARTIFACT, VERSION, pluginRepo, executer).allowAll().pluginModule as MavenHttpModule
-        }
-    }
 }

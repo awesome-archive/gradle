@@ -17,7 +17,9 @@
 package org.gradle.api.tasks.javadoc;
 
 import org.gradle.api.InvalidUserDataException;
+import org.gradle.api.UncheckedIOException;
 import org.gradle.api.file.FileCollection;
+import org.gradle.api.file.FileSystemOperations;
 import org.gradle.api.file.FileTree;
 import org.gradle.api.internal.ClassPathRegistry;
 import org.gradle.api.internal.project.IsolatedAntBuilder;
@@ -35,9 +37,12 @@ import org.gradle.api.tasks.PathSensitive;
 import org.gradle.api.tasks.PathSensitivity;
 import org.gradle.api.tasks.SourceTask;
 import org.gradle.api.tasks.TaskAction;
+import org.gradle.internal.file.Deleter;
 
 import javax.annotation.Nullable;
+import javax.inject.Inject;
 import java.io.File;
+import java.io.IOException;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -70,9 +75,9 @@ public class Groovydoc extends SourceTask {
 
     private boolean use;
 
-    private boolean noTimestamp;
+    private boolean noTimestamp = true;
 
-    private boolean noVersionStamp;
+    private boolean noVersionStamp = true;
 
     private String windowTitle;
 
@@ -95,9 +100,18 @@ public class Groovydoc extends SourceTask {
     @TaskAction
     protected void generate() {
         checkGroovyClasspathNonEmpty(getGroovyClasspath().getFiles());
-        getAntGroovydoc().execute(getSource(), getDestinationDir(), isUse(), isNoTimestamp(), isNoVersionStamp(), getWindowTitle(),
-                getDocTitle(), getHeader(), getFooter(), getPathToOverview(), isIncludePrivate(), getLinks(), getGroovyClasspath(),
-                getClasspath(), getProject());
+        File destinationDir = getDestinationDir();
+        try {
+            getDeleter().ensureEmptyDirectory(destinationDir);
+        } catch (IOException ex) {
+            throw new UncheckedIOException(ex);
+        }
+        getAntGroovydoc().execute(
+            getSource(), destinationDir, isUse(), isNoTimestamp(), isNoVersionStamp(),
+            getWindowTitle(), getDocTitle(), getHeader(), getFooter(), getPathToOverview(), isIncludePrivate(),
+            getLinks(), getGroovyClasspath(), getClasspath(),
+            getTemporaryDir(), getServices().get(FileSystemOperations.class)
+        );
     }
 
     @Nullable
@@ -444,5 +458,10 @@ public class Groovydoc extends SourceTask {
             result = 31 * result + (url != null ? url.hashCode() : 0);
             return result;
         }
+    }
+
+    @Inject
+    protected Deleter getDeleter() {
+        throw new UnsupportedOperationException("Decorator takes care of injection");
     }
 }

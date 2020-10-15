@@ -18,16 +18,18 @@ package org.gradle.language.base
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.Sample
+import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
 import org.gradle.util.Requires
 import org.gradle.util.TestPrecondition
 import org.junit.Rule
 
 @Requires(TestPrecondition.ONLINE)
+@UnsupportedWithConfigurationCache(because = "software model")
 class InternalViewsSampleIntegrationTest extends AbstractIntegrationSpec {
     @Rule
-    Sample internalViewsSample = new Sample(temporaryFolder, "customModel/internalViews")
+    Sample internalViewsSample = new Sample(temporaryFolder, "customModel/internalViews/groovy")
 
-    // NOTE If you change this, you'll also need to change subprojects/docs/src/doc/samples/userguideOutput/softwareModelExtend-iv-model.out
+    // NOTE If you change this, you'll also need to change subprojects/docs/src/doc/snippets/customModel/languageType/groovy/softwareModelExtend-iv-model.out
     def "show mutated public view data but no internal view data in model report"() {
         given:
         sample internalViewsSample
@@ -40,17 +42,17 @@ class InternalViewsSampleIntegrationTest extends AbstractIntegrationSpec {
                   | Type:   \torg.gradle.platform.base.ComponentSpecContainer
                   | Creator: \tComponentBasePlugin.PluginRules#components(ComponentSpecContainer)
                   | Rules:
-                     ⤷ components { ... } @ build.gradle line 42, column 5
+                     ⤷ components { ... } @ build.gradle line 37, column 5
                      ⤷ MyPlugin#mutateMyComponents(ModelMap<MyComponentInternal>)
                 + my
                       | Type:   \tMyComponent
-                      | Creator: \tcomponents { ... } @ build.gradle line 42, column 5 > create(my)
+                      | Creator: \tcomponents { ... } @ build.gradle line 37, column 5 > create(my)
                       | Rules:
                          ⤷ MyPlugin#mutateMyComponents(ModelMap<MyComponentInternal>) > all()
                     + publicData
                           | Type:   \tjava.lang.String
                           | Value:  \tSome PUBLIC data
-                          | Creator: \tcomponents { ... } @ build.gradle line 42, column 5 > create(my)
-        """.stripIndent().trim()
+                          | Creator: \tcomponents { ... } @ build.gradle line 37, column 5 > create(my)
+            """.stripIndent().trim()
     }
 }

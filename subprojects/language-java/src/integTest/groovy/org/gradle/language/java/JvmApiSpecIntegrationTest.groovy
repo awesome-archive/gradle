@@ -16,6 +16,7 @@
 
 package org.gradle.language.java
 
+import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
 import org.gradle.integtests.fixtures.jvm.JvmSourceFile
 import org.gradle.integtests.fixtures.jvm.TestJvmComponent
 import org.gradle.integtests.language.AbstractJvmLanguageIntegrationTest
@@ -26,6 +27,7 @@ import org.gradle.util.TestPrecondition
 import spock.lang.Issue
 
 @Requires(TestPrecondition.JDK8_OR_EARLIER)
+@UnsupportedWithConfigurationCache(because = "software model")
 class JvmApiSpecIntegrationTest extends AbstractJvmLanguageIntegrationTest {
 
     TestJvmComponent app = new TestJavaComponent()
@@ -218,6 +220,7 @@ class JvmApiSpecIntegrationTest extends AbstractJvmLanguageIntegrationTest {
         }
 
         then:
+        expectDeprecationWarnings()
         succeeds "assemble"
 
         and:
@@ -268,6 +271,7 @@ class JvmApiSpecIntegrationTest extends AbstractJvmLanguageIntegrationTest {
             ["non_api/pkg/InternalPerson.class"])
 
         then:
+        expectDeprecationWarnings()
         succeeds 'assemble'
 
         and:
@@ -315,6 +319,7 @@ class JvmApiSpecIntegrationTest extends AbstractJvmLanguageIntegrationTest {
             ["non_api/pkg/InternalPerson.class", "compile/test/internal/Util.class"])
 
         then:
+        expectDeprecationWarnings()
         succeeds 'assemble'
 
         and:

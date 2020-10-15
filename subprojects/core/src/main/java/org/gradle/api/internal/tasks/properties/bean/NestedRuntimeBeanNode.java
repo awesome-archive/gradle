@@ -18,14 +18,12 @@ package org.gradle.api.internal.tasks.properties.bean;
 
 import com.google.common.annotations.VisibleForTesting;
 import org.codehaus.groovy.runtime.ConvertedClosure;
-import org.gradle.api.internal.ClosureBackedAction;
-import org.gradle.api.internal.tasks.DefaultTaskInputPropertySpec;
-import org.gradle.api.internal.tasks.PropertySpecFactory;
-import org.gradle.api.internal.tasks.TaskValidationContext;
-import org.gradle.api.internal.tasks.ValidatingValue;
-import org.gradle.api.internal.tasks.ValidationAction;
+import org.gradle.api.internal.tasks.TaskDependencyContainer;
+import org.gradle.api.internal.tasks.properties.PropertyValue;
 import org.gradle.api.internal.tasks.properties.PropertyVisitor;
 import org.gradle.api.internal.tasks.properties.TypeMetadata;
+import org.gradle.internal.reflect.TypeValidationContext;
+import org.gradle.util.ClosureBackedAction;
 import org.gradle.util.ConfigureUtil;
 
 import java.lang.reflect.InvocationHandler;
@@ -38,15 +36,13 @@ class NestedRuntimeBeanNode extends AbstractNestedRuntimeBeanNode {
     }
 
     @Override
-    public void visitNode(PropertyVisitor visitor, PropertySpecFactory specFactory, Queue<RuntimeBeanNode<?>> queue, RuntimeBeanNodeFactory nodeFactory) {
-        visitImplementation(visitor, specFactory);
-        visitProperties(visitor, specFactory, queue, nodeFactory);
+    public void visitNode(PropertyVisitor visitor, Queue<RuntimeBeanNode<?>> queue, RuntimeBeanNodeFactory nodeFactory, TypeValidationContext validationContext) {
+        visitImplementation(visitor);
+        visitProperties(visitor, queue, nodeFactory, validationContext);
     }
 
-    private void visitImplementation(PropertyVisitor visitor, PropertySpecFactory specFactory) {
-        DefaultTaskInputPropertySpec implementation = specFactory.createInputPropertySpec(getPropertyName(), new ImplementationPropertyValue(getImplementationClass(getBean())));
-        implementation.optional(false);
-        visitor.visitInputProperty(implementation);
+    private void visitImplementation(PropertyVisitor visitor) {
+        visitor.visitInputProperty(getPropertyName(), new ImplementationPropertyValue(getImplementationClass(getBean())), false);
     }
 
     @VisibleForTesting
@@ -76,7 +72,7 @@ class NestedRuntimeBeanNode extends AbstractNestedRuntimeBeanNode {
         return bean.getClass();
     }
 
-    private static class ImplementationPropertyValue implements ValidatingValue {
+    private static class ImplementationPropertyValue implements PropertyValue {
 
         private final Class<?> beanClass;
 
@@ -86,12 +82,23 @@ class NestedRuntimeBeanNode extends AbstractNestedRuntimeBeanNode {
 
         @Override
         public Object call() {
+            return getUnprocessedValue();
+        }
+
+        @Override
+        public Object getUnprocessedValue() {
             return beanClass;
         }
 
         @Override
-        public void validate(String propertyName, boolean optional, ValidationAction valueValidator, TaskValidationContext context) {
+        public TaskDependencyContainer getTaskDependencies() {
+            // Ignore
+            return TaskDependencyContainer.EMPTY;
         }
 
+        @Override
+        public void maybeFinalizeValue() {
+            // Ignore
+        }
     }
 }

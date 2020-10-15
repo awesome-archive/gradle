@@ -59,15 +59,15 @@ class CodeNarcCompilationClasspathIntegrationTest extends AbstractIntegrationSpe
 
             codenarc {
                 toolVersion = '$codeNarcVersion'
-                codenarc.configFile = file('$CONFIG_FILE_PATH') 
+                codenarc.configFile = file('$CONFIG_FILE_PATH')
             }
-            
+
             dependencies {
-                compile localGroovy()
+                implementation localGroovy()
             }
-            
+
             codenarcMain {
-                compilationClasspath = configurations.compile
+                compilationClasspath = configurations.compileClasspath
             }
         """
     }

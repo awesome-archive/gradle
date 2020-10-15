@@ -22,6 +22,7 @@ import org.gradle.util.Requires
 import org.gradle.util.SetSystemProperties
 import org.gradle.util.TestPrecondition
 import org.junit.Rule
+import spock.lang.Issue
 import spock.lang.Specification
 
 class GradleUserHomeLookupTest extends Specification {
@@ -31,6 +32,8 @@ class GradleUserHomeLookupTest extends Specification {
     @Rule
     SetSystemProperties setSystemProperties = new SetSystemProperties()
 
+    @Requires(TestPrecondition.NOT_EC2_AGENT)
+    @Issue('https://github.com/gradle/gradle-private/issues/2876')
     def "returns default Gradle user home if environment variable or system property isn't defined"() {
         expect:
         GradleUserHomeLookup.gradleUserHome() == new File(GradleUserHomeLookup.DEFAULT_GRADLE_USER_HOME)
@@ -45,7 +48,6 @@ class GradleUserHomeLookupTest extends Specification {
         GradleUserHomeLookup.gradleUserHome() == new File(userDefinedDirName)
     }
 
-    @Requires(TestPrecondition.SET_ENV_VARIABLE)
     def "returns Gradle user home set by environment variable"() {
         when:
         String userDefinedDirName = 'some/dir'
@@ -58,7 +60,6 @@ class GradleUserHomeLookupTest extends Specification {
         env.removeEnvironmentVariable(GradleUserHomeLookup.GRADLE_USER_HOME_ENV_KEY)
     }
 
-    @Requires(TestPrecondition.SET_ENV_VARIABLE)
     def "Gradle user home set by system property takes precedence over environment variable"() {
         when:
         String sysPropDirName = 'some/dir'

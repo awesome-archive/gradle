@@ -19,19 +19,18 @@ package org.gradle.testing.fixture
 import org.gradle.api.logging.configuration.ConsoleOutput
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.DefaultTestExecutionResult
+import org.gradle.integtests.fixtures.RichConsoleStyling
 import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
 import org.gradle.test.fixtures.ConcurrentTestUtil
 import org.gradle.test.fixtures.server.http.BlockingHttpServer
-import org.hamcrest.Matchers
+import org.hamcrest.CoreMatchers
 import org.junit.Rule
-import spock.lang.Ignore
 import spock.lang.IgnoreIf
 import spock.lang.Unroll
 
-import static org.gradle.integtests.fixtures.AbstractConsoleFunctionalSpec.workInProgressLine
 import static org.gradle.testing.fixture.JvmBlockingTestClassGenerator.*
 
-abstract class AbstractJvmFailFastIntegrationSpec extends AbstractIntegrationSpec {
+abstract class AbstractJvmFailFastIntegrationSpec extends AbstractIntegrationSpec implements RichConsoleStyling {
     @Rule
     BlockingHttpServer server = new BlockingHttpServer()
     JvmBlockingTestClassGenerator generator
@@ -59,7 +58,7 @@ abstract class AbstractJvmFailFastIntegrationSpec extends AbstractIntegrationSpe
         testExecution.release(OTHER_RESOURCE)
         gradleHandle.waitForFailure()
         def result = new DefaultTestExecutionResult(testDirectory)
-        result.testClass('pkg.FailedTest').assertTestFailed('failTest', Matchers.anything())
+        result.testClass('pkg.FailedTest').assertTestFailed('failTest', CoreMatchers.anything())
         result.testClass('pkg.OtherTest').assertTestPassed('passingTest')
 
         where:
@@ -85,8 +84,8 @@ abstract class AbstractJvmFailFastIntegrationSpec extends AbstractIntegrationSpe
         testExecution.release(FAILED_RESOURCE)
         gradleHandle.waitForFailure()
         def result = new DefaultTestExecutionResult(testDirectory)
-        result.testClass('pkg.FailedTest').assertTestFailed('failTest', Matchers.anything())
-        result.testClass('pkg.OtherTest').assertTestCount(0, 0, 0)
+        result.testClass('pkg.FailedTest').assertTestFailed('failTest', CoreMatchers.anything())
+        result.testClass('pkg.OtherTest').assertTestSkipped('passingTest')
 
         where:
         description       | taskList                   | buildConfig
@@ -95,7 +94,6 @@ abstract class AbstractJvmFailFastIntegrationSpec extends AbstractIntegrationSpe
     }
 
     @Unroll
-    @Ignore
     def "ensure fail fast with forkEvery #forkEvery, maxWorkers #maxWorkers, omittedTests #testOmitted"() {
         given:
         buildFile.text = generator.initBuildFile(maxWorkers, forkEvery)
@@ -110,9 +108,12 @@ abstract class AbstractJvmFailFastIntegrationSpec extends AbstractIntegrationSpe
         testExecution.release(1)
         gradleHandle.waitForFailure()
         def result = new DefaultTestExecutionResult(testDirectory)
-        assert 1 == resourceForTest.keySet().count { result.testClassExists(it) && result.testClass(it).testFailed('failedTest', Matchers.anything()) }
-        assert 1 == resourceForTest.keySet().count { result.testClassExists(it) && result.testClass(it).testCount != 0 }
-        assert testOmitted >= resourceForTest.keySet().count { result.testClassExists(it) && result.testClass(it).testCount == 0 }
+        assert 1 == resourceForTest.keySet().count { result.testClassExists(it) && result.testClass(it).testFailed('failedTest', CoreMatchers.anything()) }
+        assert testOmitted == resourceForTest.keySet().with {
+            count { !result.testClassExists(it) } +
+                count { result.testClassExists(it) && result.testClass(it).testCount == 0 } +
+                count { result.testClassExists(it) && result.testClass(it).testSkippedCount == 1 }
+        }
 
         where:
         forkEvery | maxWorkers | testOmitted
@@ -138,7 +139,7 @@ abstract class AbstractJvmFailFastIntegrationSpec extends AbstractIntegrationSpe
         then:
         testExecution.release(FAILED_RESOURCE)
         gradleHandle.waitForFailure()
-        assert gradleHandle.standardOutput.matches(/(?s).*pkg\.FailedTest.*failTest.*FAILED.*java.lang.RuntimeException at FailedTest.java.*/)
+        assert gradleHandle.standardOutput.matches(/(?s).*FailedTest.*failTest.*FAILED.*java.lang.RuntimeException at FailedTest.java.*/)
         assert !gradleHandle.standardOutput.contains('pkg.OtherTest')
     }
 
@@ -157,12 +158,29 @@ abstract class AbstractJvmFailFastIntegrationSpec extends AbstractIntegrationSpe
 
         then:
         ConcurrentTestUtil.poll {
-            assert gradleHandle.standardOutput.contains(workInProgressLine('> :test > Executing test pkg.FailedTest'))
-            assert gradleHandle.standardOutput.contains(workInProgressLine('> :test > Executing test pkg.OtherTest'))
+            assertHasWorkInProgress(gradleHandle, '> :test > Executing test pkg.FailedTest')
+            assertHasWorkInProgress(gradleHandle, '> :test > Executing test pkg.OtherTest')
         }
 
         testExecution.release(FAILED_RESOURCE)
         gradleHandle.waitForFailure()
+    }
+
+    def "fail fast works with --tests filter"() {
+        given:
+        buildFile.text = generator.initBuildFile()
+        def resourceForTest = generator.withFailingTests(5)
+        def testExecution = server.expectOptionalAndBlock(DEFAULT_MAX_WORKERS, resourceForTest.values() as String[])
+
+        when:
+        def gradleHandle = executer.withTasks('test', '--fail-fast', '--tests=*OtherTest_*').start()
+        testExecution.waitForAllPendingCalls()
+
+        then:
+        testExecution.release(DEFAULT_MAX_WORKERS)
+        gradleHandle.waitForFailure()
+
+        assert !gradleHandle.errorOutput.contains('No tests found for given includes:')
     }
 
     abstract String testAnnotationClass()

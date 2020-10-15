@@ -20,11 +20,11 @@ import org.gradle.api.artifacts.component.ComponentSelector;
 import org.gradle.api.artifacts.result.ComponentSelectionReason;
 import org.gradle.api.artifacts.result.ResolvedComponentResult;
 import org.gradle.api.artifacts.result.ResolvedDependencyResult;
+import org.gradle.api.artifacts.result.ResolvedVariantResult;
 import org.gradle.api.artifacts.result.UnresolvedDependencyResult;
-import org.gradle.internal.resolve.ModuleVersionResolveException;
-import org.gradle.api.internal.artifacts.result.DefaultResolvedComponentResult;
 import org.gradle.api.internal.artifacts.result.DefaultResolvedDependencyResult;
 import org.gradle.api.internal.artifacts.result.DefaultUnresolvedDependencyResult;
+import org.gradle.internal.resolve.ModuleVersionResolveException;
 
 import java.util.HashMap;
 import java.util.List;
@@ -34,22 +34,26 @@ import static java.util.Arrays.asList;
 
 public class CachingDependencyResultFactory {
 
-    private final Map<List, DefaultUnresolvedDependencyResult> unresolvedDependencies = new HashMap<List, DefaultUnresolvedDependencyResult>();
-    private final Map<List, DefaultResolvedDependencyResult> resolvedDependencies = new HashMap<List, DefaultResolvedDependencyResult>();
+    private final Map<List<Object>, DefaultUnresolvedDependencyResult> unresolvedDependencies = new HashMap<>();
+    private final Map<List<Object>, DefaultResolvedDependencyResult> resolvedDependencies = new HashMap<>();
 
-    public UnresolvedDependencyResult createUnresolvedDependency(ComponentSelector requested, ResolvedComponentResult from,
-                                                       ComponentSelectionReason reason, ModuleVersionResolveException failure) {
-        List<Object> key = asList(requested, from);
+    public UnresolvedDependencyResult createUnresolvedDependency(ComponentSelector requested, ResolvedComponentResult from, boolean constraint,
+                                                                 ComponentSelectionReason reason, ModuleVersionResolveException failure) {
+        List<Object> key = asList(requested, from, constraint);
         if (!unresolvedDependencies.containsKey(key)) {
-            unresolvedDependencies.put(key, new DefaultUnresolvedDependencyResult(requested, reason, from, failure));
+            unresolvedDependencies.put(key, new DefaultUnresolvedDependencyResult(requested, constraint, reason, from, failure));
         }
         return unresolvedDependencies.get(key);
     }
 
-    public ResolvedDependencyResult createResolvedDependency(ComponentSelector requested, ResolvedComponentResult from, DefaultResolvedComponentResult selected) {
-        List<Object> key = asList(requested, from, selected);
+    public ResolvedDependencyResult createResolvedDependency(ComponentSelector requested,
+                                                             ResolvedComponentResult from,
+                                                             ResolvedComponentResult selected,
+                                                             ResolvedVariantResult resolvedVariant,
+                                                             boolean constraint) {
+        List<Object> key = asList(requested, from, selected, resolvedVariant, constraint);
         if (!resolvedDependencies.containsKey(key)) {
-            resolvedDependencies.put(key, new DefaultResolvedDependencyResult(requested, selected, from));
+            resolvedDependencies.put(key, new DefaultResolvedDependencyResult(requested, constraint, selected, resolvedVariant, from));
         }
         return resolvedDependencies.get(key);
     }

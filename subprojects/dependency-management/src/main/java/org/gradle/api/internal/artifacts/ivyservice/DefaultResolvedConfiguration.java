@@ -35,23 +35,27 @@ public class DefaultResolvedConfiguration implements ResolvedConfiguration {
         this.configuration = configuration;
     }
 
+    @Override
     public boolean hasError() {
         return configuration.hasError();
     }
 
+    @Override
     public void rethrowFailure() throws ResolveException {
         configuration.rethrowFailure();
     }
 
+    @Override
     public LenientConfiguration getLenientConfiguration() {
         return configuration;
     }
 
     @Override
     public Set<File> getFiles() throws ResolveException {
-        return getFiles(Specs.<Dependency>satisfyAll());
+        return getFiles(Specs.satisfyAll());
     }
 
+    @Override
     public Set<File> getFiles(final Spec<? super Dependency> dependencySpec) throws ResolveException {
         ResolvedFilesCollectingVisitor visitor = new ResolvedFilesCollectingVisitor();
         configuration.select(dependencySpec).visitArtifacts(visitor, false);
@@ -62,16 +66,19 @@ public class DefaultResolvedConfiguration implements ResolvedConfiguration {
         return visitor.getFiles();
     }
 
+    @Override
     public Set<ResolvedDependency> getFirstLevelModuleDependencies() throws ResolveException {
         rethrowFailure();
         return configuration.getFirstLevelModuleDependencies();
     }
 
+    @Override
     public Set<ResolvedDependency> getFirstLevelModuleDependencies(Spec<? super Dependency> dependencySpec) throws ResolveException {
         rethrowFailure();
         return configuration.getFirstLevelModuleDependencies(dependencySpec);
     }
 
+    @Override
     public Set<ResolvedArtifact> getResolvedArtifacts() throws ResolveException {
         rethrowFailure();
         ArtifactCollectingVisitor visitor = new ArtifactCollectingVisitor();

@@ -33,7 +33,7 @@ import spock.lang.Specification
 class RepositoryTransportDeployWagonTest extends Specification {
 
     @Rule
-    final TestNameTestDirectoryProvider testDirectory = new TestNameTestDirectoryProvider()
+    final TestNameTestDirectoryProvider testDirectory = new TestNameTestDirectoryProvider(getClass())
 
     def "wagon connections attempts should set a repository and signal session opening events"() {
         setup:
@@ -59,7 +59,7 @@ class RepositoryTransportDeployWagonTest extends Specification {
         'connect' | [Mock(Repository), Mock(AuthenticationInfo), Mock(ProxyInfoProvider)]
     }
 
-    def "waggon disconnect should signal disconnection events"() {
+    def "wagon disconnect should signal disconnection events"() {
         setup:
         SessionListener sessionListener = Mock()
         RepositoryTransportDeployWagon wagon = new RepositoryTransportDeployWagon()

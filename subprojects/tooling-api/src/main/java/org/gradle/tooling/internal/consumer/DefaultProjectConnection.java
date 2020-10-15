@@ -15,6 +15,7 @@
  */
 package org.gradle.tooling.internal.consumer;
 
+import org.gradle.api.Transformer;
 import org.gradle.tooling.BuildAction;
 import org.gradle.tooling.BuildActionExecuter;
 import org.gradle.tooling.BuildLauncher;
@@ -23,30 +24,48 @@ import org.gradle.tooling.ProjectConnection;
 import org.gradle.tooling.ResultHandler;
 import org.gradle.tooling.TestLauncher;
 import org.gradle.tooling.internal.consumer.async.AsyncConsumerActionExecutor;
+import org.gradle.tooling.internal.consumer.connection.ConsumerAction;
+import org.gradle.tooling.internal.consumer.connection.ConsumerConnection;
+import org.gradle.tooling.internal.consumer.parameters.ConsumerOperationParameters;
+
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 
 class DefaultProjectConnection implements ProjectConnection {
     private final AsyncConsumerActionExecutor connection;
     private final ConnectionParameters parameters;
+    private final ProjectConnectionCloseListener listener;
 
-    public DefaultProjectConnection(AsyncConsumerActionExecutor connection, ConnectionParameters parameters) {
+    public DefaultProjectConnection(AsyncConsumerActionExecutor connection, ConnectionParameters parameters, ProjectConnectionCloseListener listener) {
         this.connection = connection;
         this.parameters = parameters;
+        this.listener = listener;
     }
 
+    @Override
     public void close() {
         connection.stop();
+        listener.connectionClosed(this);
     }
 
+    void disconnect() {
+        connection.disconnect();
+    }
+
+    @Override
     public <T> T getModel(Class<T> modelType) {
         return model(modelType).get();
     }
 
+    @Override
     public <T> void getModel(final Class<T> modelType, final ResultHandler<? super T> handler) {
         model(modelType).get(handler);
     }
 
+    @Override
     public BuildLauncher newBuild() {
-        return new ProjectConnectionBuildLauncher(connection, parameters);
+        return new DefaultBuildLauncher(connection, parameters);
     }
 
     @Override
@@ -54,6 +73,7 @@ class DefaultProjectConnection implements ProjectConnection {
         return new DefaultTestLauncher(connection, parameters);
     }
 
+    @Override
     public <T> ModelBuilder<T> model(Class<T> modelType) {
         if (!modelType.isInterface()) {
             throw new IllegalArgumentException(String.format("Cannot fetch a model of type '%s' as this type is not an interface.", modelType.getName()));
@@ -61,8 +81,49 @@ class DefaultProjectConnection implements ProjectConnection {
         return new DefaultModelBuilder<T>(modelType, connection, parameters);
     }
 
+    @Override
     public <T> BuildActionExecuter<T> action(final BuildAction<T> buildAction) {
         return new DefaultBuildActionExecuter<T>(buildAction, connection, parameters);
     }
 
+    @Override
+    public BuildActionExecuter.Builder action() {
+        return new DefaultBuildActionExecuter.Builder(connection, parameters);
+    }
+
+    @Override
+    public void notifyDaemonsAboutChangedPaths(List<Path> changedPaths) {
+        final List<String> absolutePaths = new ArrayList<String>(changedPaths.size());
+        for (Path changedPath : changedPaths) {
+            if (!changedPath.isAbsolute()) {
+                throw new IllegalArgumentException(String.format("Changed path '%s' is not absolute", changedPath));
+            }
+            absolutePaths.add(changedPath.toString());
+        }
+        final ConsumerOperationParameters.Builder operationParamsBuilder = ConsumerOperationParameters.builder();
+        operationParamsBuilder.setCancellationToken(new DefaultCancellationTokenSource().token());
+        operationParamsBuilder.setParameters(parameters);
+        operationParamsBuilder.setEntryPoint("Notify daemons about changed paths API");
+        connection.run(
+            new ConsumerAction<Void>() {
+                @Override
+                public ConsumerOperationParameters getParameters() {
+                    return operationParamsBuilder.build();
+                }
+
+                @Override
+                public Void run(ConsumerConnection connection) {
+                    connection.notifyDaemonsAboutChangedPaths(absolutePaths, getParameters());
+                    return null;
+                }
+            },
+            new ResultHandlerAdapter<Void>(new BlockingResultHandler<Void>(Void.class),
+                new ExceptionTransformer(new Transformer<String, Throwable>() {
+                    @Override
+                    public String transform(Throwable throwable) {
+                        return String.format("Could not notify daemons about changed paths: %s.", connection.getDisplayName());
+                    }
+                })
+            ));
+    }
 }

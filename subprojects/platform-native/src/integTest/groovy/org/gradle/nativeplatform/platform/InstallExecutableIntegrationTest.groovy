@@ -16,6 +16,7 @@
 
 package org.gradle.nativeplatform.platform
 
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.internal.os.OperatingSystem
 import org.gradle.nativeplatform.fixtures.AbstractInstalledToolChainIntegrationSpec
 import org.gradle.nativeplatform.fixtures.RequiresInstalledToolChain
@@ -25,7 +26,7 @@ import org.gradle.util.TestPrecondition
 
 import static org.gradle.nativeplatform.fixtures.ToolChainRequirement.GCC_COMPATIBLE
 
-@Requires([TestPrecondition.UNIX, TestPrecondition.NOT_UNKNOWN_OS])
+@Requires(TestPrecondition.UNIX)
 @RequiresInstalledToolChain(GCC_COMPATIBLE)
 class InstallExecutableIntegrationTest extends AbstractInstalledToolChainIntegrationSpec {
     def testApp = new PlatformDetectingTestApp()
@@ -46,6 +47,7 @@ model {
         testApp.writeSources(file("src/main"))
     }
 
+    @ToBeFixedForConfigurationCache
     def "can create installation for a different os than the current one"() {
         String installOS
         if (os.windows) {

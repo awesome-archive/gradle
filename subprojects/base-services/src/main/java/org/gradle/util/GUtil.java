@@ -16,16 +16,14 @@
 
 package org.gradle.util;
 
-import com.google.common.base.Charsets;
 import org.apache.commons.lang.StringUtils;
 import org.gradle.api.Transformer;
 import org.gradle.api.UncheckedIOException;
 import org.gradle.api.specs.Spec;
+import org.gradle.internal.Cast;
+import org.gradle.internal.Factory;
 import org.gradle.internal.UncheckedException;
-import org.gradle.internal.io.LineBufferingOutputStream;
-import org.gradle.internal.io.SkipFirstTextStream;
 import org.gradle.internal.io.StreamByteBuffer;
-import org.gradle.internal.io.WriterTextStream;
 
 import javax.annotation.Nullable;
 import java.io.File;
@@ -35,7 +33,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.ObjectOutputStream;
 import java.io.OutputStream;
-import java.io.OutputStreamWriter;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLConnection;
 import java.util.ArrayList;
@@ -61,40 +60,40 @@ public class GUtil {
     private static final Pattern WORD_SEPARATOR = Pattern.compile("\\W+");
     private static final Pattern UPPER_LOWER = Pattern.compile("(?m)([A-Z]*)([a-z0-9]*)");
 
-    public static <T extends Collection> T flatten(Object[] elements, T addTo, boolean flattenMaps) {
+    public static <T extends Collection<?>> T flatten(Object[] elements, T addTo, boolean flattenMaps) {
         return flatten(asList(elements), addTo, flattenMaps);
     }
 
-    public static <T extends Collection> T flatten(Object[] elements, T addTo) {
+    public static <T extends Collection<?>> T flatten(Object[] elements, T addTo) {
         return flatten(asList(elements), addTo);
     }
 
-    public static <T extends Collection> T flatten(Collection elements, T addTo) {
+    public static <T extends Collection<?>> T flatten(Collection<?> elements, T addTo) {
         return flatten(elements, addTo, true);
     }
 
-    public static <T extends Collection> T flattenElements(Object... elements) {
+    public static <T extends Collection<?>> T flattenElements(Object... elements) {
         Collection<T> out = new LinkedList<T>();
         flatten(elements, out, true);
-        return (T) out;
+        return Cast.uncheckedNonnullCast(out);
     }
 
-    public static <T extends Collection> T flatten(Collection elements, T addTo, boolean flattenMapsAndArrays) {
+    public static <T extends Collection<?>> T flatten(Collection<?> elements, T addTo, boolean flattenMapsAndArrays) {
         return flatten(elements, addTo, flattenMapsAndArrays, flattenMapsAndArrays);
     }
 
-    public static <T extends Collection> T flatten(Collection elements, T addTo, boolean flattenMaps, boolean flattenArrays) {
-        Iterator iter = elements.iterator();
+    public static <T extends Collection<?>> T flatten(Collection<?> elements, T addTo, boolean flattenMaps, boolean flattenArrays) {
+        Iterator<?> iter = elements.iterator();
         while (iter.hasNext()) {
             Object element = iter.next();
             if (element instanceof Collection) {
-                flatten((Collection) element, addTo, flattenMaps, flattenArrays);
+                flatten((Collection<?>) element, addTo, flattenMaps, flattenArrays);
             } else if ((element instanceof Map) && flattenMaps) {
-                flatten(((Map) element).values(), addTo, flattenMaps, flattenArrays);
+                flatten(((Map<?, ?>) element).values(), addTo, flattenMaps, flattenArrays);
             } else if ((element.getClass().isArray()) && flattenArrays) {
                 flatten(asList((Object[]) element), addTo, flattenMaps, flattenArrays);
             } else {
-                addTo.add(element);
+                (Cast.<Collection<Object>>uncheckedNonnullCast(addTo)).add(element);
             }
         }
         return addTo;
@@ -106,15 +105,15 @@ public class GUtil {
      * @param input any object
      * @return collection of flattened input or single input wrapped in a collection.
      */
-    public static Collection collectionize(Object input) {
+    public static Collection<?> collectionize(Object input) {
         if (input == null) {
             return emptyList();
         } else if (input instanceof Collection) {
-            Collection out = new LinkedList();
-            flatten((Collection) input, out, false, true);
+            Collection<?> out = new LinkedList<Object>();
+            flatten((Collection<?>) input, out, false, true);
             return out;
         } else if (input.getClass().isArray()) {
-            Collection out = new LinkedList();
+            Collection<?> out = new LinkedList<Object>();
             flatten(asList((Object[]) input), out, false, true);
             return out;
         } else {
@@ -122,12 +121,12 @@ public class GUtil {
         }
     }
 
-    public static List flatten(Collection elements, boolean flattenMapsAndArrays) {
-        return flatten(elements, new ArrayList(), flattenMapsAndArrays);
+    public static List<Object> flatten(Collection<Object> elements, boolean flattenMapsAndArrays) {
+        return flatten(elements, new ArrayList<Object>(), flattenMapsAndArrays);
     }
 
-    public static List flatten(Collection elements) {
-        return flatten(elements, new ArrayList());
+    public static List<Object> flatten(Collection<Object> elements) {
+        return flatten(elements, new ArrayList<Object>());
     }
 
     public static String asPath(Iterable<?> collection) {
@@ -153,11 +152,35 @@ public class GUtil {
         }
         return true;
     }
-
-    public static <T> T elvis(@Nullable T object, T defaultValue) {
+    /**
+     * Prefer {@link #getOrDefault(Object, Factory)} if the value is expensive to compute or
+     * would trigger early configuration.
+     */
+    @Nullable
+    public static <T> T elvis(@Nullable T object, @Nullable T defaultValue) {
         return isTrue(object) ? object : defaultValue;
     }
 
+    @Nullable
+    public static <T> T getOrDefault(@Nullable T object, Factory<T> defaultValueSupplier) {
+        return isTrue(object) ? object : defaultValueSupplier.create();
+    }
+
+    public static <V, T extends Collection<? super V>> T addToCollection(T dest, boolean failOnNull, Iterable<? extends V> src) {
+        for (V v : src) {
+            if (failOnNull && v == null) {
+                throw new IllegalArgumentException("Illegal null value provided in this collection: " + src);
+            }
+            dest.add(v);
+        }
+        return dest;
+    }
+
+    public static <V, T extends Collection<? super V>> T addToCollection(T dest, Iterable<? extends V> src) {
+        return addToCollection(dest, false, src);
+    }
+
+    @Deprecated
     public static <V, T extends Collection<? super V>> T addToCollection(T dest, boolean failOnNull, Iterable<? extends V>... srcs) {
         for (Iterable<? extends V> src : srcs) {
             for (V v : src) {
@@ -170,12 +193,14 @@ public class GUtil {
         return dest;
     }
 
+    @Deprecated
     public static <V, T extends Collection<? super V>> T addToCollection(T dest, Iterable<? extends V>... srcs) {
         return addToCollection(dest, false, srcs);
     }
 
     public static Comparator<String> caseInsensitive() {
         return new Comparator<String>() {
+            @Override
             public int compare(String o1, String o2) {
                 int diff = o1.compareToIgnoreCase(o2);
                 if (diff != 0) {
@@ -186,8 +211,8 @@ public class GUtil {
         };
     }
 
-    public static Map addMaps(Map map1, Map map2) {
-        HashMap map = new HashMap();
+    public static <K, V> Map<K, V> addMaps(Map<K, V> map1, Map<K, V> map2) {
+        HashMap<K, V> map = new HashMap<K, V>();
         map.putAll(map1);
         map.putAll(map2);
         return map;
@@ -258,41 +283,8 @@ public class GUtil {
         }
     }
 
-    /**
-     * @deprecated This does not produce reproducible property files. Use {@link org.gradle.internal.util.PropertiesUtils} instead.
-     */
-    @Deprecated
-    public static void savePropertiesNoDateComment(Properties properties, File propertyFile) {
-        try {
-            FileOutputStream propertiesFileOutputStream = new FileOutputStream(propertyFile);
-            try {
-                savePropertiesNoDateComment(properties, propertiesFileOutputStream);
-            } finally {
-                propertiesFileOutputStream.close();
-            }
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-    }
-
-    /**
-     * @deprecated This does not produce reproducible property files. Use {@link org.gradle.internal.util.PropertiesUtils} instead.
-     */
-    @Deprecated
-    public static void savePropertiesNoDateComment(Properties properties, OutputStream outputStream) {
-        saveProperties(properties,
-            new LineBufferingOutputStream(
-                new SkipFirstTextStream(
-                    new WriterTextStream(
-                        new OutputStreamWriter(outputStream, Charsets.ISO_8859_1)
-                    )
-                )
-            )
-        );
-    }
-
-    public static Map map(Object... objects) {
-        Map map = new HashMap();
+    public static Map<Object, Object> map(Object... objects) {
+        Map<Object, Object> map = new HashMap<Object, Object>();
         assert objects.length % 2 == 0;
         for (int i = 0; i < objects.length; i += 2) {
             map.put(objects[i], objects[i + 1]);
@@ -429,6 +421,7 @@ public class GUtil {
 
     public static <T> Comparator<T> last(final Comparator<? super T> comparator, final T lastValue) {
         return new Comparator<T>() {
+            @Override
             public int compare(T o1, T o2) {
                 boolean o1Last = comparator.compare(o1, lastValue) == 0;
                 boolean o2Last = comparator.compare(o2, lastValue) == 0;
@@ -453,6 +446,7 @@ public class GUtil {
      * @param <T> Callable's return type
      * @return The value returned by {@link Callable#call()}
      */
+    @Nullable
     public static <T> T uncheckedCall(Callable<T> callable) {
         try {
             return callable.call();
@@ -493,9 +487,11 @@ public class GUtil {
             value, value.getClass().getName(), enumType.getName()));
     }
 
+    @Nullable
     private static <T extends Enum<T>> T findEnumValue(Class<? extends T> enumType, final String literal) {
         List<? extends T> enumConstants = Arrays.asList(enumType.getEnumConstants());
         return CollectionUtils.findFirst(enumConstants, new Spec<T>() {
+            @Override
             public boolean isSatisfiedBy(T enumValue) {
                 return enumValue.name().equalsIgnoreCase(literal);
             }
@@ -535,6 +531,42 @@ public class GUtil {
             }
         }
         return true;
+    }
+
+    public static URI toSecureUrl(URI scriptUri) {
+        try {
+            return new URI("https", null, scriptUri.getHost(), scriptUri.getPort(), scriptUri.getPath(), scriptUri.getQuery(), scriptUri.getFragment());
+        } catch (URISyntaxException e) {
+            throw new IllegalArgumentException("could not make url use https", e);
+        }
+    }
+
+    public static boolean isSecureUrl(URI url) {
+        /*
+         * TL;DR: http://127.0.0.1 will bypass this validation, http://localhost will fail this validation.
+         *
+         * Hundreds of Gradle's integration tests use a local web-server to test logic that relies upon
+         * this behavior.
+         *
+         * Changing all of those tests so that they use a KeyStore would have been impractical.
+         * Instead, the test fixture was updated to use 127.0.0.1 when making HTTP requests.
+         *
+         * This allows tests that still want to exercise the deprecation logic to use http://localhost
+         * which will bypass this check and trigger the validation.
+         *
+         * It's important to note that the only way to create a certificate for an IP address is to bind
+         * the IP address as a 'Subject Alternative Name' which was deemed far too complicated for our test
+         * use case.
+         *
+         * Additionally, in the rare case that a user or a plugin author truly needs to test with a localhost
+         * server, they can use http://127.0.0.1
+         */
+        if ("127.0.0.1".equals(url.getHost())) {
+            return true;
+        }
+
+        final String scheme = url.getScheme();
+        return !"http".equalsIgnoreCase(scheme);
     }
 
 }

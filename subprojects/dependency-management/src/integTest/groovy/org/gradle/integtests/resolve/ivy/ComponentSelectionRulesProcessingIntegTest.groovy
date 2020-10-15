@@ -18,7 +18,7 @@ package org.gradle.integtests.resolve.ivy
 
 import org.gradle.integtests.fixtures.GradleMetadataResolveRunner
 import org.gradle.integtests.fixtures.RequiredFeature
-import org.gradle.integtests.fixtures.RequiredFeatures
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.test.fixtures.ivy.IvyModule
 import org.gradle.test.fixtures.maven.MavenModule
 
@@ -70,10 +70,12 @@ class ComponentSelectionRulesProcessingIntegTest extends AbstractComponentSelect
             configurations.all {
                 resolutionStrategy {
                     componentSelection {
-                        all { ComponentSelection selection, ComponentMetadata metadata ->
-                            extraRuleCandidates << selection.candidate.version
-                        }
                         all ${rules['select 1.1']}
+                        all { ComponentSelection selection ->
+                            if (selection.metadata != null) {
+                                extraRuleCandidates << selection.candidate.version
+                            }
+                        }
                     }
                 }
             }
@@ -96,12 +98,10 @@ class ComponentSelectionRulesProcessingIntegTest extends AbstractComponentSelect
         checkDependencies()
     }
 
-    @RequiredFeatures([
-        // this test doesn't make sense with Gradle metadata
-        @RequiredFeature(feature=GradleMetadataResolveRunner.GRADLE_METADATA, value="false"),
-        // only test one combination
-        @RequiredFeature(feature=GradleMetadataResolveRunner.REPOSITORY_TYPE, value="ivy")]
-    )
+    // this test doesn't make sense with Gradle metadata
+    @RequiredFeature(feature=GradleMetadataResolveRunner.GRADLE_METADATA, value="false")
+    // only test one combination
+    @RequiredFeature(feature=GradleMetadataResolveRunner.REPOSITORY_TYPE, value="ivy")
     def "maven module is not affected by rule requiring ivy module descriptor input"() {
         def mavenModule = mavenRepo.module("org.utils", "api", "1.1").publishWithChangedContent()
 
@@ -118,8 +118,10 @@ class ComponentSelectionRulesProcessingIntegTest extends AbstractComponentSelect
             configurations.all {
                 resolutionStrategy {
                     componentSelection {
-                        all { ComponentSelection selection, IvyModuleDescriptor ivy ->
-                            selection.reject("rejecting all ivy modules")
+                        all { ComponentSelection selection ->
+                            if (selection.getDescriptor(IvyModuleDescriptor) != null) {
+                                selection.reject("rejecting all ivy modules")
+                            }
                         }
                     }
                 }
@@ -144,10 +146,8 @@ class ComponentSelectionRulesProcessingIntegTest extends AbstractComponentSelect
         file("libs/api-1.1.jar").assertIsCopyOf(mavenModule.artifactFile)
     }
 
-    @RequiredFeatures([
-        // Gradle metadata doesn't support parents
-        @RequiredFeature(feature = GradleMetadataResolveRunner.GRADLE_METADATA, value="false")]
-    )
+    // Gradle metadata doesn't support parents
+    @RequiredFeature(feature = GradleMetadataResolveRunner.GRADLE_METADATA, value="false")
     def "parent is not affected by selection rules" () {
         given:
         repository {
@@ -222,10 +222,9 @@ class ComponentSelectionRulesProcessingIntegTest extends AbstractComponentSelect
         succeeds "resolveConf"
     }
 
-    @RequiredFeatures(
-        // because of the IvyModuleDescriptor rule
-        @RequiredFeature(feature=GradleMetadataResolveRunner.REPOSITORY_TYPE, value="ivy")
-    )
+    // because of the IvyModuleDescriptor rule
+    @RequiredFeature(feature=GradleMetadataResolveRunner.REPOSITORY_TYPE, value="ivy")
+    @ToBeFixedForConfigurationCache
     def "component metadata is requested only once for rules that do require it" () {
         buildFile << """
             dependencies {
@@ -237,11 +236,15 @@ class ComponentSelectionRulesProcessingIntegTest extends AbstractComponentSelect
             configurations.all {
                 resolutionStrategy {
                     componentSelection {
-                        all { ComponentSelection vs, IvyModuleDescriptor imd, ComponentMetadata cm ->
-                            rule1candidates << vs.candidate.version
+                        all { ComponentSelection vs ->
+                            if (vs.getDescriptor(IvyModuleDescriptor) != null && vs.metadata != null) {
+                                rule1candidates << vs.candidate.version
+                            }
                         }
-                        all { ComponentSelection vs, ComponentMetadata cm ->
-                            rule2candidates << vs.candidate.version
+                        all { ComponentSelection vs ->
+                            if (vs.metadata != null) {
+                                rule2candidates << vs.candidate.version
+                            }
                         }
                     }
                 }
@@ -271,12 +274,11 @@ class ComponentSelectionRulesProcessingIntegTest extends AbstractComponentSelect
         checkDependencies()
     }
 
-    @RequiredFeatures([
-        // because of the IvyModuleDescriptor rule
-        @RequiredFeature(feature=GradleMetadataResolveRunner.REPOSITORY_TYPE, value="ivy"),
-        // because of branch
-        @RequiredFeature(feature=GradleMetadataResolveRunner.GRADLE_METADATA, value="false"),
-    ])
+    // because of the IvyModuleDescriptor rule
+    @RequiredFeature(feature=GradleMetadataResolveRunner.REPOSITORY_TYPE, value="ivy")
+    // because of branch
+    @RequiredFeature(feature=GradleMetadataResolveRunner.GRADLE_METADATA, value="false")
+    @ToBeFixedForConfigurationCache
     def "changed component metadata becomes visible when module is refreshed" () {
 
         def commonBuildFile = buildFile.text + """
@@ -289,10 +291,10 @@ class ComponentSelectionRulesProcessingIntegTest extends AbstractComponentSelect
             configurations.all {
                 resolutionStrategy {
                     componentSelection {
-                        all { ComponentSelection selection, IvyModuleDescriptor descriptor, ComponentMetadata metadata ->
+                        all { ComponentSelection selection ->
                             if (selection.candidate.version == '1.1') {
-                                status11 = metadata.status
-                                branch11 = descriptor.branch
+                                status11 = selection.metadata.status
+                                branch11 = selection.getDescriptor(IvyModuleDescriptor).branch
                             } else {
                                 selection.reject('not 1.1')
                             }
@@ -316,9 +318,6 @@ class ComponentSelectionRulesProcessingIntegTest extends AbstractComponentSelect
         repositoryInteractions {
             'org.utils:api' {
                 expectVersionListing()
-                '1.2' {
-                    expectGetMetadata()
-                }
                 '1.1' {
                     expectResolve()
                 }
@@ -362,9 +361,6 @@ class ComponentSelectionRulesProcessingIntegTest extends AbstractComponentSelect
         repositoryInteractions {
             'org.utils:api' {
                 expectVersionListing()
-                '1.2' {
-                    expectHeadMetadata()
-                }
                 '1.1' {
                     expectHeadMetadata()
                     withModule {
@@ -387,7 +383,7 @@ class ComponentSelectionRulesProcessingIntegTest extends AbstractComponentSelect
     def "copies selection rules when configuration is copied" () {
         buildFile << """
             configurations {
-                notCopy 
+                notCopy
             }
 
             dependencies {
@@ -404,7 +400,7 @@ class ComponentSelectionRulesProcessingIntegTest extends AbstractComponentSelect
             }
             configurations.add(configurations.conf.copy())
 
-            task('checkDeps') {
+            task('assertDeps') {
                 doLast {
                     assert configurations.conf.files*.name == ['api-1.1.jar']
                     assert configurations.confCopy.files*.name == ['api-1.1.jar']
@@ -427,7 +423,7 @@ class ComponentSelectionRulesProcessingIntegTest extends AbstractComponentSelect
         }
 
         then:
-        checkDependencies()
+        checkDependencies("assertDeps")
     }
 
     def "can provide component selection rule as closure" () {

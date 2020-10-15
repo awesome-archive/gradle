@@ -17,6 +17,7 @@ package org.gradle.api
 
 import org.gradle.api.plugins.AppliedPlugin
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.test.fixtures.plugin.PluginBuilder
 import spock.lang.Issue
 import spock.lang.Unroll
@@ -60,6 +61,7 @@ class PluginDetectionIntegrationTest extends AbstractIntegrationSpec {
         detectedBy << JAVA_PLUGIN_IDS + JAVA_PLUGIN_IDS.reverse()
     }
 
+    @ToBeFixedForConfigurationCache(because = "Gradle.buildFinished")
     def "unqualified ids from classpath are detectable"() {
         def pluginBuilder = new PluginBuilder(testDirectory)
         pluginBuilder.addPlugin("")
@@ -112,7 +114,7 @@ class PluginDetectionIntegrationTest extends AbstractIntegrationSpec {
         """
 
         then:
-        succeeds "tasks"
+        succeeds "help"
     }
 
     def "plugin manager with id is fired after the plugin is applied for hybrid plugins"() {
@@ -150,7 +152,7 @@ class PluginDetectionIntegrationTest extends AbstractIntegrationSpec {
         """
 
         then:
-        succeeds "tasks"
+        succeeds "help"
     }
 
     def "plugin manager with id is fired after the plugin is applied for rule plugins"() {
@@ -179,7 +181,7 @@ class PluginDetectionIntegrationTest extends AbstractIntegrationSpec {
         """
 
         then:
-        succeeds "tasks"
+        succeeds "help"
     }
 
     @Issue("http://discuss.gradle.org/t/concurrentmodification-exception-on-java-8-for-plugins-withid-with-gradle-2-4/8928")

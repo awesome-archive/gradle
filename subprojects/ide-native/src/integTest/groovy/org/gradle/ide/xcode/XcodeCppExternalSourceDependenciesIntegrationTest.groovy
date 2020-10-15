@@ -17,6 +17,7 @@
 package org.gradle.ide.xcode
 
 import org.gradle.ide.xcode.fixtures.AbstractXcodeIntegrationSpec
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.integtests.fixtures.build.BuildTestFile
 import org.gradle.nativeplatform.fixtures.app.CppAppWithLibrary
 import org.gradle.vcs.fixtures.GitFileRepository
@@ -30,6 +31,7 @@ class XcodeCppExternalSourceDependenciesIntegrationTest extends AbstractXcodeInt
     GitFileRepository repo = new GitFileRepository('greeter', temporaryFolder.getTestDirectory())
     BuildTestFile depProject
 
+    @ToBeFixedForConfigurationCache
     def "adds source dependencies C++ headers of main component to Xcode indexer search path"() {
         def fixture = new CppAppWithLibrary()
 
@@ -84,6 +86,7 @@ class XcodeCppExternalSourceDependenciesIntegrationTest extends AbstractXcodeInt
         result.assertTasksExecuted(":xcodeProjectWorkspaceSettings", ":xcodeScheme", ":xcodeProject")
     }
 
+    @ToBeFixedForConfigurationCache
     def "does not add source dependencies Xcode project of main component to Xcode workspace"() {
         def fixture = new CppAppWithLibrary()
 
@@ -133,6 +136,7 @@ class XcodeCppExternalSourceDependenciesIntegrationTest extends AbstractXcodeInt
         appProject.indexTarget.getBuildSettings().HEADER_SEARCH_PATHS == toSpaceSeparatedList(file('src/main/headers'), checkoutDir(repo.name, commit.id.name, repo.id).file('src/main/public'))
     }
 
+    @ToBeFixedForConfigurationCache
     def "adds source dependencies C++ module of main component to Xcode indexer search path when no component in root project"() {
         def fixture = new CppAppWithLibrary()
 
@@ -153,7 +157,7 @@ class XcodeCppExternalSourceDependenciesIntegrationTest extends AbstractXcodeInt
                 apply plugin: 'xcode'
                 group = 'org.gradle'
                 version = '2.0'
-    
+
                 dependencies {
                     implementation "org.test:greeter:latest.integration"
                 }
@@ -190,6 +194,7 @@ class XcodeCppExternalSourceDependenciesIntegrationTest extends AbstractXcodeInt
         appProject.indexTarget.getBuildSettings().HEADER_SEARCH_PATHS == toSpaceSeparatedList(file('app/src/main/headers'), checkoutDir(repo.name, commit.id.name, repo.id).file('src/main/public'))
     }
 
+    @ToBeFixedForConfigurationCache
     def "does not add source dependencies Xcode project of main component to Xcode workspace when no component in root project"() {
         def fixture = new CppAppWithLibrary()
 
@@ -211,7 +216,7 @@ class XcodeCppExternalSourceDependenciesIntegrationTest extends AbstractXcodeInt
                 apply plugin: 'xcode'
                 group = 'org.gradle'
                 version = '2.0'
-    
+
                 dependencies {
                     implementation "org.test:greeter:latest.integration"
                 }

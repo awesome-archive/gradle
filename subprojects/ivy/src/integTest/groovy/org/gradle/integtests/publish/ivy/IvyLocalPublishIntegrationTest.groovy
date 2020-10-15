@@ -16,6 +16,7 @@
 package org.gradle.integtests.publish.ivy
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.spockframework.util.TextUtil
 import spock.lang.Issue
 import spock.lang.Unroll
@@ -23,6 +24,7 @@ import spock.lang.Unroll
 import static org.hamcrest.core.StringContains.containsString
 
 class IvyLocalPublishIntegrationTest extends AbstractIntegrationSpec {
+    @ToBeFixedForConfigurationCache
     def canPublishToLocalFileRepository() {
         given:
         def module = ivyRepo.module("org.gradle", "publish", "2")
@@ -41,6 +43,7 @@ uploadArchives {
 }
 """
         when:
+        executer.expectDeprecationWarning()
         succeeds 'uploadArchives'
 
         then:
@@ -49,6 +52,7 @@ uploadArchives {
     }
 
     @Issue("GRADLE-2456")
+    @ToBeFixedForConfigurationCache
     def generatesSHA1FileWithLeadingZeros() {
         given:
         def module = ivyRepo.module("org.gradle", "publish", "2")
@@ -74,6 +78,7 @@ uploadArchives {
 }
 """
         when:
+        executer.expectDeprecationWarning()
         succeeds 'uploadArchives'
 
         then:
@@ -83,6 +88,7 @@ uploadArchives {
     }
 
     @Issue("GRADLE-1811")
+    @ToBeFixedForConfigurationCache(because = ":uploadArchives")
     def canGenerateTheIvyXmlWithoutPublishing() {
         //this is more like documenting the current behavior.
         //Down the road we should add explicit task to create ivy.xml file
@@ -116,6 +122,7 @@ task ivyXml(type: Upload) {
 
     // This test represents the state of the art, not the expected behavior (which remains to be spec'ed out)
     @Unroll
+    @ToBeFixedForConfigurationCache(because = ":uploadArchives")
     def "Generated ivy.xml file is not influenced by configuration attributes"() {
         given:
         buildFile << """
@@ -165,6 +172,7 @@ task ivyXml(type: Upload) {
         ]
     }
 
+    @ToBeFixedForConfigurationCache
     def "succeeds if trying to publish a file without extension"() {
         def module = ivyRepo.module("org.gradle", "publish", "2")
         settingsFile << 'rootProject.name = "publish"'
@@ -192,6 +200,7 @@ task ivyXml(type: Upload) {
         """
 
         when:
+        executer.expectDeprecationWarning()
         succeeds 'uploadArchives'
 
         then:
@@ -199,6 +208,7 @@ task ivyXml(type: Upload) {
         published.assertIsCopyOf(file('someDir/a'))
     }
 
+    @ToBeFixedForConfigurationCache
     def "fails gracefully if trying to publish a directory with ivy"() {
 
         given:

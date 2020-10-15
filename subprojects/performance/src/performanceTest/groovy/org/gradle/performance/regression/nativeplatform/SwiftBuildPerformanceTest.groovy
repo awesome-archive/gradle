@@ -18,92 +18,64 @@ package org.gradle.performance.regression.nativeplatform
 
 import org.gradle.initialization.ParallelismBuildOptions
 import org.gradle.performance.AbstractCrossVersionPerformanceTest
-import org.gradle.performance.mutator.AbstractFileChangeMutator
-import spock.lang.Ignore
-import spock.lang.Unroll
+import org.gradle.profiler.BuildContext
+import org.gradle.profiler.mutations.AbstractFileChangeMutator
 
 class SwiftBuildPerformanceTest extends AbstractCrossVersionPerformanceTest {
-
     def setup() {
-        runner.minimumVersion = '4.6'
-        runner.targetVersions = ["4.7-20180308002700+0000"]
+        runner.minimumBaseVersion = '4.6'
+        runner.targetVersions = ["6.7-20200824220048+0000"]
         runner.args += ["--parallel", "--${ParallelismBuildOptions.MaxWorkersOption.LONG_OPTION}=6"]
     }
 
-    // TODO: Temporarily disable
-    @Ignore
-    @Unroll
-    def "clean assemble on #testProject"() {
+    def "up-to-date assemble (swift)"() {
         given:
-        runner.testProject = testProject
         runner.tasksToRun = ["assemble"]
-        runner.cleanTasks = ["clean"]
-        runner.gradleOpts = ["-Xms$maxMemory", "-Xmx$maxMemory"]
+        runner.gradleOpts = runner.projectMemoryOptions
 
         when:
         def result = runner.run()
 
         then:
         result.assertCurrentVersionHasNotRegressed()
-
-        where:
-        testProject        | maxMemory
-        'mediumSwiftMulti' | '1G'
-        'bigSwiftApp'      | '1G'
     }
 
-    @Unroll
-    def "up-to-date assemble on #testProject"() {
+    def "incremental compile"() {
         given:
-        runner.testProject = testProject
         runner.tasksToRun = ["assemble"]
-        runner.gradleOpts = ["-Xms$maxMemory", "-Xmx$maxMemory"]
+        runner.gradleOpts = runner.projectMemoryOptions
+        runner.addBuildMutator { invocationSettings -> new ChangeSwiftFileMutator(new File(invocationSettings.projectDir, determineFileToChange(runner.testProject))) }
 
         when:
         def result = runner.run()
 
         then:
         result.assertCurrentVersionHasNotRegressed()
-
-        where:
-        testProject        | maxMemory
-        'mediumSwiftMulti' | '1G'
-        'bigSwiftApp'      | '1G'
     }
 
-    @Unroll
-    def "incremental compile on #testProject"() {
-        given:
-        runner.testProject = testProject
-        runner.tasksToRun = ["assemble"]
-        runner.gradleOpts = ["-Xms$maxMemory", "-Xmx$maxMemory"]
-        runner.addBuildExperimentListener(new ChangeSwiftFileMutator(fileToChange))
-
-        when:
-        def result = runner.run()
-
-        then:
-        result.assertCurrentVersionHasNotRegressed()
-
-        where:
-        testProject        | maxMemory | fileToChange
-        "mediumSwiftMulti" | '1G'      | 'lib6api3/src/main/swift/Lib6Api3Impl2Api.swift'
-        'bigSwiftApp'      | '1G'      | 'src/main/swift//AppImpl54Api3.swift'
+    static String determineFileToChange(String testProject) {
+        switch (testProject) {
+            case 'mediumSwiftMulti':
+                return 'lib6api3/src/main/swift/Lib6Api3Impl2Api.swift'
+            case 'bigSwiftApp':
+                return 'src/main/swift//AppImpl54Api3.swift'
+            default:
+                throw new IllegalArgumentException("Invalid test project ${testProject}")
+        }
     }
 
     private static class ChangeSwiftFileMutator extends AbstractFileChangeMutator {
-
-        ChangeSwiftFileMutator(String sourceFilePath) {
-            super(sourceFilePath)
-            if (!sourceFilePath.endsWith('.swift')) {
+        ChangeSwiftFileMutator(File sourceFile) {
+            super(sourceFile)
+            if (!sourceFile.absolutePath.endsWith('.swift')) {
                 throw new IllegalArgumentException('Can only modify Swift source')
             }
         }
 
         @Override
-        protected void applyChangeTo(StringBuilder text) {
+        protected void applyChangeTo(BuildContext context, StringBuilder text) {
             def location = text.indexOf("public init() { }")
-            text.insert(location, "var ${uniqueText} : Int = 0\n    ")
+            text.insert(location, "var ${context.getUniqueBuildId()} : Int = 0\n    ")
         }
     }
 

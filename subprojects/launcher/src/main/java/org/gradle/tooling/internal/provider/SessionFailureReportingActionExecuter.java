@@ -17,66 +17,56 @@
 package org.gradle.tooling.internal.provider;
 
 import org.gradle.BuildResult;
-import org.gradle.api.internal.ExceptionAnalyser;
 import org.gradle.api.logging.Logging;
 import org.gradle.api.logging.configuration.ShowStacktrace;
 import org.gradle.initialization.BuildRequestContext;
-import org.gradle.initialization.DefaultExceptionAnalyser;
-import org.gradle.initialization.MultipleBuildFailuresExceptionAnalyser;
-import org.gradle.initialization.ReportedException;
-import org.gradle.initialization.StackTraceSanitizingExceptionAnalyser;
-import org.gradle.internal.buildevents.BuildStartedTime;
+import org.gradle.initialization.exception.DefaultExceptionAnalyser;
+import org.gradle.initialization.exception.ExceptionAnalyser;
+import org.gradle.initialization.exception.MultipleBuildFailuresExceptionAnalyser;
+import org.gradle.initialization.exception.StackTraceSanitizingExceptionAnalyser;
 import org.gradle.internal.buildevents.BuildLogger;
+import org.gradle.internal.buildevents.BuildStartedTime;
 import org.gradle.internal.event.DefaultListenerManager;
 import org.gradle.internal.invocation.BuildAction;
 import org.gradle.internal.logging.text.StyledTextOutputFactory;
-import org.gradle.internal.service.ServiceRegistry;
+import org.gradle.internal.service.scopes.Scopes;
 import org.gradle.internal.time.Clock;
+import org.gradle.launcher.exec.BuildActionExecuter;
 import org.gradle.launcher.exec.BuildActionParameters;
-import org.gradle.launcher.exec.BuildExecuter;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.gradle.launcher.exec.BuildActionResult;
 
 /**
  * Reports any unreported failure that causes the session to finish.
  */
-// TODO - move this to the client side
-public class SessionFailureReportingActionExecuter implements BuildExecuter {
-    private static final Logger LOGGER = LoggerFactory.getLogger(SessionFailureReportingActionExecuter.class);
-    private final BuildExecuter delegate;
+public class SessionFailureReportingActionExecuter implements BuildActionExecuter<BuildActionParameters, BuildRequestContext> {
+    private final BuildActionExecuter<BuildActionParameters, BuildRequestContext> delegate;
     private final StyledTextOutputFactory styledTextOutputFactory;
     private final Clock clock;
 
-    public SessionFailureReportingActionExecuter(BuildExecuter delegate, StyledTextOutputFactory styledTextOutputFactory, Clock clock) {
-        this.delegate = delegate;
+    public SessionFailureReportingActionExecuter(StyledTextOutputFactory styledTextOutputFactory, Clock clock, BuildActionExecuter<BuildActionParameters, BuildRequestContext> delegate) {
         this.styledTextOutputFactory = styledTextOutputFactory;
         this.clock = clock;
+        this.delegate = delegate;
     }
 
     @Override
-    public Object execute(BuildAction action, BuildRequestContext requestContext, BuildActionParameters actionParameters, ServiceRegistry contextServices) {
+    public BuildActionResult execute(BuildAction action, BuildActionParameters actionParameters, BuildRequestContext requestContext) {
         try {
-            return delegate.execute(action, requestContext, actionParameters, contextServices);
-        } catch (ReportedException e) {
-            throw e;
+            return delegate.execute(action, actionParameters, requestContext);
         } catch (Throwable e) {
             // TODO - wire this stuff in properly
 
             // Sanitise the exception and report it
-            ExceptionAnalyser exceptionAnalyser = new MultipleBuildFailuresExceptionAnalyser(new DefaultExceptionAnalyser(new DefaultListenerManager()));
+            ExceptionAnalyser exceptionAnalyser = new MultipleBuildFailuresExceptionAnalyser(new DefaultExceptionAnalyser(new DefaultListenerManager(Scopes.BuildSession.class)));
             if (action.getStartParameter().getShowStacktrace() != ShowStacktrace.ALWAYS_FULL) {
                 exceptionAnalyser = new StackTraceSanitizingExceptionAnalyser(exceptionAnalyser);
             }
-            Throwable failure = e;
-            try {
-                failure = exceptionAnalyser.transform(e);
-            } catch (Throwable innerFailure) {
-                LOGGER.error("Failed to analyze exception", innerFailure);
-            }
+            RuntimeException failure = exceptionAnalyser.transform(e);
             BuildStartedTime buildStartedTime = BuildStartedTime.startingAt(requestContext.getStartTime());
-            BuildLogger buildLogger = new BuildLogger(Logging.getLogger(ServicesSetupBuildActionExecuter.class), styledTextOutputFactory, action.getStartParameter(), requestContext, buildStartedTime, clock);
+            BuildLogger buildLogger = new BuildLogger(Logging.getLogger(SessionScopeLifecycleBuildActionExecuter.class), styledTextOutputFactory, action.getStartParameter(), requestContext, buildStartedTime, clock);
             buildLogger.buildFinished(new BuildResult(null, failure));
-            throw new ReportedException(failure);
+            buildLogger.logResult(failure);
+            return BuildActionResult.failed(failure);
         }
     }
 }

@@ -22,6 +22,7 @@ import org.gradle.api.NonNullApi;
 import org.gradle.api.Transformer;
 import org.gradle.internal.Transformers;
 import org.gradle.internal.jvm.Jvm;
+import org.gradle.internal.logging.text.DiagnosticsVisitor;
 import org.gradle.internal.operations.BuildOperationExecutor;
 import org.gradle.internal.work.WorkerLeaseService;
 import org.gradle.language.base.internal.compile.Compiler;
@@ -51,9 +52,8 @@ import org.gradle.nativeplatform.toolchain.internal.compilespec.CppPCHCompileSpe
 import org.gradle.nativeplatform.toolchain.internal.compilespec.WindowsResourceCompileSpec;
 import org.gradle.nativeplatform.toolchain.internal.msvcpp.metadata.VisualCppMetadata;
 import org.gradle.nativeplatform.toolchain.internal.tools.CommandLineToolConfigurationInternal;
-import org.gradle.platform.base.internal.toolchain.ToolSearchResult;
+import org.gradle.nativeplatform.toolchain.internal.tools.CommandLineToolSearchResult;
 import org.gradle.process.internal.ExecActionFactory;
-import org.gradle.util.TreeVisitor;
 import org.gradle.util.VersionNumber;
 
 import java.io.File;
@@ -101,17 +101,28 @@ class VisualCppPlatformToolProvider extends AbstractPlatformToolProvider {
     }
 
     @Override
-    public ToolSearchResult isToolAvailable(ToolType toolType) {
-        return new ToolSearchResult() {
-            @Override
-            public boolean isAvailable() {
-                return true;
-            }
+    public CommandLineToolSearchResult locateTool(ToolType compilerType) {
+        switch (compilerType) {
+            case C_COMPILER:
+            case CPP_COMPILER:
+                return new CommandLineToolSearchResult() {
+                    @Override
+                    public File getTool() {
+                        return visualCpp.getCompilerExecutable();
+                    }
 
-            @Override
-            public void explain(TreeVisitor<? super String> visitor) {
-            }
-        };
+                    @Override
+                    public boolean isAvailable() {
+                        return true;
+                    }
+
+                    @Override
+                    public void explain(DiagnosticsVisitor visitor) {
+                    }
+                };
+            default:
+                throw new UnsupportedOperationException();
+        }
     }
 
     @Override
@@ -147,7 +158,7 @@ class VisualCppPlatformToolProvider extends AbstractPlatformToolProvider {
     }
 
     private <T extends BinaryToolSpec> VersionAwareCompiler<T> versionAwareCompiler(Compiler<T> outputCleaningCompiler) {
-            return new VersionAwareCompiler<T>(outputCleaningCompiler, new DefaultCompilerVersion(VisualCppToolChain.DEFAULT_NAME, "Microsoft", visualCpp.getImplementationVersion()));
+        return new VersionAwareCompiler<T>(outputCleaningCompiler, new DefaultCompilerVersion(VisualCppToolChain.DEFAULT_NAME, "Microsoft", visualCpp.getImplementationVersion()));
     }
 
     @Override
@@ -239,6 +250,7 @@ class VisualCppPlatformToolProvider extends AbstractPlatformToolProvider {
 
     private <T extends NativeCompileSpec> Transformer<T, T> addDefinitions(Class<T> type) {
         return new Transformer<T, T>() {
+            @Override
             public T transform(T original) {
                 for (Map.Entry<String, String> definition : libraries.getPreprocessorMacros().entrySet()) {
                     original.define(definition.getKey(), definition.getValue());
@@ -250,6 +262,7 @@ class VisualCppPlatformToolProvider extends AbstractPlatformToolProvider {
 
     private Transformer<LinkerSpec, LinkerSpec> addLibraryPath() {
         return new Transformer<LinkerSpec, LinkerSpec>() {
+            @Override
             public LinkerSpec transform(LinkerSpec original) {
                 original.libraryPath(libraries.getLibDirs());
                 return original;

@@ -17,8 +17,10 @@
 package org.gradle.language.base
 
 import org.gradle.integtests.fixtures.AbstractAutoTestedSamplesTest
+import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
 import org.junit.Test
 
+@UnsupportedWithConfigurationCache(because = "software model")
 class AutoTestedSamplePlatformBaseIntegrationTest extends AbstractAutoTestedSamplesTest {
     @Test
     void runSamples() {

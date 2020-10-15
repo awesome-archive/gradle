@@ -33,7 +33,10 @@ import org.gradle.plugins.ide.IdeWorkspace;
  * The content and location of the generate solution file can be modified by the supplied methods:
  *
  * <pre class='autoTested'>
- *  apply plugin: "visual-studio"
+ *  plugins {
+ *      id 'visual-studio'
+ *  }
+ *
  *  model {
  *      visualStudio {
  *          solution {
@@ -54,6 +57,7 @@ public interface VisualStudioSolution extends Named, Buildable, IdeWorkspace {
      * Configuration for the generated solution file.
      */
     @Internal
+    @Incubating
     TextConfigFile getSolutionFile();
 
     /**
@@ -65,6 +69,7 @@ public interface VisualStudioSolution extends Named, Buildable, IdeWorkspace {
 
     @Override
     @Internal
+    @Incubating
     TaskDependency getBuildDependencies();
 
     @Override

@@ -23,6 +23,7 @@ public interface ManagedExecutor extends AsyncStoppable, ExecutorService {
     /**
      * Stops accepting new jobs and blocks until all currently executing jobs have been completed.
      */
+    @Override
     void stop();
 
     /**
@@ -34,7 +35,7 @@ public interface ManagedExecutor extends AsyncStoppable, ExecutorService {
     void stop(int timeoutValue, TimeUnit timeoutUnits) throws IllegalStateException;
 
     /**
-     * Sets the fixed size of the thread pool for the executor.
+     * Sets the keep alive time for the thread pool of the executor.
      */
-    void setFixedPoolSize(int numThreads);
+    void setKeepAlive(int timeout, TimeUnit timeUnit);
 }

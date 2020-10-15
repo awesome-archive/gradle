@@ -15,6 +15,7 @@
  */
 package org.gradle.groovy.scripts;
 
+import org.gradle.internal.DisplayName;
 import org.gradle.internal.hash.HashUtil;
 import org.gradle.internal.resource.ResourceLocation;
 import org.gradle.internal.resource.TextResource;
@@ -37,10 +38,12 @@ public class TextResourceScriptSource implements ScriptSource {
         this.resource = resource;
     }
 
+    @Override
     public TextResource getResource() {
         return resource;
     }
 
+    @Override
     public String getFileName() {
         ResourceLocation location = resource.getLocation();
         if (location.getFile() != null) {
@@ -52,14 +55,26 @@ public class TextResourceScriptSource implements ScriptSource {
         return getClassName();
     }
 
+    @Override
     public String getDisplayName() {
-        return resource.getDisplayName();
+        return getLongDisplayName().getDisplayName();
+    }
+
+    @Override
+    public DisplayName getLongDisplayName() {
+        return resource.getLongDisplayName();
+    }
+
+    @Override
+    public DisplayName getShortDisplayName() {
+        return resource.getShortDisplayName();
     }
 
     /**
      * Returns the class name for use for this script source.  The name is intended to be unique to support mapping
      * class names to source files even if many sources have the same file name (e.g. build.gradle).
      */
+    @Override
     public String getClassName() {
         if (className == null) {
             this.className = initClassName();

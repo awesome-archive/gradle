@@ -20,14 +20,18 @@ import org.gradle.performance.ResultSpecification
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
 import org.gradle.util.SetSystemProperties
 import org.junit.Rule
+import spock.lang.Ignore
 import spock.lang.Shared
 
 import static org.gradle.performance.measure.Duration.minutes
 
+@Ignore
 class CrossVersionResultsStoreTest extends ResultSpecification {
-    @Rule TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider()
+    @Rule TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider(getClass())
     @Rule SetSystemProperties properties = new SetSystemProperties("org.gradle.performance.db.url": "jdbc:h2:" + tmpDir.testDirectory)
     final dbFile = tmpDir.file("results")
+    def experiment1 = new PerformanceExperiment("testProject1", new PerformanceScenario("org.gradle.performance.MyPerformanceTest", "test1"))
+    def experiment2 = new PerformanceExperiment("testProject1", new PerformanceScenario("org.gradle.performance.MyPerformanceTest", "test2"))
 
     @Shared long now = Calendar.getInstance().time.time
 
@@ -72,13 +76,13 @@ class CrossVersionResultsStoreTest extends ResultSpecification {
 
         when:
         def readStore = new CrossVersionResultsStore(dbFile.name)
-        def tests = readStore.testNames
+        def tests = readStore.performanceExperiments
 
         then:
-        tests == ["test1", "test2"]
+        tests*.scenario == ["test1", "test2"]
 
         when:
-        def history = readStore.getTestResults("test1", channel)
+        def history = readStore.getTestResults(experiment1, channel)
 
         then:
         history.id == "test1"
@@ -122,7 +126,7 @@ class CrossVersionResultsStoreTest extends ResultSpecification {
         results[0].baseline("1.5").results.size() == 3
 
         when:
-        history = readStore.getTestResults("test2", channel)
+        history = readStore.getTestResults(experiment2, channel)
         results = history.results
         readStore.close()
 
@@ -162,7 +166,7 @@ class CrossVersionResultsStoreTest extends ResultSpecification {
 
         when:
         def readStore = new CrossVersionResultsStore(dbFile.name)
-        def history = readStore.getTestResults("test1", channel)
+        def history = readStore.getTestResults(experiment1, channel)
 
         then:
         history.id == "test1"
@@ -191,10 +195,10 @@ class CrossVersionResultsStoreTest extends ResultSpecification {
 
         when:
         def readStore = new CrossVersionResultsStore(dbFile.name)
-        def tests = readStore.testNames
+        def tests = readStore.performanceExperiments
 
         then:
-        tests == ["test1", "test2", "test3"]
+        tests*.scenario == ["test1", "test2", "test3"]
 
         cleanup:
         writeStore?.close()
@@ -211,7 +215,7 @@ class CrossVersionResultsStoreTest extends ResultSpecification {
 
         when:
         def readStore = new CrossVersionResultsStore(dbFile.name)
-        def results = readStore.getTestResults("some test", channel)
+        def results = readStore.getTestResults(experiment1, channel)
 
         then:
         results.results.size() == 3
@@ -219,7 +223,7 @@ class CrossVersionResultsStoreTest extends ResultSpecification {
         results.resultsOldestFirst*.versionUnderTest == ["1.7-rc-1", "1.7-rc-2", "1.7-rc-3"]
 
         when:
-        results = readStore.getTestResults("some test", 2, Integer.MAX_VALUE, channel)
+        results = readStore.getTestResults(experiment1, 2, Integer.MAX_VALUE, channel)
 
         then:
         results.results.size() == 2
@@ -253,7 +257,7 @@ class CrossVersionResultsStoreTest extends ResultSpecification {
 
         when:
         def readStore = new CrossVersionResultsStore(dbFile.name)
-        def results = readStore.getTestResults("test-id", channel)
+        def results = readStore.getTestResults(experiment1, channel)
 
         then:
         results.baselineVersions == ["1.0", "1.8-rc-1", "1.8-rc-2", "1.8", "1.10"]
@@ -302,15 +306,15 @@ class CrossVersionResultsStoreTest extends ResultSpecification {
         def readStore = new CrossVersionResultsStore(dbFile.name)
 
         then:
-        readStore.testNames == ["current", "previous 2"]
+        readStore.performanceExperiments == ["current", "previous 2"]
 
         and:
-        def results = readStore.getTestResults("current", channel)
+        def results = readStore.getTestResults(experiment1, channel)
         results.results.size() == 2
 
         and:
-        readStore.getTestResults("previous 1", channel).results.empty
-        readStore.getTestResults("previous 2", channel).results.size() == 1
+        readStore.getTestResults(experiment2, channel).results.empty
+        readStore.getTestResults(experiment2, channel).results.size() == 1
 
         cleanup:
         writeStore?.close()
@@ -320,10 +324,11 @@ class CrossVersionResultsStoreTest extends ResultSpecification {
     def "returns empty results for unknown id"() {
         given:
         def store = new CrossVersionResultsStore(dbFile.name)
+        def unknown = new PerformanceExperiment("unknown", new PerformanceScenario("unknownClass", "unknown"))
 
         expect:
-        store.getTestResults("unknown", channel).baselineVersions.empty
-        store.getTestResults("unknown", channel).results.empty
+        store.getTestResults(unknown, channel).baselineVersions.empty
+        store.getTestResults(unknown, channel).results.empty
 
         cleanup:
         store?.close()

@@ -19,9 +19,10 @@ import org.gradle.api.artifacts.ResolvedModuleVersion;
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier;
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.ModuleComponentRepository;
 import org.gradle.internal.component.external.model.ModuleComponentResolveMetadata;
-import org.gradle.internal.component.model.ModuleSource;
+import org.gradle.internal.component.model.ModuleSources;
 
 import javax.annotation.Nullable;
+import java.time.Duration;
 
 public interface ModuleMetadataCache {
     CachedMetadata cacheMissing(ModuleComponentRepository repository, ModuleComponentIdentifier id);
@@ -35,22 +36,31 @@ public interface ModuleMetadataCache {
 
         ModuleComponentResolveMetadata getMetadata();
 
-        long getAgeMillis();
+        Duration getAge();
 
         boolean isMissing();
 
-        ModuleSource getModuleSource();
+        ModuleSources getModuleSources();
 
         /**
          * The metadata after being processed by component metadata rules.
          * Will be null the first time an entry is read from the filesystem cache during a build invocation.
+         *
+         * @param key the hash of the rules
          */
         @Nullable
-        ModuleComponentResolveMetadata getProcessedMetadata();
+        ModuleComponentResolveMetadata getProcessedMetadata(int key);
 
         /**
          * Set the processed metadata to be cached in-memory only.
          */
-        void setProcessedMetadata(ModuleComponentResolveMetadata processedMetadata);
+        void putProcessedMetadata(int key, ModuleComponentResolveMetadata processedMetadata);
+
+        /**
+         * Returns a copy of this cached metadata where the module metadata is safe to store
+         * in-memory, cross-build. That is to say it shouldn't contain any reference to projects,
+         * for example.
+         */
+        ModuleMetadataCache.CachedMetadata dehydrate();
     }
 }

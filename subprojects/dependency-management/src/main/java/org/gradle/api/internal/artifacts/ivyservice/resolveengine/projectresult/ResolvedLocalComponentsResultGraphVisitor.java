@@ -22,12 +22,13 @@ import org.gradle.api.artifacts.component.ProjectComponentIdentifier;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.DependencyGraphNode;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.DependencyGraphSelector;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.DependencyGraphVisitor;
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.RootGraphNode;
 
 import java.util.ArrayList;
 import java.util.List;
 
 public class ResolvedLocalComponentsResultGraphVisitor implements DependencyGraphVisitor, ResolvedLocalComponentsResult {
-    private final List<ResolvedProjectConfiguration> resolvedProjectConfigurations = new ArrayList<ResolvedProjectConfiguration>();
+    private final List<ResolvedProjectConfiguration> resolvedProjectConfigurations = new ArrayList<>();
     private final BuildIdentifier thisBuild;
     private ComponentIdentifier rootId;
 
@@ -36,7 +37,7 @@ public class ResolvedLocalComponentsResultGraphVisitor implements DependencyGrap
     }
 
     @Override
-    public void start(DependencyGraphNode root) {
+    public void start(RootGraphNode root) {
         this.rootId = root.getOwner().getComponentId();
     }
 

@@ -16,70 +16,17 @@
 
 package org.gradle.api.internal.tasks.properties;
 
-import groovy.lang.GString;
-import org.gradle.api.InvalidUserDataException;
-import org.gradle.api.file.FileCollection;
-import org.gradle.api.internal.tasks.TaskInputPropertySpec;
-import org.gradle.internal.Factory;
-
-import javax.annotation.Nullable;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.Callable;
-
-import static org.gradle.util.GUtil.uncheckedCall;
+import com.google.common.collect.ImmutableSortedSet;
 
 public class GetInputPropertiesVisitor extends PropertyVisitor.Adapter {
-    private final String beanName;
-    private List<TaskInputPropertySpec> inputProperties = new ArrayList<TaskInputPropertySpec>();
-
-    public GetInputPropertiesVisitor(String beanName) {
-        this.beanName = beanName;
-    }
+    private final ImmutableSortedSet.Builder<InputPropertySpec> inputProperties = ImmutableSortedSet.naturalOrder();
 
     @Override
-    public void visitInputProperty(TaskInputPropertySpec inputProperty) {
-        inputProperties.add(inputProperty);
+    public void visitInputProperty(String propertyName, PropertyValue value, boolean optional) {
+        inputProperties.add(new DefaultInputPropertySpec(propertyName, value));
     }
 
-    public Factory<Map<String, Object>> getPropertyValuesFactory() {
-        return new Factory<Map<String, Object>>() {
-            @Override
-            public Map<String, Object> create() {
-                Map<String, Object> result = new HashMap<String, Object>();
-                for (TaskInputPropertySpec inputProperty : inputProperties) {
-                    String propertyName = inputProperty.getPropertyName();
-                    try {
-                        Object value = prepareValue(inputProperty.getValue());
-                        result.put(propertyName, value);
-                    } catch (Exception ex) {
-                        throw new InvalidUserDataException(String.format("Error while evaluating property '%s' of %s", propertyName, beanName), ex);
-                    }
-                }
-                return result;
-            }
-        };
-    }
-
-    @Nullable
-    private static Object prepareValue(@Nullable Object value) {
-        while (true) {
-            if (value instanceof Callable) {
-                Callable callable = (Callable) value;
-                value = uncheckedCall(callable);
-            } else if (value instanceof FileCollection) {
-                FileCollection fileCollection = (FileCollection) value;
-                return fileCollection.getFiles();
-            } else {
-                return avoidGString(value);
-            }
-        }
-    }
-
-    @Nullable
-    private static Object avoidGString(@Nullable Object value) {
-        return (value instanceof GString) ? value.toString() : value;
+    public ImmutableSortedSet<InputPropertySpec> getProperties() {
+        return inputProperties.build();
     }
 }

@@ -15,11 +15,9 @@
  */
 package org.gradle.initialization.layout
 
-import org.gradle.StartParameter
-import org.gradle.groovy.scripts.ScriptSource
-import org.gradle.groovy.scripts.TextResourceScriptSource
-import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
 
+import org.gradle.api.internal.StartParameterInternal
+import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
 import org.junit.Rule
 import spock.lang.Specification
 import spock.lang.Unroll
@@ -32,7 +30,7 @@ class BuildLayoutFactoryTest extends Specification {
     ]
 
     @Rule
-    public final TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider()
+    public final TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider(getClass())
 
     @Unroll
     def "returns current directory when it contains a #settingsFilename file when script languages #extensions"() {
@@ -47,7 +45,7 @@ class BuildLayoutFactoryTest extends Specification {
         def layout = locator.getLayoutFor(currentDir, true)
         layout.rootDirectory == currentDir
         layout.settingsDir == currentDir
-        refersTo(layout.settingsScriptSource, settingsFile)
+        refersTo(layout, settingsFile)
 
         where:
         settingsFilename << TEST_CASES
@@ -68,7 +66,7 @@ class BuildLayoutFactoryTest extends Specification {
         def layout = locator.getLayoutFor(currentDir, true)
         layout.rootDirectory == currentDir
         layout.settingsDir == currentDir
-        isEmpty(layout.settingsScriptSource)
+        isEmpty(layout.settingsFile)
 
         cleanup: "temporary tree"
         tmpDir.deleteDir()
@@ -88,7 +86,26 @@ class BuildLayoutFactoryTest extends Specification {
         def layout = locator.getLayoutFor(currentDir, true)
         layout.rootDirectory == masterDir.parentFile
         layout.settingsDir == masterDir
-        refersTo(layout.settingsScriptSource, settingsFile)
+        refersTo(layout, settingsFile)
+
+        where:
+        settingsFilename << TEST_CASES
+    }
+
+    @Unroll
+    def "looks for child directory called 'master' that it contains a #settingsFilename file"() {
+        given:
+        def locator = buildLayoutFactoryFor()
+
+        and:
+        def masterDir = tmpDir.createDir("master")
+        def settingsFile = masterDir.createFile(settingsFilename)
+
+        expect:
+        def layout = locator.getLayoutFor(tmpDir.testDirectory, true)
+        layout.rootDirectory == masterDir.parentFile
+        layout.settingsDir == masterDir
+        refersTo(layout, settingsFile)
 
         where:
         settingsFilename << TEST_CASES
@@ -108,7 +125,7 @@ class BuildLayoutFactoryTest extends Specification {
         def layout = locator.getLayoutFor(currentDir, true)
         layout.rootDirectory == masterDir.parentFile
         layout.settingsDir == masterDir
-        refersTo(layout.settingsScriptSource, settingsFile)
+        refersTo(layout, settingsFile)
 
         where:
         settingsFilename << TEST_CASES
@@ -129,7 +146,7 @@ class BuildLayoutFactoryTest extends Specification {
         def layout = locator.getLayoutFor(currentDir, true)
         layout.rootDirectory == tmpDir.testDirectory
         layout.settingsDir == tmpDir.testDirectory
-        refersTo(layout.settingsScriptSource, settingsFile)
+        refersTo(layout, settingsFile)
 
         where:
         settingsFilename << TEST_CASES
@@ -150,7 +167,7 @@ class BuildLayoutFactoryTest extends Specification {
         def layout = locator.getLayoutFor(currentDir, true)
         layout.rootDirectory == subDir
         layout.settingsDir == subDir
-        refersTo(layout.settingsScriptSource, settingsFile)
+        refersTo(layout, settingsFile)
 
         where:
         settingsFilename << TEST_CASES
@@ -171,7 +188,7 @@ class BuildLayoutFactoryTest extends Specification {
         def layout = locator.getLayoutFor(currentDir, true)
         layout.rootDirectory == currentDir
         layout.settingsDir == currentDir
-        refersTo(layout.settingsScriptSource, settingsFile)
+        refersTo(layout, settingsFile)
 
         where:
         settingsFilename << TEST_CASES
@@ -192,7 +209,30 @@ class BuildLayoutFactoryTest extends Specification {
         def layout = locator.getLayoutFor(currentDir, true)
         layout.rootDirectory == masterDir.parentFile
         layout.settingsDir == masterDir
-        refersTo(layout.settingsScriptSource, settingsFile)
+        refersTo(layout, settingsFile)
+
+        where:
+        settingsFilename << TEST_CASES
+    }
+
+    @Unroll
+    def "prefers the child 'master' directory over an ancestor directory with 'master' or a #settingsFilename file"() {
+        given:
+        def locator = buildLayoutFactoryFor()
+
+        and:
+        def currentDir = tmpDir.createDir("project")
+        def masterDir = currentDir.createDir("master")
+        def settingsFile = masterDir.createFile(settingsFilename)
+        def ancestorMasterDir = tmpDir.createDir("master")
+        ancestorMasterDir.createFile(settingsFilename)
+        tmpDir.createFile(settingsFilename)
+
+        expect:
+        def layout = locator.getLayoutFor(currentDir, true)
+        layout.rootDirectory == masterDir.parentFile
+        layout.settingsDir == masterDir
+        refersTo(layout, settingsFile)
 
         where:
         settingsFilename << TEST_CASES
@@ -212,7 +252,7 @@ class BuildLayoutFactoryTest extends Specification {
         def layout = locator.getLayoutFor(currentDir, false)
         layout.rootDirectory == currentDir
         layout.settingsDir == currentDir
-        isEmpty(layout.settingsScriptSource)
+        isEmpty(layout.settingsFile)
 
         where:
         settingsFilename << TEST_CASES
@@ -230,7 +270,7 @@ class BuildLayoutFactoryTest extends Specification {
         def layout = locator.getLayoutFor(currentDir, tmpDir.testDirectory)
         layout.rootDirectory == currentDir
         layout.settingsDir == currentDir
-        isEmpty(layout.settingsScriptSource)
+        isEmpty(layout.settingsFile)
     }
 
     @Unroll
@@ -243,7 +283,7 @@ class BuildLayoutFactoryTest extends Specification {
         currentDir.createFile(settingsFilename)
         def rootDir = tmpDir.createDir("root")
         def settingsFile = rootDir.createFile(overrideSettingsFilename)
-        def startParameter = new StartParameter()
+        def startParameter = new StartParameterInternal()
         startParameter.currentDir = currentDir
         startParameter.settingsFile = settingsFile
         def config = new BuildLayoutConfiguration(startParameter)
@@ -252,7 +292,7 @@ class BuildLayoutFactoryTest extends Specification {
         def layout = locator.getLayoutFor(config)
         layout.rootDirectory == rootDir
         layout.settingsDir == rootDir
-        refersTo(layout.settingsScriptSource, settingsFile)
+        refersTo(layout, settingsFile)
 
         where:
         settingsFilename << TEST_CASES
@@ -267,7 +307,7 @@ class BuildLayoutFactoryTest extends Specification {
         and:
         def currentDir = tmpDir.createDir("current")
         currentDir.createFile(settingsFilename)
-        def startParameter = new StartParameter()
+        def startParameter = new StartParameterInternal()
         startParameter.currentDir = currentDir
         startParameter.useEmptySettings()
         def config = new BuildLayoutConfiguration(startParameter)
@@ -276,7 +316,7 @@ class BuildLayoutFactoryTest extends Specification {
         def layout = locator.getLayoutFor(config)
         layout.rootDirectory == currentDir
         layout.settingsDir == currentDir
-        isEmpty(layout.settingsScriptSource)
+        isEmpty(layout.settingsFile)
 
         where:
         settingsFilename << TEST_CASES
@@ -286,12 +326,11 @@ class BuildLayoutFactoryTest extends Specification {
         new BuildLayoutFactory()
     }
 
-    void refersTo(ScriptSource scriptSource, File file) {
-        assert scriptSource instanceof TextResourceScriptSource
-        assert scriptSource.resource.sourceFile == file
+    void refersTo(BuildLayout layout, File file) {
+        assert layout.settingsFile == file
     }
 
-    void isEmpty(ScriptSource scriptSource) {
-        assert scriptSource.resource.text == ''
+    void isEmpty(File settingsFile) {
+        assert !settingsFile || !settingsFile.exists() || settingsFile.text == ''
     }
 }

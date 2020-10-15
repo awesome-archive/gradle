@@ -16,14 +16,28 @@
 
 package org.gradle.util;
 
+import com.google.common.base.Function;
+import com.google.common.base.Joiner;
+import com.google.common.collect.Iterables;
 import org.apache.commons.lang.StringEscapeUtils;
 import org.gradle.internal.SystemProperties;
 
+import javax.annotation.Nullable;
 import java.io.File;
+import java.util.Arrays;
 import java.util.regex.Pattern;
 
 public class TextUtil {
     private static final Pattern WHITESPACE = Pattern.compile("\\s*");
+    private static final Pattern UPPER_CASE = Pattern.compile("(?=\\p{Upper})");
+    private static final Joiner KEBAB_JOINER = Joiner.on("-");
+    private static final Function<String, String> TO_LOWERCASE = new Function<String, String>() {
+        @Override
+        public String apply(String input) {
+            return input.toLowerCase();
+        }
+    };
+    private static final Pattern NON_UNIX_LINE_SEPARATORS = Pattern.compile("\r\n|\r");
 
     /**
      * Returns the line separator for Windows.
@@ -49,22 +63,48 @@ public class TextUtil {
     /**
      * Converts all line separators in the specified string to the specified line separator.
      */
-    public static String convertLineSeparators(String str, String sep) {
-        return str == null ? null : str.replaceAll("\r\n|\r|\n", sep);
+    @Nullable
+    public static String convertLineSeparators(@Nullable String str, String sep) {
+        return str == null ? null : replaceLineSeparatorsOf(str, sep);
+    }
+
+    /**
+     * Converts all line separators in the specified non-null string to the Unix line separator {@code \n}.
+     */
+    public static String convertLineSeparatorsToUnix(String str) {
+        return replaceAll(NON_UNIX_LINE_SEPARATORS, str, "\n");
+    }
+
+    /**
+     * Converts all line separators in the specified non-null {@link CharSequence} to the specified line separator.
+     */
+    public static String replaceLineSeparatorsOf(CharSequence string, String bySeparator) {
+        return replaceAll("\r\n|\r|\n", string, bySeparator);
+    }
+
+    private static String replaceAll(String regex, CharSequence inString, String byString) {
+        return replaceAll(Pattern.compile(regex), inString, byString);
+    }
+
+    private static String replaceAll(Pattern pattern, CharSequence inString, String byString) {
+        return pattern.matcher(inString).replaceAll(byString);
     }
 
     /**
      * Converts all line separators in the specified string to the platform's line separator.
      */
     public static String toPlatformLineSeparators(String str) {
-        return str == null ? null : convertLineSeparators(str, getPlatformLineSeparator());
+        return str == null ? null : replaceLineSeparatorsOf(str, getPlatformLineSeparator());
     }
 
     /**
-     * Converts all line separators in the specified string to a single new line character.
+     * Converts all line separators in the specified nullable string to a single new line character ({@code \n}).
+     *
+     * @return null if the given string is null
      */
-    public static String normaliseLineSeparators(String str) {
-        return str == null ? null : convertLineSeparators(str, "\n");
+    @Nullable
+    public static String normaliseLineSeparators(@Nullable String str) {
+        return str == null ? null : convertLineSeparatorsToUnix(str);
     }
 
     /**
@@ -146,5 +186,9 @@ public class TextUtil {
 
     public static String normaliseFileAndLineSeparators(String in) {
         return normaliseLineSeparators(normaliseFileSeparators(in));
+    }
+
+    public static String camelToKebabCase(String camelCase) {
+        return KEBAB_JOINER.join(Iterables.transform(Arrays.asList(UPPER_CASE.split(camelCase)), TO_LOWERCASE));
     }
 }

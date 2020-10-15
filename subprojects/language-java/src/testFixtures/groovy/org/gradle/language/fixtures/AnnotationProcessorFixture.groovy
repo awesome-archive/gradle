@@ -17,8 +17,8 @@
 package org.gradle.language.fixtures
 
 import groovy.transform.CompileStatic
+import org.gradle.api.internal.tasks.compile.incremental.processing.IncrementalAnnotationProcessorType
 import org.gradle.api.internal.tasks.compile.processing.AnnotationProcessorDetector
-import org.gradle.api.internal.tasks.compile.processing.IncrementalAnnotationProcessorType
 import org.gradle.test.fixtures.file.TestFile
 
 /**
@@ -65,7 +65,9 @@ abstract class AnnotationProcessorFixture {
             import javax.lang.model.element.*;
             import javax.lang.model.util.*;
             import javax.tools.*;
-                                       
+
+            import static javax.tools.StandardLocation.*;
+
             @SupportedOptions({ "message" })
             public class ${annotationName}Processor extends AbstractProcessor {
                 private Map<String, String> options;
@@ -77,6 +79,8 @@ abstract class AnnotationProcessorFixture {
                 public Set<String> getSupportedAnnotationTypes() {
                     return Collections.singleton(${annotationName}.class.getName());
                 }
+                
+                ${supportedOptionsBlock}
             
                 @Override
                 public SourceVersion getSupportedSourceVersion() {
@@ -110,4 +114,8 @@ abstract class AnnotationProcessorFixture {
     }
 
     protected abstract String getGeneratorCode();
+
+    protected String getSupportedOptionsBlock() {
+        ""
+    }
 }

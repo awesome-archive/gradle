@@ -16,9 +16,10 @@
 
 package org.gradle.launcher.continuous
 
+import org.gradle.integtests.fixtures.AbstractContinuousIntegrationTest
 import org.gradle.util.TextUtil
 
-class ContinuousWorkerDaemonServiceIntegrationTest extends Java7RequiringContinuousIntegrationTest {
+class ContinuousWorkerDaemonServiceIntegrationTest extends AbstractContinuousIntegrationTest {
     def workerDaemonIdentityFileName = "build/workerId"
     def workerDaemonIdentityFile = file(workerDaemonIdentityFileName)
     def inputFile = file("inputFile")
@@ -68,7 +69,7 @@ class ContinuousWorkerDaemonServiceIntegrationTest extends Java7RequiringContinu
 
     String getTaskTypeUsingWorkerDaemon() {
         return """
-            import javax.inject.Inject
+            import org.gradle.api.file.ProjectLayout
             import org.gradle.workers.WorkerExecutor
             import org.gradle.workers.internal.WorkerDaemonFactory
 
@@ -78,14 +79,15 @@ class ContinuousWorkerDaemonServiceIntegrationTest extends Java7RequiringContinu
                 }
             }
 
-            class DaemonTask extends DefaultTask {
+            abstract class DaemonTask extends DefaultTask {
                 @InputFile
                 File inputFile = new File("${TextUtil.normaliseFileAndLineSeparators(inputFile.absolutePath)}")
 
                 @Inject
-                WorkerExecutor getWorkerExecutor() {
-                    throw new UnsupportedOperationException()
-                }
+                abstract WorkerExecutor getWorkerExecutor()
+
+                @Inject
+                abstract ProjectLayout getProjectLayout()
 
                 @TaskAction
                 void runInDaemon() {
@@ -95,7 +97,7 @@ class ContinuousWorkerDaemonServiceIntegrationTest extends Java7RequiringContinu
                 }
 
                 void captureWorkerDaemons() {
-                    def workerDaemonIdentityFile = project.file("$workerDaemonIdentityFileName")
+                    def workerDaemonIdentityFile = projectLayout.projectDirectory.file("$workerDaemonIdentityFileName").asFile
                     def daemonFactory = services.get(WorkerDaemonFactory)
                     workerDaemonIdentityFile << daemonFactory.clientsManager.allClients.collect { System.identityHashCode(it) }.sort().join(" ") + "\\n"
                 }

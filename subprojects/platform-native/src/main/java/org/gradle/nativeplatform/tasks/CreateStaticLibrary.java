@@ -16,7 +16,6 @@
 package org.gradle.nativeplatform.tasks;
 
 import org.gradle.api.DefaultTask;
-import org.gradle.api.Incubating;
 import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.FileCollection;
 import org.gradle.api.file.RegularFileProperty;
@@ -28,6 +27,8 @@ import org.gradle.api.tasks.InputFiles;
 import org.gradle.api.tasks.Internal;
 import org.gradle.api.tasks.Nested;
 import org.gradle.api.tasks.OutputFile;
+import org.gradle.api.tasks.PathSensitive;
+import org.gradle.api.tasks.PathSensitivity;
 import org.gradle.api.tasks.SkipWhenEmpty;
 import org.gradle.api.tasks.TaskAction;
 import org.gradle.api.tasks.WorkResult;
@@ -49,7 +50,6 @@ import javax.inject.Inject;
 /**
  * Assembles a static library from object files.
  */
-@Incubating
 public class CreateStaticLibrary extends DefaultTask implements ObjectFilesToBinary {
 
     private final ConfigurableFileCollection source;
@@ -61,7 +61,7 @@ public class CreateStaticLibrary extends DefaultTask implements ObjectFilesToBin
     public CreateStaticLibrary() {
         ObjectFactory objectFactory = getProject().getObjects();
         this.source = getProject().files();
-        this.outputFile = newOutputFile();
+        this.outputFile = objectFactory.fileProperty();
         this.staticLibArgs = getProject().getObjects().listProperty(String.class);
         this.targetPlatform = objectFactory.property(NativePlatform.class);
         this.toolChain = objectFactory.property(NativeToolChain.class);
@@ -70,6 +70,7 @@ public class CreateStaticLibrary extends DefaultTask implements ObjectFilesToBin
     /**
      * The source object files to be passed to the archiver.
      */
+    @PathSensitive(PathSensitivity.RELATIVE)
     @InputFiles
     @SkipWhenEmpty
     public FileCollection getSource() {
@@ -79,6 +80,7 @@ public class CreateStaticLibrary extends DefaultTask implements ObjectFilesToBin
     /**
      * Adds a set of object files to be linked. <p> The provided source object is evaluated as per {@link org.gradle.api.Project#files(Object...)}.
      */
+    @Override
     public void source(Object source) {
         this.source.from(source);
     }
@@ -91,7 +93,7 @@ public class CreateStaticLibrary extends DefaultTask implements ObjectFilesToBin
     // TODO: Need to track version/implementation of ar tool.
 
     @TaskAction
-    public void link() {
+    protected void link() {
 
         StaticLibraryArchiverSpec spec = new DefaultStaticLibraryArchiverSpec();
         spec.setTempDir(getTemporaryDir());

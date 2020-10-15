@@ -24,7 +24,7 @@ import spock.lang.Specification
 
 class DaemonSidePayloadClassLoaderFactoryTest extends Specification {
     @Rule
-    TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider()
+    TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider(getClass())
     def factory = Mock(PayloadClassLoaderFactory)
     def classpathTransformer = Mock(CachedClasspathTransformer)
 
@@ -35,10 +35,10 @@ class DaemonSidePayloadClassLoaderFactoryTest extends Specification {
         def url2 = new URL("http://localhost/file2.jar")
 
         given:
-        classpathTransformer.transform(_) >> [ url1, url2 ]
+        classpathTransformer.transform(_, _) >> [url1, url2]
 
         when:
-        def cl = registry.getClassLoaderFor(new VisitableURLClassLoader.Spec([url1, url2]), [null])
+        def cl = registry.getClassLoaderFor(new VisitableURLClassLoader.Spec("test", [url1, url2]), [null])
 
         then:
         cl instanceof VisitableURLClassLoader
@@ -53,10 +53,10 @@ class DaemonSidePayloadClassLoaderFactoryTest extends Specification {
         def url2 = tmpDir.createDir("classes-dir").toURI().toURL()
 
         given:
-        classpathTransformer.transform(_) >> [ cached, url2 ]
+        classpathTransformer.transform(_, _) >> [cached, url2]
 
         when:
-        def cl = registry.getClassLoaderFor(new VisitableURLClassLoader.Spec([url1, url2]), [null])
+        def cl = registry.getClassLoaderFor(new VisitableURLClassLoader.Spec("test", [url1, url2]), [null])
 
         then:
         cl instanceof VisitableURLClassLoader

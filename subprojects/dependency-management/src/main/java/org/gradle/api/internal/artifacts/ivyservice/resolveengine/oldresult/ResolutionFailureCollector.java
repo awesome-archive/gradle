@@ -28,6 +28,7 @@ import org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.Dependen
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.DependencyGraphPathResolver;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.DependencyGraphSelector;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.DependencyGraphVisitor;
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.RootGraphNode;
 import org.gradle.internal.resolve.ModuleVersionResolveException;
 
 import java.util.ArrayList;
@@ -38,16 +39,16 @@ import java.util.Map;
 import java.util.Set;
 
 public class ResolutionFailureCollector implements DependencyGraphVisitor {
-    private final Map<ComponentSelector, BrokenDependency> failuresByRevisionId = new LinkedHashMap<ComponentSelector, BrokenDependency>();
+    private final Map<ComponentSelector, BrokenDependency> failuresByRevisionId = new LinkedHashMap<>();
     private final ComponentSelectorConverter componentSelectorConverter;
-    private DependencyGraphNode root;
+    private RootGraphNode root;
 
     public ResolutionFailureCollector(ComponentSelectorConverter componentSelectorConverter) {
         this.componentSelectorConverter = componentSelectorConverter;
     }
 
     @Override
-    public void start(DependencyGraphNode root) {
+    public void start(RootGraphNode root) {
         this.root = root;
     }
 
@@ -73,11 +74,12 @@ public class ResolutionFailureCollector implements DependencyGraphVisitor {
     public void finish(DependencyGraphNode root) {
     }
 
-    public Set<UnresolvedDependency> complete() {
-        if (failuresByRevisionId.isEmpty()) {
-            ImmutableSet.of();
+    public Set<UnresolvedDependency> complete(Set<UnresolvedDependency> extraFailures) {
+        if (extraFailures.isEmpty() && failuresByRevisionId.isEmpty()) {
+            return ImmutableSet.of();
         }
         ImmutableSet.Builder<UnresolvedDependency> builder = ImmutableSet.builder();
+        builder.addAll(extraFailures);
         for (Map.Entry<ComponentSelector, BrokenDependency> entry : failuresByRevisionId.entrySet()) {
             Collection<List<ComponentIdentifier>> paths = DependencyGraphPathResolver.calculatePaths(entry.getValue().requiredBy, root);
 
@@ -99,7 +101,7 @@ public class ResolutionFailureCollector implements DependencyGraphVisitor {
 
     private static class BrokenDependency {
         final ModuleVersionResolveException failure;
-        final List<DependencyGraphNode> requiredBy = new ArrayList<DependencyGraphNode>();
+        final List<DependencyGraphNode> requiredBy = new ArrayList<>();
 
         private BrokenDependency(ModuleVersionResolveException failure) {
             this.failure = failure;

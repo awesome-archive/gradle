@@ -16,7 +16,7 @@
 package org.gradle.integtests.tooling
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.integtests.fixtures.IntegrationTestHint
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.integtests.fixtures.Sample
 import org.gradle.integtests.fixtures.UsesSample
 import org.gradle.integtests.fixtures.executer.ExecutionResult
@@ -24,36 +24,38 @@ import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
 import org.gradle.test.fixtures.file.LeaksFileHandles
 import org.gradle.util.TextUtil
 import org.junit.Rule
+import spock.lang.IgnoreIf
 
 @LeaksFileHandles
+@IgnoreIf({ GradleContextualExecuter.embedded }) // These test run independent applications that connect to a Gradle distribution through the Tooling API
 class SamplesToolingApiIntegrationTest extends AbstractIntegrationSpec {
 
     @Rule public final Sample sample = new Sample(temporaryFolder)
 
-    @UsesSample('toolingApi/eclipse')
+    @UsesSample('toolingApi/eclipse/groovy')
     def "can use tooling API to build Eclipse model"() {
         tweakProject()
 
         when:
-        def result = run()
+        run()
 
         then:
-        result.output.contains("gradle-tooling-api-")
-        result.output.contains("src/main/java")
+        outputContains("gradle-tooling-api-")
+        outputContains("src/main/java")
     }
 
-    @UsesSample('toolingApi/runBuild')
+    @UsesSample('toolingApi/runBuild/groovy')
     def "can use tooling API to run tasks"() {
         tweakProject()
 
         when:
-        def result = run()
+        run()
 
         then:
-        result.output.contains("Welcome to Gradle")
+        outputContains("Welcome to Gradle")
     }
 
-    @UsesSample('toolingApi/idea')
+    @UsesSample('toolingApi/idea/groovy')
     def "can use tooling API to build IDEA model"() {
         tweakProject()
 
@@ -64,31 +66,32 @@ class SamplesToolingApiIntegrationTest extends AbstractIntegrationSpec {
         noExceptionThrown()
     }
 
-    @UsesSample('toolingApi/model')
+    @UsesSample('toolingApi/model/groovy')
     def "can use tooling API to build general model"() {
         tweakProject()
 
         when:
-        def result = run()
+        run()
 
         then:
-        result.output.contains("Project: model")
-        result.output.contains("    build")
+        outputContains("Project: model")
+        outputContains("    build")
     }
 
-    @UsesSample('toolingApi/customModel')
+    @UsesSample('toolingApi/customModel/groovy')
+    @ToBeFixedForConfigurationCache
     def "can use tooling API to register custom model"() {
         tweakPluginProject(sample.dir.file('plugin'))
         tweakProject(sample.dir.file('tooling'))
 
         when:
         run('publish', sample.dir.file('plugin'))
-        def result = run('run', sample.dir.file('tooling'))
+        run('run', sample.dir.file('tooling'))
 
         then:
-        result.output.contains("   :a")
-        result.output.contains("   :b")
-        result.output.contains("   :c")
+        outputContains("   :a")
+        outputContains("   :b")
+        outputContains("   :c")
         noExceptionThrown()
     }
 
@@ -100,7 +103,7 @@ class SamplesToolingApiIntegrationTest extends AbstractIntegrationSpec {
         assert index >= 0
         buildScript = buildScript.substring(0, index) + """
 repositories {
-    maven { url "${buildContext.libsRepo.toURI()}" }
+    maven { url "${buildContext.localRepository.toURI()}" }
 }
 run {
     args = ["${TextUtil.escapeString(buildContext.gradleHomeDir.absolutePath)}", "${TextUtil.escapeString(executer.gradleUserHomeDir.absolutePath)}"]
@@ -109,10 +112,9 @@ run {
 }
 """ + buildScript.substring(index)
 
-        buildFile.text = buildScript
+        buildScript = buildScript.replace("def toolingApiVersion = gradle.gradleVersion", "def toolingApiVersion = \"${distribution.version.baseVersion.version}\"")
 
-        // Add in an empty settings file to avoid searching up
-        projectDir.file('settings.gradle').text = '// to stop search upwards'
+        buildFile.text = buildScript
     }
 
     private void tweakPluginProject(File projectDir) {
@@ -123,25 +125,17 @@ run {
         assert index >= 0
         buildScript = buildScript.substring(0, index) + """
 repositories {
-    maven { url "${buildContext.libsRepo.toURI()}" }
+    maven { url "${buildContext.localRepository.toURI()}" }
 }
 """ + buildScript.substring(index)
 
         buildFile.text = buildScript
-
-        // Add in an empty settings file to avoid searching up
-        projectDir.file('settings.gradle').text = '// to stop search upwards'
     }
 
     private ExecutionResult run(String task = 'run', File dir = sample.dir) {
-        try {
-            return new GradleContextualExecuter(distribution, temporaryFolder, getBuildContext())
-                    .requireGradleDistribution()
-                    .inDirectory(dir)
-                    .withTasks(task)
-                    .run()
-        } catch (Exception e) {
-            throw new IntegrationTestHint(e);
-        }
+        result = new GradleContextualExecuter(distribution, temporaryFolder, getBuildContext())
+                .inDirectory(dir)
+                .withTasks(task)
+                .run()
     }
 }

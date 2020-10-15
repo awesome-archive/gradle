@@ -16,18 +16,19 @@
 
 package org.gradle.api.plugins.quality.codenarc
 
-import org.gradle.api.plugins.quality.CodeNarcPlugin
+import org.gradle.api.JavaVersion
 import org.gradle.integtests.fixtures.MultiVersionIntegrationSpec
-import org.gradle.integtests.fixtures.TargetVersions
+import org.gradle.integtests.fixtures.TargetCoverage
 import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
+import org.gradle.quality.integtest.fixtures.CodeNarcCoverage
 import org.gradle.test.fixtures.file.TestFile
 import org.gradle.util.ToBeImplemented
 import spock.lang.IgnoreIf
 import spock.lang.Issue
 
-import static org.hamcrest.Matchers.startsWith
+import static org.hamcrest.CoreMatchers.startsWith
 
-@TargetVersions(["0.17", "0.21", "0.23", "0.24.1", "0.25.2", CodeNarcPlugin.DEFAULT_CODENARC_VERSION])
+@TargetCoverage({ CodeNarcCoverage.supportedVersionsByJdk })
 class CodeNarcPluginVersionIntegrationTest extends MultiVersionIntegrationSpec {
     def setup() {
         buildFile << """
@@ -41,8 +42,15 @@ class CodeNarcPluginVersionIntegrationTest extends MultiVersionIntegrationSpec {
             }
 
             dependencies {
-                compile localGroovy()
+                implementation localGroovy()
             }
+
+            ${JavaVersion.current().isCompatibleWith(JavaVersion.VERSION_14) ?
+            """
+            configurations.codenarc {
+                resolutionStrategy.force 'org.codehaus.groovy:groovy:${GroovySystem.version}'
+            }
+            """ : ""}
         """.stripIndent()
 
         writeRuleFile()
@@ -63,14 +71,18 @@ class CodeNarcPluginVersionIntegrationTest extends MultiVersionIntegrationSpec {
         goodCode()
 
         expect:
-        succeeds("codenarcMain") && ":codenarcMain" in nonSkippedTasks
-        succeeds(":codenarcMain") && ":codenarcMain" in skippedTasks
+        succeeds("codenarcMain")
+        executedAndNotSkipped(":codenarcMain")
+
+        succeeds(":codenarcMain")
+        skipped(":codenarcMain")
 
         when:
         report("main").delete()
 
         then:
-        succeeds("codenarcMain") && ":codenarcMain" in nonSkippedTasks
+        succeeds("codenarcMain")
+        executedAndNotSkipped(":codenarcMain")
     }
 
     @IgnoreIf({ GradleContextualExecuter.parallel })
@@ -88,7 +100,7 @@ class CodeNarcPluginVersionIntegrationTest extends MultiVersionIntegrationSpec {
 
         expect:
         succeeds("check")
-        ":codenarcMain" in nonSkippedTasks
+        executedAndNotSkipped(":codenarcMain")
         ["html", "xml", "txt"].each {
             assert report("main", it).exists()
         }
@@ -158,7 +170,7 @@ class CodeNarcPluginVersionIntegrationTest extends MultiVersionIntegrationSpec {
         buildFile << '''
             codenarc {
                 configFile == file('config/codenarc/codenarc.xml')
-                reportFormat = 'console' 
+                reportFormat = 'console'
             }
         '''
         file('src/main/groovy/a/A.groovy') << 'package a;class A{}'
@@ -176,7 +188,7 @@ class CodeNarcPluginVersionIntegrationTest extends MultiVersionIntegrationSpec {
         buildFile << '''
             codenarc {
                 configFile == file('config/codenarc/codenarc.xml')
-                reportFormat = 'console' 
+                reportFormat = 'console'
             }
         '''
         file('src/main/groovy/a/A.groovy') << 'package a;class A{}'
@@ -187,9 +199,9 @@ class CodeNarcPluginVersionIntegrationTest extends MultiVersionIntegrationSpec {
 
         then:
         // TODO These should match
-        !!! nonSkippedTasks.contains(':codenarcMain')
-        !!! output.contains('CodeNarc Report')
-        !!! output.contains('CodeNarc completed: (p1=0; p2=0; p3=0)')
+        !!!skipped(':codenarcMain')
+        !!!output.contains('CodeNarc Report')
+        !!!output.contains('CodeNarc completed: (p1=0; p2=0; p3=0)')
     }
 
     private goodCode() {

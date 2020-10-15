@@ -1,5 +1,5 @@
 /*
- * Copyright 2009 the original author or authors.
+ * Copyright 2019 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,12 @@
 
 package org.gradle.performance.fixture
 
+import com.google.common.annotations.VisibleForTesting
 import com.google.common.base.Splitter
+import groovy.transform.CompileStatic
+import groovy.transform.TypeCheckingMode
+import org.apache.commons.io.FileUtils
+import org.gradle.integtests.fixtures.RepoScriptBlockUtil
 import org.gradle.integtests.fixtures.executer.GradleDistribution
 import org.gradle.integtests.fixtures.executer.IntegrationTestBuildContext
 import org.gradle.integtests.fixtures.versions.ReleasedVersionDistributions
@@ -30,27 +35,45 @@ import org.gradle.performance.results.MeasuredOperationList
 import org.gradle.performance.results.ResultsStore
 import org.gradle.performance.results.ResultsStoreHelper
 import org.gradle.performance.util.Git
-import org.gradle.util.GFileUtils
+import org.gradle.profiler.BuildAction
+import org.gradle.profiler.BuildMutator
+import org.gradle.profiler.GradleInvoker
+import org.gradle.profiler.GradleInvokerBuildAction
+import org.gradle.profiler.InvocationSettings
+import org.gradle.profiler.ToolingApiGradleClient
+import org.gradle.tooling.LongRunningOperation
+import org.gradle.tooling.ProjectConnection
 import org.gradle.util.GradleVersion
 import org.junit.Assume
 
+import java.util.function.Consumer
+import java.util.function.Function
 import java.util.regex.Pattern
 
+import static org.gradle.integtests.fixtures.RepoScriptBlockUtil.gradlePluginRepositoryMirrorUrl
+import static org.gradle.test.fixtures.server.http.MavenHttpPluginRepository.PLUGIN_PORTAL_OVERRIDE_URL_PROPERTY
+
+/**
+ * Runs cross version performance tests using Gradle profiler.
+ */
 class CrossVersionPerformanceTestRunner extends PerformanceTestSpec {
+
     private static final Pattern COMMA_OR_SEMICOLON = Pattern.compile('[;,]')
 
-    GradleDistribution current
-    final IntegrationTestBuildContext buildContext
-    final ResultsStore resultsStore
-    final DataReporter<CrossVersionPerformanceResults> reporter
-    TestProjectLocator testProjectLocator = new TestProjectLocator()
+    private final IntegrationTestBuildContext buildContext
+    private final ResultsStore resultsStore
+    private final DataReporter<CrossVersionPerformanceResults> reporter
+    private final ReleasedVersionDistributions releases
+    private final Clock clock = Time.clock()
+
     final BuildExperimentRunner experimentRunner
-    final ReleasedVersionDistributions releases
-    final Clock clock = Time.clock()
+
+    GradleDistribution current
 
     String testProject
     File workingDir
     boolean useDaemon = true
+    boolean useToolingApi = false
 
     List<String> tasksToRun = []
     List<String> cleanTasks = []
@@ -59,10 +82,14 @@ class CrossVersionPerformanceTestRunner extends PerformanceTestSpec {
     List<String> previousTestIds = []
 
     List<String> targetVersions = []
-    String minimumVersion
-
-    private CompositeBuildExperimentListener buildExperimentListeners = new CompositeBuildExperimentListener()
-    private CompositeInvocationCustomizer invocationCustomizers = new CompositeInvocationCustomizer()
+    /**
+     * Minimum base version to be used. For example, a 6.0-nightly target version is OK if minimumBaseVersion is 6.0.
+     */
+    String minimumBaseVersion
+    boolean measureGarbageCollection = true
+    private final List<Function<InvocationSettings, BuildMutator>> buildMutators = []
+    private final List<String> measuredBuildOperations = []
+    private BuildAction buildAction
 
     CrossVersionPerformanceTestRunner(BuildExperimentRunner experimentRunner, ResultsStore resultsStore, DataReporter<CrossVersionPerformanceResults> reporter, ReleasedVersionDistributions releases, IntegrationTestBuildContext buildContext) {
         this.resultsStore = resultsStore
@@ -70,23 +97,26 @@ class CrossVersionPerformanceTestRunner extends PerformanceTestSpec {
         this.experimentRunner = experimentRunner
         this.releases = releases
         this.buildContext = buildContext
+        this.testProject = TestScenarioSelector.loadConfiguredTestProject()
+    }
+
+    void addBuildMutator(Function<InvocationSettings, BuildMutator> buildMutator) {
+        buildMutators.add(buildMutator)
+    }
+
+    List<String> getMeasuredBuildOperations() {
+        return measuredBuildOperations
+    }
+
+    List<String> getProjectMemoryOptions() {
+        TestProjects.getProjectMemoryOptions(testProject)
     }
 
     CrossVersionPerformanceResults run() {
-        if (testId == null) {
-            throw new IllegalStateException("Test id has not been specified")
-        }
-        if (testProject == null) {
-            throw new IllegalStateException("Test project has not been specified")
-        }
-        if (workingDir == null) {
-            throw new IllegalStateException("Working directory has not been specified")
-        }
-
-        def scenarioSelector = new TestScenarioSelector()
-        Assume.assumeTrue(scenarioSelector.shouldRun(testId, [testProject].toSet(), resultsStore))
+        assumeShouldRun()
 
         def results = new CrossVersionPerformanceResults(
+            testClass: testClassName,
             testId: testId,
             previousTestIds: previousTestIds.collect { it.toString() }, // Convert GString instances
             testProject: testProject,
@@ -102,33 +132,51 @@ class CrossVersionPerformanceTestRunner extends PerformanceTestSpec {
             vcsBranch: Git.current().branchName,
             vcsCommits: [Git.current().commitId],
             startTime: clock.getCurrentTime(),
-            channel: ResultsStoreHelper.determineChannel()
+            channel: ResultsStoreHelper.determineChannel(),
+            teamCityBuildId: ResultsStoreHelper.determineTeamCityBuildId()
         )
 
-        def baselineVersions = toBaselineVersions(releases, targetVersions, minimumVersion).collect { results.baseline(it) }
-        def maxWorkingDirLength = (['current'] + baselineVersions*.version).collect { sanitizeVersionWorkingDir(it) }*.length().max()
+        def baselineVersions = toBaselineVersions(releases, targetVersions, minimumBaseVersion).collect { results.baseline(it) }
+        try {
+            int runIndex = 0
+            runVersion(testId, current, perVersionWorkingDirectory(runIndex++), results.current)
 
-        runVersion(current, perVersionWorkingDirectory('current', maxWorkingDirLength), results.current)
-
-        baselineVersions.each { baselineVersion ->
-            runVersion(buildContext.distribution(baselineVersion.version), perVersionWorkingDirectory(baselineVersion.version, maxWorkingDirLength), baselineVersion.results)
+            baselineVersions.each { baselineVersion ->
+                runVersion(testId, buildContext.distribution(baselineVersion.version), perVersionWorkingDirectory(runIndex++), baselineVersion.results)
+            }
+        } catch (Exception e) {
+            // Print the exception here, so it is reported even when the reporting fails
+            e.printStackTrace()
+            throw e
+        } finally {
+            results.endTime = clock.getCurrentTime()
+            reporter.report(results)
         }
-
-        results.endTime = clock.getCurrentTime()
-
-        results.assertEveryBuildSucceeds()
-
-        reporter.report(results)
 
         return results
     }
 
-    protected File perVersionWorkingDirectory(String version, int maxWorkingDirLength) {
-        def perVersion = new File(workingDir, sanitizeVersionWorkingDir(version).padRight(maxWorkingDirLength, '_'))
+    void assumeShouldRun() {
+        if (testId == null) {
+            throw new IllegalStateException("Test id has not been specified")
+        }
+        if (testProject == null) {
+            throw new IllegalStateException("Test project has not been specified")
+        }
+        if (workingDir == null) {
+            throw new IllegalStateException("Working directory has not been specified")
+        }
+
+        Assume.assumeTrue(TestScenarioSelector.shouldRun(testId))
+    }
+
+    private File perVersionWorkingDirectory(int runIndex) {
+        def versionWorkingDirName = String.format('%03d', runIndex)
+        def perVersion = new File(workingDir, versionWorkingDirName)
         if (!perVersion.exists()) {
             perVersion.mkdirs()
         } else {
-            GFileUtils.cleanDirectory(perVersion)
+            FileUtils.cleanDirectory(perVersion)
         }
         perVersion
     }
@@ -137,83 +185,87 @@ class CrossVersionPerformanceTestRunner extends PerformanceTestSpec {
         version.replace('+', '')
     }
 
-    static Iterable<String> toBaselineVersions(ReleasedVersionDistributions releases, List<String> targetVersions, String minimumVersion) {
-        Iterable<String> versions
-        boolean addMostRecentRelease = true
+    private static String resolveVersion(String version, ReleasedVersionDistributions releases) {
+        switch (version) {
+            case 'last':
+                return releases.mostRecentRelease.version.version
+            case 'nightly':
+                return LatestNightlyBuildDeterminer.latestNightlyVersion
+            case 'defaults':
+                throw new IllegalArgumentException("'defaults' shouldn't be used in target versions.")
+            default:
+                def releasedVersion = findRelease(releases, version)
+                if (releasedVersion) {
+                    return releasedVersion.version.version
+                } else if (isRcVersionOrSnapshot(version)) {
+                    // for snapshots, we don't have a cheap way to check if it really exists, so we'll just
+                    // blindly add it to the list and trust the test author
+                    // Only active rc versions are listed in all-released-versions.properties that ReleasedVersionDistributions uses
+                    return version
+                } else {
+                    throw new RuntimeException("Cannot find Gradle release that matches version '$version'")
+                }
+        }
+    }
+
+    @VisibleForTesting
+    static Iterable<String> toBaselineVersions(ReleasedVersionDistributions releases, List<String> targetVersions, String minimumBaseVersion) {
+        List<String> versions
         def overrideBaselinesProperty = System.getProperty('org.gradle.performance.baselines')
         if (overrideBaselinesProperty) {
             versions = resolveOverriddenVersions(overrideBaselinesProperty, targetVersions)
-            addMostRecentRelease = false
         } else {
             versions = targetVersions
         }
 
-        def baselineVersions = new LinkedHashSet<String>()
-
-        def mostRecentRelease = releases.mostRecentRelease.version.version
-        def currentBaseVersion = GradleVersion.current().getBaseVersion().version
-
-        for (String version : versions) {
-            if (version == currentBaseVersion) {
-                // current version is run by default, skip adding it to baseline
-                continue
-            }
-            if (version == 'last') {
-                addMostRecentRelease = false
-                baselineVersions.add(mostRecentRelease)
-                continue
-            }
-            if (version == 'nightly') {
-                addMostRecentRelease = false
-                baselineVersions.add(LatestNightlyBuildDeterminer.latestNightlyVersion)
-                continue
-            }
-            if (version == 'none') {
-                return Collections.emptyList()
-            }
-            if (version == 'defaults') {
-                throw new IllegalArgumentException("'defaults' shouldn't be used in target versions.")
-            }
-            def releasedVersion = findRelease(releases, version)
-            def versionObject = GradleVersion.version(version)
-            if (minimumVersion != null && versionObject < GradleVersion.version(minimumVersion)) {
-                //this version is not supported by this scenario, as it uses features not yet available in this version of Gradle
-                continue
-            }
-            if (releasedVersion) {
-                baselineVersions.add(releasedVersion.version.version)
-            } else if (versionObject.snapshot || isRcVersion(versionObject)) {
-                // for snapshots, we don't have a cheap way to check if it really exists, so we'll just
-                // blindly add it to the list and trust the test author
-                // Only active rc versions are listed in all-released-versions.properties that ReleasedVersionDistributions uses
-                addMostRecentRelease = false
-                baselineVersions.add(version)
-            } else {
-                throw new RuntimeException("Cannot find Gradle release that matches version '$version'")
-            }
+        if (versions.contains("none")) {
+            return []
         }
 
-        if (baselineVersions.empty || addMostRecentRelease) {
+        LinkedHashSet<String> resolvedVersions = versions.collect { resolveVersion(it, releases) } as LinkedHashSet<String>
+
+        if (resolvedVersions.isEmpty() || addMostRecentRelease(overrideBaselinesProperty, versions)) {
             // Always include the most recent final release if we're not testing against a nightly or a snapshot
-            baselineVersions.add(mostRecentRelease)
+            resolvedVersions.add(releases.mostRecentRelease.version.version)
         }
 
-        baselineVersions
+        resolvedVersions.removeAll { !versionMeetsLowerBaseVersionRequirement(it, minimumBaseVersion) }
+
+        if (resolvedVersions.isEmpty()) {
+            Assume.assumeFalse("Ignore the test if all baseline versions are filtered out in Historical Performance Test", ResultsStoreHelper.isHistoricalChannel())
+        }
+
+        assert !resolvedVersions.isEmpty(): "No versions selected: ${versions}"
+
+        resolvedVersions
     }
 
-    private static boolean isRcVersion(GradleVersion versionObject) {
+    private static boolean addMostRecentRelease(String overrideBaselinesProperty, List<String> versions) {
+        if (overrideBaselinesProperty) {
+            return false
+        }
+        return !versions.any { it == 'last' || it == 'nightly' || isRcVersionOrSnapshot(it) }
+    }
+
+    private static boolean versionMeetsLowerBaseVersionRequirement(String targetVersion, String minimumBaseVersion) {
+        return minimumBaseVersion == null || GradleVersion.version(targetVersion).baseVersion >= GradleVersion.version(minimumBaseVersion)
+    }
+
+    @CompileStatic(TypeCheckingMode.SKIP)
+    private static boolean isRcVersionOrSnapshot(String version) {
+        GradleVersion versionObject = GradleVersion.version(version)
         // there is no public API for checking for RC version, this is an internal way
-        versionObject.stage.stage == 3
+        return versionObject.snapshot || versionObject.stage?.stage == 3
     }
 
-    private static Iterable<String> resolveOverriddenVersions(String overrideBaselinesProperty, List<String> targetVersions) {
+    private static List<String> resolveOverriddenVersions(String overrideBaselinesProperty, List<String> targetVersions) {
         def versions = Splitter.on(COMMA_OR_SEMICOLON)
             .omitEmptyStrings()
             .splitToList(overrideBaselinesProperty)
-        versions.collectMany([] as Set) { version -> version == 'defaults' ? targetVersions : [version] }
+        versions.collectMany([] as Set) { version -> version == 'defaults' ? targetVersions : [version] } as List
     }
 
-    protected static GradleDistribution findRelease(ReleasedVersionDistributions releases, String requested) {
+    private static GradleDistribution findRelease(ReleasedVersionDistributions releases, String requested) {
         GradleDistribution best = null
         for (GradleDistribution release : releases.all) {
             if (release.version.version == requested) {
@@ -227,45 +279,80 @@ class CrossVersionPerformanceTestRunner extends PerformanceTestSpec {
         best
     }
 
-    private void runVersion(GradleDistribution dist, File workingDir, MeasuredOperationList results) {
+    private void runVersion(String displayName, GradleDistribution dist, File workingDir, MeasuredOperationList results) {
         def gradleOptsInUse = resolveGradleOpts()
         def builder = GradleBuildExperimentSpec.builder()
             .projectName(testProject)
-            .displayName(dist.version.version)
+            .displayName(displayName)
             .warmUpCount(warmUpRuns)
             .invocationCount(runs)
-            .listener(buildExperimentListeners)
-            .invocationCustomizer(invocationCustomizers)
+            .buildMutators(buildMutators)
+            .measuredBuildOperations(measuredBuildOperations)
+            .measureGarbageCollection(measureGarbageCollection)
             .invocation {
                 workingDirectory(workingDir)
-                distribution(dist)
+                distribution(new PerformanceTestGradleDistribution(dist, workingDir))
                 tasksToRun(this.tasksToRun as String[])
                 cleanTasks(this.cleanTasks as String[])
-                args(this.args as String[])
+                args((this.args + ['-I', RepoScriptBlockUtil.createMirrorInitScript().absolutePath, "-D${PLUGIN_PORTAL_OVERRIDE_URL_PROPERTY}=${gradlePluginRepositoryMirrorUrl()}".toString()]) as String[])
                 gradleOpts(gradleOptsInUse as String[])
                 useDaemon(this.useDaemon)
+                useToolingApi(this.useToolingApi)
+                buildAction(this.buildAction)
             }
         builder.workingDirectory = workingDir
         def spec = builder.build()
-        if (experimentRunner.honestProfiler) {
-            experimentRunner.honestProfiler.sessionId = "${testId}-${dist.version.version}".replaceAll('[^a-zA-Z0-9.-]', '_').replaceAll('[_]+', '_')
-        }
         experimentRunner.run(spec, results)
     }
 
-    def resolveGradleOpts() {
-        PerformanceTestJvmOptions.customizeJvmOptions(this.gradleOpts)
+    private List<String> resolveGradleOpts() {
+        PerformanceTestJvmOptions.normalizeJvmOptions(this.gradleOpts)
     }
 
-    HonestProfilerCollector getHonestProfiler() {
-        return experimentRunner.honestProfiler
+    def <T extends LongRunningOperation> ToolingApiAction<T> toolingApi(String displayName, Function<ProjectConnection, T> initialAction) {
+        useToolingApi = true
+        def tapiAction = new ToolingApiAction<T>(displayName, initialAction)
+        this.buildAction = tapiAction
+        return tapiAction
+    }
+}
+
+class ToolingApiAction<T extends LongRunningOperation> extends GradleInvokerBuildAction {
+    private final Function<ProjectConnection, T> initialAction
+    private final String displayName
+    private Consumer<T> tapiAction
+
+    ToolingApiAction(String displayName, Function<ProjectConnection, T> initialAction) {
+        this.displayName = displayName
+        this.initialAction = initialAction
     }
 
-    void addBuildExperimentListener(BuildExperimentListener buildExperimentListener) {
-        buildExperimentListeners.addListener(buildExperimentListener)
+    void run(Consumer<T> tapiAction) {
+        this.tapiAction = tapiAction
     }
 
-    void addInvocationCustomizer(InvocationCustomizer invocationCustomizer) {
-        invocationCustomizers.addCustomizer(invocationCustomizer)
+    @Override
+    boolean isDoesSomething() {
+        return true
+    }
+
+    @Override
+    String getDisplayName() {
+        return displayName
+    }
+
+    @Override
+    String getShortDisplayName() {
+        return displayName
+    }
+
+    @Override
+    void run(GradleInvoker buildInvoker, List<String> gradleArgs, List<String> jvmArgs) {
+        def toolingApiInvoker = (ToolingApiGradleClient) buildInvoker
+        toolingApiInvoker.runOperation(initialAction) { builder ->
+            builder.setJvmArguments(jvmArgs)
+            builder.withArguments(gradleArgs)
+            tapiAction.accept(builder)
+        }
     }
 }

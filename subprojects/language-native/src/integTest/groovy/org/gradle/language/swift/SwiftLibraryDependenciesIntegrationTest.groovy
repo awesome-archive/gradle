@@ -16,6 +16,7 @@
 
 package org.gradle.language.swift
 
+
 import org.gradle.language.AbstractNativeLibraryDependenciesIntegrationTest
 import org.gradle.nativeplatform.fixtures.RequiresInstalledToolChain
 import org.gradle.nativeplatform.fixtures.ToolChainRequirement
@@ -32,25 +33,25 @@ class SwiftLibraryDependenciesIntegrationTest extends AbstractNativeLibraryDepen
                 implementation project(':lib1')
             }
             project(':lib1') {
-                apply plugin: 'swift-library'          
+                apply plugin: 'swift-library'
                 dependencies {
                     implementation project(':lib2')
                 }
             }
             project(':lib2') {
                 apply plugin: 'swift-library'
-            }  
+            }
         """
 
         file("src/main/swift/Lib.swift") << """
             import Lib1
-            
+
             class Lib {
             }
         """
         file("lib1/src/main/swift/Lib1.swift") << """
             import Lib2
-            
+
             class Lib1 {
             }
         """
@@ -78,7 +79,7 @@ class SwiftLibraryDependenciesIntegrationTest extends AbstractNativeLibraryDepen
             project(':lib1') {
                 apply plugin: 'swift-library'
                 library {
-                    binaries.getByName('mainDebug').configure {                
+                    binaries.getByName('mainDebug').configure {
                         dependencies {
                             implementation project(':lib2')
                         }
@@ -87,18 +88,18 @@ class SwiftLibraryDependenciesIntegrationTest extends AbstractNativeLibraryDepen
             }
             project(':lib2') {
                 apply plugin: 'swift-library'
-            }  
+            }
         """
 
         file("src/main/swift/Lib.swift") << """
             import Lib1
-            
+
             class Lib {
             }
         """
         file("lib1/src/main/swift/Lib1.swift") << """
             import Lib2
-            
+
             class Lib1 {
             }
         """
@@ -135,7 +136,7 @@ class SwiftLibraryDependenciesIntegrationTest extends AbstractNativeLibraryDepen
 
         file('lib/build.gradle') << """
             apply plugin: 'swift-library'
-            
+
             group = 'org.gradle.test'
             version = '1.0'
         """

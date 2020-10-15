@@ -16,13 +16,19 @@
 
 package org.gradle.language.cpp
 
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.nativeplatform.fixtures.app.CppLib
 import org.gradle.nativeplatform.fixtures.app.SourceElement
 
 class CppBothLibraryLinkageIntegrationTest extends AbstractCppIntegrationTest {
     @Override
-    protected List<String> getTasksToAssembleDevelopmentBinary() {
-        return [":compileDebugSharedCpp", ":linkDebugShared"]
+    protected List<String> getTasksToAssembleDevelopmentBinary(String variant) {
+        return [":compileDebugShared${variant.capitalize()}Cpp", ":linkDebugShared${variant.capitalize()}"]
+    }
+
+    @Override
+    protected String getTaskNameToAssembleDevelopmentBinaryWithArchitecture(String architecture) {
+        return ":assembleDebugShared${architecture.toLowerCase().capitalize()}"
     }
 
     @Override
@@ -48,6 +54,7 @@ class CppBothLibraryLinkageIntegrationTest extends AbstractCppIntegrationTest {
         return new CppLib()
     }
 
+    @ToBeFixedForConfigurationCache
     def "creates shared library binary by default when both linkage specified"() {
         def library = new CppLib()
         makeSingleProject()
@@ -64,6 +71,7 @@ class CppBothLibraryLinkageIntegrationTest extends AbstractCppIntegrationTest {
         sharedLibrary('build/lib/main/debug/shared/foo').assertExists()
     }
 
+    @ToBeFixedForConfigurationCache
     def "can assemble static library followed by shared library"() {
         def library = new CppLib()
         makeSingleProject()

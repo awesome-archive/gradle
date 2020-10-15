@@ -17,10 +17,14 @@
 package org.gradle.language.cpp
 
 import org.gradle.integtests.fixtures.CompilationOutputsFixture
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.integtests.fixtures.executer.GradleExecuter
 import org.gradle.nativeplatform.fixtures.AbstractInstalledToolChainIntegrationSpec
+import org.gradle.nativeplatform.fixtures.AvailableToolChains
 import org.gradle.test.fixtures.file.TestFile
 import spock.lang.Unroll
+
+import static org.junit.Assume.assumeFalse
 
 class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainIntegrationSpec implements CppTaskNames {
 
@@ -29,6 +33,7 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
 
     TestFile appSourceFile
     TestFile appOtherSourceFile
+    TestFile appHeaderFile
     TestFile libraryHeaderFile
     TestFile libraryImplHeaderFile
     TestFile librarySourceFile
@@ -43,7 +48,8 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
     def installApp = appDebug.install
 
     def setup() {
-        buildFile << """    
+        assumeFalse(toolChain.family == AvailableToolChains.ToolFamily.CYGWIN_GCC) // [test setup issue] fails with - greet.cpp:2:22: fatal error: app.hpp: No such file or directory
+        buildFile << """
             project(':library') {
                 apply plugin: 'cpp-library'
             }
@@ -59,13 +65,18 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
             include 'library', 'app'
         """
 
+        appHeaderFile = file("app/src/main/cpp/app.hpp") << """
+            #include <string>
+            extern void greeting(const char* name, std::string& result);
+        """
+
         appSourceFile = file("app/src/main/cpp/main.cpp") << """
             #include <lib.h>
             #include <iostream>
-            
+            #include "app.hpp"
+
             using namespace std;
-            extern void greeting(const char* name, string& result);    
-            
+
             int main() {
                 string msg;
                 greeting("world", msg);
@@ -76,14 +87,14 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
 
         appOtherSourceFile = file("app/src/main/cpp/greet.cpp")
         appOtherSourceFile << """
-            #include <string>
+            #include "app.hpp"
             #define PREFIX "hello"
 
             using namespace std;
-            
-            extern void greeting(const char* name, string& result) {    
-                result.append(PREFIX);                
-                result.append(" ");                
+
+            extern void greeting(const char* name, string& result) {
+                result.append(PREFIX);
+                result.append(" ");
                 result.append(name);
             }
         """
@@ -115,7 +126,7 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
             #include <iostream>
 
             using namespace std;
-            
+
             void log(const string& message) {
                 cout << message;
             }
@@ -127,13 +138,14 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
             #include "lib_impl.h"
 
             using namespace std;
-            
+
             void log(const char* message) {
                 cout << message;
             }
         """
     }
 
+    @ToBeFixedForConfigurationCache
     def "rebuilds executable with single source file change"() {
         given:
         run installApp
@@ -154,6 +166,8 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
         and:
         libObjects.noneRecompiled()
         appObjects.recompiledFile(appSourceFile)
+        // Test assumes that the app has multiple source files and only one of them has changed. Verify that assumption
+        appObjects.hasFiles(appSourceFile, appOtherSourceFile)
 
         and:
         install.assertInstalled()
@@ -163,9 +177,10 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
         run installApp
 
         then:
-        nonSkippedTasks.empty
+        allSkipped()
     }
 
+    @ToBeFixedForConfigurationCache
     def "recompiles library and relinks executable after single library source file change"() {
         given:
         run installApp
@@ -202,56 +217,11 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
         run installApp
 
         then:
-        nonSkippedTasks.empty
+        allSkipped()
     }
 
-    def "considers only those headers that are reachable from source files as inputs"() {
-        given:
-        def unused = file("app/src/main/headers/ignore1.h") << "broken!"
-        def unusedPrivate = file("app/src/main/cpp/ignore2.h") << "broken!"
-
-        run installApp
-        libObjects.snapshot()
-        appObjects.snapshot()
-
-        when:
-        unused << "even more broken"
-        unusedPrivate << "even more broken"
-        file("src/main/headers/ignored3.h") << "broken"
-        file("src/main/headers/some-dir").mkdirs()
-        file("src/main/cpp/ignored4.h") << "broken"
-        file("src/main/cpp/some-dir").mkdirs()
-
-        run installApp
-
-        then:
-        nonSkippedTasks.empty
-
-        when:
-        unused.delete()
-        unusedPrivate.delete()
-
-        run installApp
-
-        then:
-        nonSkippedTasks.empty
-
-        when:
-        libraryHeaderFile << """
-            int unused();
-        """
-        run installApp
-
-        then:
-        executedAndNotSkipped libraryDebug.compile
-        executedAndNotSkipped appDebug.compile
-
-        and:
-        appObjects.recompiledFile(appSourceFile)
-        libObjects.recompiledFiles(librarySourceFile, libraryOtherSourceFile)
-    }
-
-    def "recompiles binary when public header file changes in a way that does not affect the object files"() {
+    @ToBeFixedForConfigurationCache
+    def "recompiles binary and does not relink when public header file changes in a way that does not affect the object files"() {
         given:
         run installApp
         libObjects.snapshot()
@@ -284,9 +254,10 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
         run installApp
 
         then:
-        nonSkippedTasks.empty
+        allSkipped()
     }
 
+    @ToBeFixedForConfigurationCache
     def "recompiles binary when implementation header file changes"() {
         given:
         run installApp
@@ -320,9 +291,109 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
         run installApp
 
         then:
-        nonSkippedTasks.empty
+        allSkipped()
     }
 
+    @ToBeFixedForConfigurationCache
+    def "recompiles only those source files affected by a header file change"() {
+        given:
+        def greetingHeader = file("app/src/main/headers/greeting.hpp")
+        greetingHeader << """
+            #define PREFIX "hello"
+        """
+        appOtherSourceFile.text = """
+            #include "app.hpp"
+            #include "greeting.hpp"
+
+            using namespace std;
+
+            void greeting(const char* name, string& result) {
+                result.append(PREFIX);
+                result.append(" ");
+                result.append(name);
+            }
+        """
+
+        run installApp
+        libObjects.snapshot()
+        appObjects.snapshot()
+
+        when:
+        greetingHeader.replace("hello", "hi")
+        run installApp
+
+        then:
+        result.assertTasksSkipped(libraryDebug.allToLink)
+        executedAndNotSkipped appDebug.compile
+
+        and:
+        libObjects.noneRecompiled()
+        appObjects.recompiledFile(appOtherSourceFile)
+        // Test assumes there are multiple source files: one that includes the header and one that does not. Verify that assumption
+        appObjects.hasFiles(appSourceFile, appOtherSourceFile)
+
+        when:
+        libObjects.snapshot()
+        appObjects.snapshot()
+
+        run installApp
+
+        then:
+        allSkipped()
+
+        and:
+        libObjects.noneRecompiled()
+        appObjects.noneRecompiled()
+    }
+
+    @ToBeFixedForConfigurationCache
+    def "considers only those headers that are reachable from source files as inputs"() {
+        given:
+        def unused = file("app/src/main/headers/ignore1.h") << "broken!"
+        def unusedPrivate = file("app/src/main/cpp/ignore2.h") << "broken!"
+
+        run installApp
+        libObjects.snapshot()
+        appObjects.snapshot()
+
+        when:
+        unused << "even more broken"
+        unusedPrivate << "even more broken"
+        file("src/main/headers/ignored3.h") << "broken"
+        file("src/main/headers/some-dir").mkdirs()
+        file("src/main/cpp/ignored4.h") << "broken"
+        file("src/main/cpp/some-dir").mkdirs()
+
+        run installApp
+
+        then:
+        allSkipped()
+
+        when:
+        unused.delete()
+        unusedPrivate.delete()
+
+        run installApp
+
+        then:
+        allSkipped()
+
+        when:
+        libraryHeaderFile << """
+            int unused();
+        """
+        run installApp
+
+        then:
+        executedAndNotSkipped libraryDebug.compile
+        executedAndNotSkipped appDebug.compile
+
+        and:
+        appObjects.recompiledFile(appSourceFile)
+        libObjects.recompiledFiles(librarySourceFile, libraryOtherSourceFile)
+    }
+
+    @ToBeFixedForConfigurationCache
     def "header file referenced using relative path is considered an input"() {
         given:
         def unused = file("app/src/main/headers/ignore1.h") << "broken!"
@@ -352,7 +423,7 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
         install.exec().out == "Hi world"
 
         then:
-        nonSkippedTasks.empty
+        allSkipped()
 
         when:
         headerFile << "void another_thing();"
@@ -379,10 +450,11 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
         install.exec().out == "Hi world"
 
         and:
-        nonSkippedTasks.empty
+        allSkipped()
     }
 
     @Unroll
+    @ToBeFixedForConfigurationCache
     def "header file referenced using macro #macro is considered an input"() {
         when:
         def unused = file("app/src/main/headers/ignore1.h") << "broken!"
@@ -391,17 +463,17 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
             #define _HELLO_HEADER_2 "hello.h"
             #define _HELLO_HEADER_1 _HELLO_HEADER_2
             #define HELLO_HEADER MACRO_FUNCTION() // some indirection
-            
+
             #define MACRO_FUNCTION( ) _HELLO_HEADER_1
             #define FUNCTION_RETURNS_STRING(X) "hello.h"
             #define FUNCTION_RETURNS_MACRO(X) HELLO_HEADER
             #define FUNCTION_RETURNS_MACRO_CALL(X) FUNCTION_RETURNS_ARG(X)
             #define FUNCTION_RETURNS_ARG(X) X
-            
+
             #define PREFIX MACRO_USES
             #define SUFFIX() _FUNCTION
             #define ARGS (MACRO_FUNCTION())
-            
+
             // Token concatenation ## does not macro expand macro function args, so is usually wrapped by another macro function
             #define CONCAT_FUNCTION2(X, Y) X ## Y
             #define CONCAT_FUNCTION(X, Y) CONCAT_FUNCTION2(X, Y)
@@ -423,7 +495,7 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
                 #define MACRO_PRODUCES_FUNCTION_CALL CONCAT_FUNCTION(FUNCTION_RETURNS_ARG, ARGS)
             #else
                 #define MACRO_PRODUCES_FUNCTION_CALL "hello.h" // ignore
-            #endif                
+            #endif
             #include ${macro}
             #include <iostream>
 
@@ -445,7 +517,7 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
         libObjects.snapshot()
 
         then:
-        nonSkippedTasks.empty
+        allSkipped()
 
         when:
         headerFile.replace('one', 'two')
@@ -467,7 +539,7 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
         succeeds installApp
 
         then:
-        nonSkippedTasks.empty
+        allSkipped()
 
         where:
         macro << [
@@ -486,9 +558,88 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
     }
 
     @Unroll
-    def "considers all header files as inputs when complex macro include #include is used"() {
+    @ToBeFixedForConfigurationCache
+    def "header file referenced using external macro #macro is considered an input"() {
         when:
+        def unused = file("app/src/main/headers/ignore1.h") << "broken!"
 
+        file("app/src/main/headers/defs.h") << """
+            #define HEADER "hello.h"
+            #define HEADER_FUNC() "hello.h"
+        """
+
+        def headerFile = file("app/src/main/headers/hello.h") << """
+            #define MESSAGE "one"
+        """
+
+        appSourceFile.text = """
+            #include "defs.h"
+            #include MACRO
+            #include <iostream>
+
+            int main () {
+              std::cout << MESSAGE;
+              return 0;
+            }
+        """
+
+        buildFile << """
+            project(':app') {
+                tasks.withType(CppCompile) {
+                    macros.put('MACRO','${macro}')
+                }
+            }
+        """
+
+        then:
+        succeeds installApp
+
+        and:
+        assert install.exec().out == "one"
+
+        when:
+        succeeds installApp
+        appObjects.snapshot()
+        libObjects.snapshot()
+
+        then:
+        allSkipped()
+
+        when:
+        headerFile.replace('one', 'two')
+        succeeds installApp
+
+        then:
+        executedAndNotSkipped appDebug.compile
+        skipped libraryDebug.compile
+
+        and:
+        appObjects.recompiledFiles(appSourceFile)
+        libObjects.noneRecompiled()
+
+        and:
+        install.exec().out == "two"
+
+        when:
+        unused << "more broken"
+        succeeds installApp
+
+        then:
+        allSkipped()
+
+        where:
+        macro << [
+            '"hello.h"',
+            '<hello.h>',
+            'HEADER',
+            'HEADER_FUNC()'
+        ]
+    }
+
+    @Unroll
+    @ToBeFixedForConfigurationCache
+    def "considers all header files as input to source file with complex macro include #include"() {
+        when:
         appSourceFile.text = """
             $text
             #include <iostream>
@@ -508,8 +659,12 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
         """
 
         then:
+        executer.withArgument("-i")
         succeeds installApp
+        output.contains("Cannot locate header file for '#include $include' in source file 'main.cpp'. Assuming changed.")
         install.exec().out == "hello"
+        // Test assumes there are 2 source files: one with unresolvable macros and one without. Verify that assumption
+        appObjects.hasFiles(appSourceFile, appOtherSourceFile)
 
         when:
         headerFile.text = "changed"
@@ -527,45 +682,7 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
         and:
         executedAndNotSkipped appDebug.compile
         skipped libraryDebug.compile
-        output.contains("Cannot locate header file for '#include $include' in source file 'main.cpp'. Assuming changed.")
         unresolvedHeadersDetected(appDebug.compile)
-
-        when:
-        disableTransitiveUnresolvedHeaderDetection()
-        headerFile.text = "changed again"
-
-        executer.withArgument("-i")
-        appObjects.snapshot()
-        libObjects.snapshot()
-
-        then:
-        succeeds installApp
-
-        and:
-        appObjects.recompiledFiles(appSourceFile)
-        libObjects.noneRecompiled()
-
-        and:
-        executedAndNotSkipped appDebug.compile
-        skipped libraryDebug.compile
-        output.contains("Cannot locate header file for '#include $include' in source file 'main.cpp'. Assuming changed.")
-        unresolvedHeadersDetected(appDebug.compile)
-
-        when:
-        file("app/src/main/headers/some-dir").mkdirs()
-
-        succeeds installApp
-
-        then:
-        nonSkippedTasks.empty
-
-        when:
-        file("app/src/main/headers/some-dir").deleteDir()
-
-        succeeds installApp
-
-        then:
-        nonSkippedTasks.empty
 
         when:
         headerFile.delete()
@@ -573,25 +690,61 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
         libObjects.snapshot()
 
         then:
+        executer.withArgument("-i")
         succeeds installApp
-
-        and:
-        executedAndNotSkipped appDebug.compile
-        skipped libraryDebug.compile
 
         and:
         appObjects.recompiledFiles(appSourceFile)
         libObjects.noneRecompiled()
 
+        and:
+        executedAndNotSkipped appDebug.compile
+        skipped libraryDebug.compile
+        unresolvedHeadersDetected(appDebug.compile)
+
         when:
         succeeds installApp
 
         then:
-        nonSkippedTasks.empty
+        allSkipped()
+
+        when:
+        file("app/src/main/headers/some-dir").mkdirs()
+
+        succeeds installApp
+
+        then:
+        allSkipped()
+
+        when:
+        file("app/src/main/headers/some-dir").deleteDir()
+
+        succeeds installApp
+
+        then:
+        allSkipped()
+
+        when:
+        disableTransitiveUnresolvedHeaderDetection()
+        headerFile.text = "changed again"
+
+        appObjects.snapshot()
+        libObjects.snapshot()
+
+        then:
+        succeeds installApp
+
+        and:
+        appObjects.noneRecompiled()
+        libObjects.noneRecompiled()
+
+        and:
+        skipped appDebug.compile
+        skipped libraryDebug.compile
 
         where:
         include             | text
-        'HELLO'             | '''            
+        'HELLO'             | '''
             #define _HELLO(X) #X
             #define HELLO _HELLO(hello.h)
             #include HELLO
@@ -624,6 +777,7 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
         '''
     }
 
+    @ToBeFixedForConfigurationCache
     def "does not consider all header files as inputs if complex macro include is found in dependency and special flag is active"() {
         when:
 
@@ -680,13 +834,13 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
         libObjects.snapshot()
 
         and:
-        headerFile.text = "changed 2"
+        headerFile.text = "changed 3"
 
         then:
         succeeds installApp
 
         and:
-        nonSkippedTasks.empty
+        allSkipped()
 
         and:
         appObjects.noneRecompiled()
@@ -700,6 +854,7 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
         return executer
     }
 
+    @ToBeFixedForConfigurationCache
     def "can have a cycle between header files"() {
         def header1 = file("app/src/main/headers/hello.h")
         def header2 = file("app/src/main/headers/other.h")
@@ -722,7 +877,7 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
         appSourceFile.text = """
                 #include <iostream>
                 #include "hello.h"
-    
+
                 int main () {
                   std::cout << MESSAGE;
                   return 0;
@@ -737,7 +892,7 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
         succeeds installApp
 
         then:
-        nonSkippedTasks.empty
+        allSkipped()
 
         when:
         appObjects.snapshot()
@@ -758,9 +913,10 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
         succeeds installApp
 
         then:
-        nonSkippedTasks.empty
+        allSkipped()
     }
 
+    @ToBeFixedForConfigurationCache
     def "can reference a missing header file"() {
         def header = file("app/src/main/headers/hello.h")
 
@@ -791,7 +947,7 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
         succeeds installApp
 
         then:
-        nonSkippedTasks.empty
+        allSkipped()
 
         when:
         header << """// some extra stuff"""
@@ -813,9 +969,10 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
         succeeds installApp
 
         then:
-        nonSkippedTasks.empty
+        allSkipped()
     }
 
+    @ToBeFixedForConfigurationCache
     def "source file can reference multiple header files using the same macro"() {
         def header1 = file("app/src/main/headers/hello1.h")
         def header2 = file("app/src/main/headers/hello2.h")
@@ -870,7 +1027,7 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
         succeeds installApp
 
         then:
-        nonSkippedTasks.empty
+        allSkipped()
 
         when:
         header2 << """// some extra stuff"""
@@ -892,7 +1049,7 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
         succeeds installApp
 
         then:
-        nonSkippedTasks.empty
+        allSkipped()
 
         when:
         header3 << """// some extra stuff"""
@@ -914,7 +1071,7 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
         succeeds installApp
 
         then:
-        nonSkippedTasks.empty
+        allSkipped()
 
         when:
         header1 << """// some extra stuff"""
@@ -937,9 +1094,10 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
         succeeds installApp
 
         then:
-        nonSkippedTasks.empty
+        allSkipped()
     }
 
+    @ToBeFixedForConfigurationCache
     def "changes to the included header graph are reflected in the inputs"() {
         def header = file("app/src/main/headers/hello.h")
         def header1 = file("app/src/main/headers/hello1.h")
@@ -976,7 +1134,7 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
 
         then:
         succeeds installApp
-        nonSkippedTasks.empty
+        allSkipped()
 
         when:
         header.replace('"hello1.h"', '"hello2.h"')
@@ -1002,9 +1160,10 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
         succeeds installApp
 
         then:
-        nonSkippedTasks.empty
+        allSkipped()
     }
 
+    @ToBeFixedForConfigurationCache
     def "shared header can reference project specific header"() {
         when:
         appSourceFile.replace("log(msg)", "log_info(msg)")
@@ -1034,7 +1193,7 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
         succeeds installApp
 
         then:
-        nonSkippedTasks.empty
+        allSkipped()
 
         when:
         libDefsHeader.replace('PREFIX "LOG: "', 'PREFIX "* "')
@@ -1075,6 +1234,7 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
         libObjects.noneRecompiled()
     }
 
+    @ToBeFixedForConfigurationCache
     def "shared header can reference source file specific header using macro include"() {
         when:
         libraryHeaderFile << """
@@ -1116,7 +1276,7 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
         succeeds installApp
 
         then:
-        nonSkippedTasks.empty
+        allSkipped()
 
         when:
         libDefsHeader1.replace('PREFIX "LOG: "', 'PREFIX "* "')
@@ -1157,6 +1317,7 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
         libObjects.noneRecompiled()
     }
 
+    @ToBeFixedForConfigurationCache
     def "project specific header can shadow shared header"() {
         when:
         appSourceFile.insertBefore('#include <lib.h>', '#include "common.h"')
@@ -1191,7 +1352,7 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
         succeeds installApp
 
         and:
-        nonSkippedTasks.empty
+        allSkipped()
 
         when:
         appHeaderInSrcDir.replace('"everyone"', '"world"')
@@ -1257,7 +1418,7 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
 
         then:
         succeeds installApp
-        nonSkippedTasks.empty
+        allSkipped()
 
         when:
         appHeaderInSrcDir.text = appHeaderInHeaderDir.text
@@ -1280,6 +1441,7 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
         libObjects.noneRecompiled()
     }
 
+    @ToBeFixedForConfigurationCache
     def "recompiles when include path changes resolve different headers"() {
         when:
         appSourceFile.insertBefore('#include <lib.h>', '#include <common.h>')
@@ -1310,7 +1472,7 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
         install.exec().out == "hello world"
 
         and:
-        nonSkippedTasks.empty
+        allSkipped()
 
         when:
         appHeaderInHeaderDir << """
@@ -1322,7 +1484,7 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
         install.exec().out == "hello world"
 
         and:
-        nonSkippedTasks.empty
+        allSkipped()
 
         when:
         appHeaderInOtherDir.replace('"world"', '"universe"')
@@ -1365,6 +1527,68 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
         and:
         appObjects.recompiledFiles(appSourceFile)
         libObjects.noneRecompiled()
+    }
+
+    @ToBeFixedForConfigurationCache
+    def "recompiles when system headers change"() {
+        when:
+        appSourceFile.insertBefore('#include <lib.h>', '#include <common.h>')
+        appSourceFile.replace('"world"', 'TARGET')
+
+        def systemHeaderInOtherDir = file("app/src/main/system/common.h")
+        systemHeaderInOtherDir << """
+            #pragma once
+            #define TARGET "world"
+        """
+
+        buildFile << """
+            project(':app') {
+                tasks.withType(CppCompile) {
+                    systemIncludes.from("src/main/system")
+                }
+            }
+        """
+
+        then:
+        succeeds installApp
+        install.exec().out == "hello world"
+
+        when:
+        succeeds installApp
+
+        then:
+        install.exec().out == "hello world"
+
+        and:
+        allSkipped()
+
+        when:
+        systemHeaderInOtherDir.replace('"world"', '"universe"')
+
+        and:
+        appObjects.snapshot()
+        libObjects.snapshot()
+
+        then:
+        succeeds installApp
+        install.exec().out == "hello universe"
+
+        and:
+        executedAndNotSkipped appDebug.compile
+        skipped libraryDebug.compile
+
+        and:
+        appObjects.recompiledFiles(appSourceFile)
+        libObjects.noneRecompiled()
+
+        when:
+        succeeds installApp
+
+        then:
+        install.exec().out == "hello universe"
+
+        and:
+        allSkipped()
     }
 
     private boolean unresolvedHeadersDetected(String taskPath) {

@@ -39,12 +39,13 @@ public final class DownloadArtifactBuildOperationType implements BuildOperationT
 
     public static class DetailsImpl implements Details {
 
-        private String artifactIdentifier;
+        private final String artifactIdentifier;
 
         public DetailsImpl(String artifactIdentifier) {
             this.artifactIdentifier = artifactIdentifier;
         }
 
+        @Override
         public String getArtifactIdentifier() {
             return artifactIdentifier;
         }

@@ -16,13 +16,15 @@
 
 package org.gradle.launcher.exec;
 
+import org.gradle.composite.internal.IncludedBuildControllers;
 import org.gradle.internal.invocation.BuildAction;
 import org.gradle.internal.invocation.BuildActionRunner;
 import org.gradle.internal.invocation.BuildController;
 import org.gradle.internal.operations.BuildOperationContext;
-import org.gradle.internal.operations.BuildOperationExecutor;
-import org.gradle.internal.operations.RunnableBuildOperation;
 import org.gradle.internal.operations.BuildOperationDescriptor;
+import org.gradle.internal.operations.BuildOperationExecutor;
+import org.gradle.internal.operations.CallableBuildOperation;
+import org.gradle.internal.operations.logging.LoggingBuildOperationProgressBroadcaster;
 
 /**
  * An {@link BuildActionRunner} that wraps all work in a build operation.
@@ -37,13 +39,19 @@ public class RunAsBuildOperationBuildActionRunner implements BuildActionRunner {
     }
 
     @Override
-    public void run(final BuildAction action, final BuildController buildController) {
+    public Result run(final BuildAction action, final BuildController buildController) {
         BuildOperationExecutor buildOperationExecutor = buildController.getGradle().getServices().get(BuildOperationExecutor.class);
-        buildOperationExecutor.run(new RunnableBuildOperation() {
+        return buildOperationExecutor.call(new CallableBuildOperation<Result>() {
             @Override
-            public void run(BuildOperationContext context) {
-                delegate.run(action, buildController);
+            public Result call(BuildOperationContext context) {
+                buildController.getGradle().getServices().get(IncludedBuildControllers.class).rootBuildOperationStarted();
+                buildController.getGradle().getServices().get(LoggingBuildOperationProgressBroadcaster.class).rootBuildOperationStarted();
+                Result result = delegate.run(action, buildController);
                 context.setResult(RESULT);
+                if (result.getBuildFailure() != null) {
+                    context.failed(result.getBuildFailure());
+                }
+                return result;
             }
 
             @Override

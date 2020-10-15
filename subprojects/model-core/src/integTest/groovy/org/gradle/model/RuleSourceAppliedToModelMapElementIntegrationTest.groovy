@@ -17,13 +17,16 @@
 package org.gradle.model
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
 
+@UnsupportedWithConfigurationCache(because = "software model")
 class RuleSourceAppliedToModelMapElementIntegrationTest extends AbstractIntegrationSpec {
 
     def "rule source can be applied to ModelMap element"() {
         when:
         buildScript '''
             class MessageTask extends DefaultTask {
+                @Internal
                 String message = "default"
 
                 @TaskAction

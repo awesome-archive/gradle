@@ -18,17 +18,23 @@ package org.gradle.internal.component.model;
 
 import org.gradle.api.internal.attributes.CompatibilityCheckResult;
 
+import javax.annotation.Nullable;
+import java.util.Objects;
+
 public class DefaultCompatibilityCheckResult<T> implements CompatibilityCheckResult<T> {
     private final T consumerValue;
     private final T producerValue;
     private boolean compatible;
     private boolean done;
 
-    public DefaultCompatibilityCheckResult(T consumerValue, T producerValue) {
+    public DefaultCompatibilityCheckResult(@Nullable T consumerValue, T producerValue) {
+        assert producerValue != null : "Internal contract of the current implementation, can be changed with a motivation";
+        assert !Objects.equals(consumerValue, producerValue);
         this.consumerValue = consumerValue;
         this.producerValue = producerValue;
     }
 
+    @Override
     public boolean isCompatible() {
         assert done;
         return compatible;

@@ -16,7 +16,7 @@
 
 package org.gradle.api.tasks.testing.junitplatform;
 
-import org.gradle.api.Incubating;
+import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.testing.TestFrameworkOptions;
 
 import java.util.Arrays;
@@ -29,7 +29,6 @@ import java.util.Set;
  * @see <a href="https://junit.org/junit5/docs/current/user-guide">JUnit 5 User Guide</a>
  * @since 4.6
  */
-@Incubating
 public class JUnitPlatformOptions extends TestFrameworkOptions {
     private Set<String> includeEngines = new LinkedHashSet<String>();
 
@@ -40,7 +39,7 @@ public class JUnitPlatformOptions extends TestFrameworkOptions {
     private Set<String> excludeTags = new LinkedHashSet<String>();
 
     /**
-     * The set of engines to run with. Equivalent to invoking <a href="https://junit.org/junit5/docs/current/api/org/junit/platform/launcher/EngineFilter.html#includeEngines-java.lang.String...-">EngineFilter.includeEngines</a>.
+     * The set of engines to run with.
      *
      * @see <a href="https://junit.org/junit5/docs/current/user-guide/#launcher-api-engines-custom">Test Engine</a>
      */
@@ -50,7 +49,7 @@ public class JUnitPlatformOptions extends TestFrameworkOptions {
     }
 
     /**
-     * The set of tags to run with. Equivalent to invoking <a href="https://junit.org/junit5/docs/current/api/org/junit/platform/launcher/TagFilter.html#includeTags-java.util.List-">TagFilter.includeTags</a>.
+     * The set of tags to run with.
      *
      * @see <a href="https://junit.org/junit5/docs/current/user-guide/#writing-tests-tagging-and-filtering">Tagging and Filtering</a>
      */
@@ -60,7 +59,7 @@ public class JUnitPlatformOptions extends TestFrameworkOptions {
     }
 
     /**
-     * The set of engines to exclude. Equivalent to invoking <a href="https://junit.org/junit5/docs/current/api/org/junit/platform/launcher/EngineFilter.html#excludeEngines-java.lang.String...-">EngineFilter.excludeEngines</a>.
+     * The set of engines to exclude.
      *
      * @see <a href="https://junit.org/junit5/docs/current/user-guide/#launcher-api-engines-custom">Test Engine</a>
      */
@@ -70,7 +69,7 @@ public class JUnitPlatformOptions extends TestFrameworkOptions {
     }
 
     /**
-     * The set of tags to exclude. Equivalent to invoking <a href="https://junit.org/junit5/docs/current/api/org/junit/platform/launcher/TagFilter.html#excludeTags-java.util.List-">TagFilter.excludeTags</a>.
+     * The set of tags to exclude.
      *
      * @see <a href="https://junit.org/junit5/docs/current/user-guide/#writing-tests-tagging-and-filtering">Tagging and Filtering</a>
      */
@@ -79,12 +78,12 @@ public class JUnitPlatformOptions extends TestFrameworkOptions {
         return this;
     }
 
-    @Incubating
+    @Input
     public Set<String> getIncludeEngines() {
         return includeEngines;
     }
 
-    @Incubating
+    @Input
     public Set<String> getIncludeTags() {
         return includeTags;
     }
@@ -93,6 +92,7 @@ public class JUnitPlatformOptions extends TestFrameworkOptions {
         this.includeEngines = includeEngines;
     }
 
+    @Input
     public Set<String> getExcludeEngines() {
         return excludeEngines;
     }
@@ -105,6 +105,7 @@ public class JUnitPlatformOptions extends TestFrameworkOptions {
         this.includeTags = includeTags;
     }
 
+    @Input
     public Set<String> getExcludeTags() {
         return excludeTags;
     }

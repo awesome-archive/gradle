@@ -16,7 +16,9 @@
 
 package org.gradle.internal.logging.console.jvm
 
-import org.gradle.integtests.fixtures.AbstractConsoleFunctionalSpec
+import org.gradle.api.logging.configuration.ConsoleOutput
+import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.RichConsoleStyling
 import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
 import org.gradle.test.fixtures.ConcurrentTestUtil
 import org.gradle.test.fixtures.server.http.BlockingHttpServer
@@ -27,7 +29,7 @@ import spock.lang.Unroll
 import static org.gradle.internal.logging.console.jvm.TestedProjectFixture.*
 
 @IgnoreIf({ GradleContextualExecuter.isParallel() })
-abstract class AbstractConsoleJvmTestWorkerFunctionalTest extends AbstractConsoleFunctionalSpec {
+abstract class AbstractConsoleJvmTestWorkerFunctionalTest extends AbstractIntegrationSpec implements RichConsoleStyling {
 
     private static final int MAX_WORKERS = 2
     private static final String SERVER_RESOURCE_1 = 'test-1'
@@ -37,6 +39,8 @@ abstract class AbstractConsoleJvmTestWorkerFunctionalTest extends AbstractConsol
     BlockingHttpServer server = new BlockingHttpServer()
 
     def setup() {
+        executer.withTestConsoleAttached()
+        executer.withConsole(ConsoleOutput.Rich)
         executer.withArguments('--parallel', "--max-workers=$MAX_WORKERS")
         server.start()
     }
@@ -56,8 +60,8 @@ abstract class AbstractConsoleJvmTestWorkerFunctionalTest extends AbstractConsol
 
         then:
         ConcurrentTestUtil.poll {
-            assert containsTestExecutionWorkInProgressLine(gradleHandle, ':test', testClass1.renderedClassName)
-            assert containsTestExecutionWorkInProgressLine(gradleHandle, ':test', testClass2.renderedClassName)
+            containsTestExecutionWorkInProgressLine(gradleHandle, ':test', testClass1.renderedClassName)
+            containsTestExecutionWorkInProgressLine(gradleHandle, ':test', testClass2.renderedClassName)
         }
 
         testExecution.release(2)
@@ -89,8 +93,8 @@ abstract class AbstractConsoleJvmTestWorkerFunctionalTest extends AbstractConsol
 
         then:
         ConcurrentTestUtil.poll {
-            assert containsTestExecutionWorkInProgressLine(gradleHandle, ':project1:test', testClass1.renderedClassName)
-            assert containsTestExecutionWorkInProgressLine(gradleHandle, ':project2:test', testClass2.renderedClassName)
+            containsTestExecutionWorkInProgressLine(gradleHandle, ':project1:test', testClass1.renderedClassName)
+            containsTestExecutionWorkInProgressLine(gradleHandle, ':project2:test', testClass2.renderedClassName)
         }
 
         testExecution.release(2)

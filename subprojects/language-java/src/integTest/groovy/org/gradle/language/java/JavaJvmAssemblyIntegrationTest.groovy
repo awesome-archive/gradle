@@ -17,15 +17,18 @@
 package org.gradle.language.java
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
 
 import java.util.zip.ZipFile
 
 import static org.gradle.language.java.JavaIntegrationTesting.applyJavaPlugin
+import static org.gradle.language.java.JavaIntegrationTesting.expectJavaLangPluginDeprecationWarnings
 
+@UnsupportedWithConfigurationCache(because = "software model")
 class JavaJvmAssemblyIntegrationTest extends AbstractIntegrationSpec {
 
     def setup() {
-        applyJavaPlugin buildFile
+        applyJavaPlugin(buildFile, executer)
         buildFile << '''
             model {
                 components {
@@ -148,6 +151,7 @@ class JavaJvmAssemblyIntegrationTest extends AbstractIntegrationSpec {
         succeeds 'precompiledClassesJar'
 
         and:
+        expectJavaLangPluginDeprecationWarnings(executer)
         succeeds 'mainConsumerJar'
     }
 

@@ -19,23 +19,33 @@ package org.gradle.api.publish.internal;
 import org.gradle.api.artifacts.PublishException;
 import org.gradle.api.publish.Publication;
 
+import static java.lang.String.format;
+
 public abstract class PublishOperation implements Runnable {
 
-    private final Publication publication;
+    private final String publicationName;
     private final String repository;
 
     protected PublishOperation(Publication publication, String repository) {
-        this.publication = publication;
+        this(publication.getName(), repository);
+    }
+
+    protected PublishOperation(String publicationName, String repository) {
+        this.publicationName = publicationName;
         this.repository = repository;
     }
 
     protected abstract void publish() throws Exception;
 
+    @Override
     public void run() {
         try {
             publish();
         } catch (Exception e) {
-            throw new PublishException(String.format("Failed to publish publication '%s' to repository '%s'", publication.getName(), repository), e);
+            throw new PublishException(
+                format("Failed to publish publication '%s' to repository '%s'", publicationName, repository),
+                e
+            );
         }
     }
 }

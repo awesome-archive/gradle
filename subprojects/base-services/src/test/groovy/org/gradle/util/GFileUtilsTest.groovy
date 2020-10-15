@@ -18,14 +18,22 @@ package org.gradle.util
 
 import org.gradle.api.UncheckedIOException
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
-import org.junit.Rule
 import spock.lang.Specification
+import org.junit.Rule
 
-import static org.gradle.util.GFileUtils.*
+import java.nio.file.FileSystem
+import java.nio.file.FileSystemException
+import java.nio.file.attribute.BasicFileAttributeView
+import java.nio.file.spi.FileSystemProvider
+
+import static org.gradle.util.GFileUtils.mkdirs
+import static org.gradle.util.GFileUtils.parentMkdirs
+import static org.gradle.util.GFileUtils.readFileQuietly
+import static org.gradle.util.GFileUtils.touch
 
 class GFileUtilsTest extends Specification {
 
-    @Rule TestNameTestDirectoryProvider temp
+    @Rule TestNameTestDirectoryProvider temp = new TestNameTestDirectoryProvider(getClass())
 
     def "can read the file's tail"() {
         def f = temp.file("foo.txt") << """
@@ -143,5 +151,55 @@ three
         foo.directory
         foo.lastModified() > original
         child.text == "data"
+    }
+
+    def "uses fallback for touching empty files"() {
+        given:
+        def fileAttributeView = Mock(BasicFileAttributeView)
+        def file = Spy(temp.file("data.txt"))
+        file.toPath() >> Stub(java.nio.file.Path) {
+            getFileSystem() >> Stub(FileSystem) {
+                provider() >> Stub(FileSystemProvider) {
+                    getFileAttributeView(_, _, _) >> fileAttributeView
+                }
+            }
+        }
+        file.createNewFile()
+        def original = file.makeOlder().lastModified()
+
+        when:
+        touch(file)
+
+        then:
+        1 * fileAttributeView.setTimes(_, _, _) >> { throw new FileSystemException("file: Operation not permitted") }
+        file.file
+        file.lastModified() > original
+        file.length() == 0
+    }
+
+    def "does not use fallback for touching non-empty files"() {
+        given:
+        def fileAttributeView = Mock(BasicFileAttributeView)
+        def file = Spy(temp.file("data.txt"))
+        file.toPath() >> Stub(java.nio.file.Path) {
+            getFileSystem() >> Stub(FileSystem) {
+                provider() >> Stub(FileSystemProvider) {
+                    getFileAttributeView(_, _, _) >> fileAttributeView
+                }
+            }
+        }
+        file.text = "data"
+        def original = file.makeOlder().lastModified()
+
+        when:
+        touch(file)
+
+        then:
+        1 * fileAttributeView.setTimes(_, _, _) >> { throw new FileSystemException("file: Operation not permitted") }
+        def exception = thrown(UncheckedIOException)
+        exception.message.startsWith("Could not update timestamp")
+        file.file
+        file.lastModified() == original
+        file.text == "data"
     }
 }

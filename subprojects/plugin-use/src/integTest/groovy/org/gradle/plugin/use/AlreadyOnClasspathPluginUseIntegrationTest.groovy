@@ -17,6 +17,10 @@ package org.gradle.plugin.use
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.BuildOperationsFixture
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
+import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
+import org.gradle.util.TextUtil
+import spock.lang.IgnoreIf
 
 class AlreadyOnClasspathPluginUseIntegrationTest extends AbstractIntegrationSpec {
 
@@ -54,6 +58,7 @@ class AlreadyOnClasspathPluginUseIntegrationTest extends AbstractIntegrationSpec
         operations.hasOperation("Apply plugin my-plugin to project ':a'")
     }
 
+    @ToBeFixedForConfigurationCache(because = "maven-publish plugin")
     def "can request non-core plugin already applied to parent project"() {
 
         given:
@@ -82,6 +87,7 @@ class AlreadyOnClasspathPluginUseIntegrationTest extends AbstractIntegrationSpec
         operations.hasOperation("Apply plugin my-plugin to project ':a'")
     }
 
+    @ToBeFixedForConfigurationCache(because = "maven-publish plugin")
     def "can request non-core plugin already applied to grand-parent project"() {
 
         given:
@@ -112,6 +118,7 @@ class AlreadyOnClasspathPluginUseIntegrationTest extends AbstractIntegrationSpec
         operations.hasOperation("Apply plugin my-plugin to project ':a:b'")
     }
 
+    @ToBeFixedForConfigurationCache(because = "maven-publish plugin")
     def "can request non-core plugin already requested on parent project but not applied"() {
 
         given:
@@ -140,6 +147,7 @@ class AlreadyOnClasspathPluginUseIntegrationTest extends AbstractIntegrationSpec
         operations.hasOperation("Apply plugin my-plugin to project ':a'")
     }
 
+    @ToBeFixedForConfigurationCache(because = "maven-publish plugin")
     def "can request non-core plugin already on the classpath when a plugin resolution strategy sets a version"() {
 
         given:
@@ -169,6 +177,7 @@ class AlreadyOnClasspathPluginUseIntegrationTest extends AbstractIntegrationSpec
         operations.hasOperation("Apply plugin my-plugin to project ':a'")
     }
 
+    @IgnoreIf({ GradleContextualExecuter.embedded }) // TestKit usage inside of the test requires distribution
     def "can request plugin from TestKit injected classpath"() {
 
         given:
@@ -185,6 +194,7 @@ class AlreadyOnClasspathPluginUseIntegrationTest extends AbstractIntegrationSpec
         succeeds "test"
     }
 
+    @ToBeFixedForConfigurationCache(because = "maven-publish plugin")
     def "cannot request plugin version of plugin already requested on parent project"() {
 
         given:
@@ -232,6 +242,7 @@ class AlreadyOnClasspathPluginUseIntegrationTest extends AbstractIntegrationSpec
         failureHasCause("Plugin request for plugin already on the classpath must not include a version")
     }
 
+    @IgnoreIf({ GradleContextualExecuter.embedded }) // TestKit usage inside of the test requires distribution
     def "cannot request plugin version of plugin from TestKit injected classpath"() {
 
         given:
@@ -274,9 +285,9 @@ class AlreadyOnClasspathPluginUseIntegrationTest extends AbstractIntegrationSpec
         file("$projectPath/src/main/groovy/my/MyPlugin.groovy") << """
 
             package my
-            
+
             import org.gradle.api.*
-            
+
             class MyPlugin implements Plugin<Project> {
                 @Override
                 void apply(Project project) {
@@ -287,7 +298,7 @@ class AlreadyOnClasspathPluginUseIntegrationTest extends AbstractIntegrationSpec
         """.stripIndent()
         def testKitDependencies = testKitSpec ? """
             testImplementation(gradleTestKit())
-            testImplementation('junit:junit:4.12')
+            testImplementation('junit:junit:4.13')
         """ : ""
         file("$projectPath/build.gradle") << """
 
@@ -298,7 +309,7 @@ class AlreadyOnClasspathPluginUseIntegrationTest extends AbstractIntegrationSpec
 
             group = "com.acme"
             version = "1.0"
-            
+
             gradlePlugin {
                 plugins {
                     myPlugin {
@@ -318,21 +329,21 @@ class AlreadyOnClasspathPluginUseIntegrationTest extends AbstractIntegrationSpec
         """.stripIndent()
         if (testKitSpec) {
             file("src/test/groovy/my/MyPluginTest.groovy") << """
-    
+
                 package my
-                
+
                 import org.junit.*
                 import org.junit.rules.*
-                
+
                 import org.gradle.testkit.runner.*
-    
+
                 class MyPluginTest {
-                
+
                     @Rule public TemporaryFolder tmpDir = new TemporaryFolder()
-    
+
                     @Test
                     public void assertions() {
-                    
+
                         // given:
                         def rootDir = tmpDir.newFolder("root")
                         new File(rootDir, "settings.gradle").text = \"\"\"
@@ -346,20 +357,21 @@ class AlreadyOnClasspathPluginUseIntegrationTest extends AbstractIntegrationSpec
                         new File(rootDir, "a/build.gradle").text = \"\"\"
                             ${testKitSpec.childProjectBuildScript ?: ""}
                         \"\"\".stripIndent()
-    
+
                         //when:
                         def runner = GradleRunner.create()
-                            .withGradleInstallation(new File("${distribution.gradleHomeDir.absolutePath.replace("\\", "\\\\")}"))
+                            .withGradleInstallation(new File("${TextUtil.normaliseFileSeparators(distribution.gradleHomeDir.absolutePath)}"))
+                            .withTestKitDir(new File("${TextUtil.normaliseFileSeparators(executer.gradleUserHomeDir.absolutePath)}"))
                             .withPluginClasspath()
                             .withProjectDir(rootDir)
                             .withArguments("help")
                         def result = runner.${testKitSpec.succeeds ? "build" : "buildAndFail"}()
-    
+
                         // then:
                         ${testKitSpec.testKitAssertions}
                     }
                 }
-    
+
             """.stripIndent()
         }
     }

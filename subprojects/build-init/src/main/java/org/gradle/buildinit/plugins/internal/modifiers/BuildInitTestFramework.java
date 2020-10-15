@@ -16,31 +16,21 @@
 
 package org.gradle.buildinit.plugins.internal.modifiers;
 
-import org.gradle.api.GradleException;
-
 import java.util.ArrayList;
 import java.util.List;
 
-public enum BuildInitTestFramework {
+public enum BuildInitTestFramework implements WithIdentifier {
 
-    NONE,
-    SPOCK,
-    TESTNG;
-
-    public static BuildInitTestFramework fromName(String name) {
-        if (name == null) {
-            return NONE;
-        }
-        for (BuildInitTestFramework testFramework : values()) {
-            if (testFramework.getId().equals(name)) {
-                return testFramework;
-            }
-        }
-        throw new GradleException("The requested test framework '" + name + "' is not supported.");
-    }
+    NONE("none"),
+    JUNIT("JUnit 4"),
+    TESTNG("TestNG"),
+    SPOCK("Spock"),
+    KOTLINTEST("kotlin.test"),
+    SCALATEST("ScalaTest"),
+    JUNIT_JUPITER("JUnit Jupiter");
 
     public static List<String> listSupported() {
-        List<String> result = new ArrayList<String>();
+        List<String> result = new ArrayList<>();
         for (BuildInitTestFramework testFramework : values()) {
             if (testFramework != NONE) {
                 result.add(testFramework.getId());
@@ -49,7 +39,19 @@ public enum BuildInitTestFramework {
         return result;
     }
 
+    private final String displayName;
+
+    BuildInitTestFramework(String displayName) {
+        this.displayName = displayName;
+    }
+
+    @Override
     public String getId() {
-        return name().toLowerCase();
+        return Names.idFor(this);
+    }
+
+    @Override
+    public String toString() {
+        return displayName;
     }
 }

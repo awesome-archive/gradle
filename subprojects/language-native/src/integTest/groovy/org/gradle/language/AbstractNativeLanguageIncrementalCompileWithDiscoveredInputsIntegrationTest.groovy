@@ -16,6 +16,7 @@
 
 package org.gradle.language
 
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import spock.lang.Unroll
 
 abstract class AbstractNativeLanguageIncrementalCompileWithDiscoveredInputsIntegrationTest extends AbstractNativeLanguageIncrementalCompileIntegrationTest {
@@ -25,6 +26,7 @@ abstract class AbstractNativeLanguageIncrementalCompileWithDiscoveredInputsInteg
     }
 
     @Unroll
+    @ToBeFixedForConfigurationCache
     def "does not recompile when include path has #testCase"() {
         given:
         outputs.snapshot { run "mainExecutable" }

@@ -19,39 +19,32 @@ import com.google.common.collect.Sets;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
 import org.gradle.api.execution.TaskExecutionGraph;
-import org.gradle.api.execution.TaskExecutionGraphListener;
 import org.gradle.api.internal.GradleInternal;
 import org.gradle.api.internal.project.ProjectInternal;
+import org.gradle.execution.taskgraph.TaskExecutionGraphInternal;
 
+import java.util.Collection;
 import java.util.Set;
 
 public class SelectedTaskExecutionAction implements BuildExecutionAction {
-    public void execute(BuildExecutionContext context) {
+    @Override
+    public void execute(BuildExecutionContext context, Collection<? super Throwable> taskFailures) {
         GradleInternal gradle = context.getGradle();
-        TaskGraphExecuter taskGraph = gradle.getTaskGraph();
+        TaskExecutionGraphInternal taskGraph = gradle.getTaskGraph();
         if (gradle.getStartParameter().isContinueOnFailure()) {
-            taskGraph.useFailureHandler(new ContinueOnFailureHandler());
+            taskGraph.setContinueOnFailure(true);
         }
 
-        taskGraph.addTaskExecutionGraphListener(new BindAllReferencesOfProjectsToExecuteListener());
-        taskGraph.execute();
+        bindAllReferencesOfProject(taskGraph);
+        taskGraph.execute(taskFailures);
     }
 
-    private static class ContinueOnFailureHandler implements TaskFailureHandler {
-        public void onTaskFailure(Task task) {
-            // Do nothing
-        }
-    }
-
-    private static class BindAllReferencesOfProjectsToExecuteListener implements TaskExecutionGraphListener {
-        @Override
-        public void graphPopulated(TaskExecutionGraph graph) {
-            Set<Project> seen = Sets.newHashSet();
-            for (Task task : graph.getAllTasks()) {
-                if (seen.add(task.getProject())) {
-                    ProjectInternal projectInternal = (ProjectInternal) task.getProject();
-                    projectInternal.bindAllModelRules();
-                }
+    private void bindAllReferencesOfProject(TaskExecutionGraph graph) {
+        Set<Project> seen = Sets.newHashSet();
+        for (Task task : graph.getAllTasks()) {
+            if (seen.add(task.getProject())) {
+                ProjectInternal projectInternal = (ProjectInternal) task.getProject();
+                projectInternal.bindAllModelRules();
             }
         }
     }

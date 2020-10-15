@@ -17,6 +17,8 @@
 package org.gradle.api.internal.artifacts.repositories.resolver;
 
 import org.gradle.api.Action;
+import org.gradle.api.artifacts.MutableVariantFilesMetadata;
+import org.gradle.api.capabilities.MutableCapabilitiesMetadata;
 import org.gradle.api.artifacts.DependencyConstraintMetadata;
 import org.gradle.api.artifacts.DependencyConstraintsMetadata;
 import org.gradle.api.artifacts.DirectDependenciesMetadata;
@@ -56,17 +58,27 @@ public class VariantMetadataAdapter implements VariantMetadata {
 
     @Override
     public void withDependencies(Action<? super DirectDependenciesMetadata> action) {
-        metadata.getVariantMetadataRules().addDependencyAction(instantiator, dependencyMetadataNotationParser, dependencyConstraintMetadataNotationParser, new VariantMetadataRules.VariantAction<DirectDependenciesMetadata>(spec, action));
+        metadata.getVariantMetadataRules().addDependencyAction(instantiator, dependencyMetadataNotationParser, dependencyConstraintMetadataNotationParser, new VariantMetadataRules.VariantAction<>(spec, action));
     }
 
     @Override
     public void withDependencyConstraints(Action<? super DependencyConstraintsMetadata> action) {
-        metadata.getVariantMetadataRules().addDependencyConstraintAction(instantiator, dependencyMetadataNotationParser, dependencyConstraintMetadataNotationParser, new VariantMetadataRules.VariantAction<DependencyConstraintsMetadata>(spec, action));
+        metadata.getVariantMetadataRules().addDependencyConstraintAction(instantiator, dependencyMetadataNotationParser, dependencyConstraintMetadataNotationParser, new VariantMetadataRules.VariantAction<>(spec, action));
+    }
+
+    @Override
+    public void withCapabilities(Action<? super MutableCapabilitiesMetadata> action) {
+        metadata.getVariantMetadataRules().addCapabilitiesAction(new VariantMetadataRules.VariantAction<>(spec, action));
+    }
+
+    @Override
+    public void withFiles(Action<? super MutableVariantFilesMetadata> action) {
+        metadata.getVariantMetadataRules().addVariantFilesAction(new VariantMetadataRules.VariantAction<>(spec, action));
     }
 
     @Override
     public VariantMetadata attributes(Action<? super AttributeContainer> action) {
-        metadata.getVariantMetadataRules().addAttributesAction(metadata.getAttributesFactory(), new VariantMetadataRules.VariantAction<AttributeContainer>(spec, action));
+        metadata.getVariantMetadataRules().addAttributesAction(metadata.getAttributesFactory(), new VariantMetadataRules.VariantAction<>(spec, action));
         return this;
     }
 

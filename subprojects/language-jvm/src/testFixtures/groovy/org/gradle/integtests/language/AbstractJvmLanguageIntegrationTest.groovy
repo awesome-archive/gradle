@@ -18,10 +18,12 @@ package org.gradle.integtests.language
 
 import org.apache.commons.lang.StringUtils
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
 import org.gradle.integtests.fixtures.jvm.TestJvmComponent
 import org.gradle.internal.SystemProperties
 import org.gradle.test.fixtures.archive.JarTestFixture
 
+@UnsupportedWithConfigurationCache(because = "software model")
 abstract class AbstractJvmLanguageIntegrationTest extends AbstractIntegrationSpec {
 
     abstract TestJvmComponent getApp()
@@ -34,6 +36,16 @@ abstract class AbstractJvmLanguageIntegrationTest extends AbstractIntegrationSpe
         }
         ${mavenCentralRepository()}
     """
+        expectDeprecationWarnings()
+    }
+
+    void expectDeprecationWarnings() {
+        executer.expectDocumentedDeprecationWarning("The ${app.languageName}-lang plugin has been deprecated. This is scheduled to be removed in Gradle 7.0. " +
+            "Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_6.html#upgrading_jvm_plugins")
+        executer.expectDocumentedDeprecationWarning("The jvm-component plugin has been deprecated. This is scheduled to be removed in Gradle 7.0. " +
+            "Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_6.html#upgrading_jvm_plugins")
+        executer.expectDocumentedDeprecationWarning("The jvm-resources plugin has been deprecated. This is scheduled to be removed in Gradle 7.0. " +
+            "Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_6.html#upgrading_jvm_plugins")
     }
 
     def "can build binary with sources in conventional location"() {
@@ -163,13 +175,13 @@ abstract class AbstractJvmLanguageIntegrationTest extends AbstractIntegrationSpe
         succeeds "assemble"
 
         then:
-        file("build/classes/myLib/jar").assertHasDescendants(app.expectedClasses*.fullPath as String[])
-        file("build/resources/myLib/jar").assertHasDescendants(app.resources*.fullPath as String[])
+        file("build/classes/myLib/jar").assertHasDescendants(app.expectedClasses*.fullPath)
+        file("build/resources/myLib/jar").assertHasDescendants(app.resources*.fullPath, true)
         jarFile("build/jars/myLib/jar/myLib.jar").hasDescendants(app.expectedOutputs*.fullPath as String[])
     }
 
     def excludeStatementFor(List<String> fileExtensions) {
-        fileExtensions.collect{"exclude '**/*.${it}'"}.join(SystemProperties.instance.lineSeparator)
+        fileExtensions.collect { "exclude '**/*.${it}'" }.join(SystemProperties.instance.lineSeparator)
     }
 
     def "can configure output directories for classes and resources"() {

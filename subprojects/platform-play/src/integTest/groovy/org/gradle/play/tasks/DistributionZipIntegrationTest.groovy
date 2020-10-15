@@ -17,11 +17,14 @@
 package org.gradle.play.tasks
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.test.fixtures.archive.ZipTestFixture
-import static org.gradle.play.integtest.fixtures.Repositories.*
+
+import static org.gradle.play.integtest.fixtures.Repositories.PLAY_REPOSITORIES
 
 class DistributionZipIntegrationTest extends AbstractIntegrationSpec {
     def setup() {
+        executer.noDeprecationChecks()
         settingsFile << """ rootProject.name = 'dist-play-app' """
         buildFile << """
             plugins {
@@ -32,6 +35,7 @@ class DistributionZipIntegrationTest extends AbstractIntegrationSpec {
         """
     }
 
+    @ToBeFixedForConfigurationCache
     def "can add to default distribution" () {
         buildFile << """
             model {

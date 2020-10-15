@@ -19,6 +19,7 @@ package org.gradle.integtests.fixtures.executer;
 import org.gradle.test.fixtures.file.TestFile;
 import org.gradle.util.GradleVersion;
 
+import javax.annotation.Nullable;
 import java.io.File;
 
 /**
@@ -29,28 +30,43 @@ public class IntegrationTestBuildContext {
     public static final TestFile TEST_DIR = new TestFile(new File(".").toURI());
     public static final IntegrationTestBuildContext INSTANCE = new IntegrationTestBuildContext();
 
+    @Nullable
     public TestFile getGradleHomeDir() {
-        return file("integTest.gradleHomeDir", null);
+        return optionalFile("integTest.gradleHomeDir");
     }
 
     public TestFile getSamplesDir() {
-        return file("integTest.samplesdir", String.format("%s/samples", getGradleHomeDir()));
+        return file("integTest.samplesdir", null);
     }
 
-    public TestFile getUserGuideOutputDir() {
-        return file("integTest.userGuideOutputDir", "subprojects/docs/src/samples/userguideOutput");
+    @Nullable
+    public TestFile getNormalizedBinDistribution() {
+        return optionalFile("integTest.normalizedDistribution");
     }
 
-    public TestFile getUserGuideInfoDir() {
-        return file("integTest.userGuideInfoDir", "subprojects/docs/build/src");
+    @Nullable
+    public TestFile getBinDistribution() {
+        return optionalFile("integTest.binDistribution");
     }
 
-    public TestFile getDistributionsDir() {
-        return file("integTest.distsDir", "build/distributions");
+    @Nullable
+    public TestFile getAllDistribution() {
+        return optionalFile("integTest.allDistribution");
     }
 
-    public TestFile getLibsRepo() {
-        return file("integTest.libsRepo", "build/repo");
+    @Nullable
+    public TestFile getDocsDistribution() {
+        return optionalFile("integTest.docsDistribution");
+    }
+
+    @Nullable
+    public TestFile getSrcDistribution() {
+        return optionalFile("integTest.srcDistribution");
+    }
+
+    @Nullable
+    public TestFile getLocalRepository() {
+        return optionalFile("integTest.localRepository");
     }
 
     public TestFile getDaemonBaseDir() {
@@ -58,7 +74,7 @@ public class IntegrationTestBuildContext {
     }
 
     public TestFile getGradleUserHomeDir() {
-        return file("integTest.gradleUserHomeDir", "intTestHomeDir").file("worker-1");
+        return file("integTest.gradleUserHomeDir", "intTestHomeDir/distributions-unknown");
     }
 
     public TestFile getTmpDir() {
@@ -75,23 +91,9 @@ public class IntegrationTestBuildContext {
 
     /**
      * The timestamped version used in the docs and the bin and all zips. This should be different to {@link GradleVersion#getVersion()}.
-     * Note that the binary distribution used for testing (testBinZip and intTestImage) has {@link GradleVersion#getVersion()} as version.
-     *
-     * @return timestamped version
      */
     public GradleVersion getDistZipVersion() {
         return GradleVersion.version(System.getProperty("integTest.distZipVersion", GradleVersion.current().getVersion()));
-    }
-
-    public TestFile getFatToolingApiJar() {
-        TestFile toolingApiShadedJarDir = file("integTest.toolingApiShadedJarDir", "subprojects/tooling-api/build/shaded-jar");
-        TestFile fatToolingApiJar = new TestFile(toolingApiShadedJarDir, String.format("gradle-tooling-api-shaded-%s.jar", getVersion().getBaseVersion().getVersion()));
-
-        if (!fatToolingApiJar.exists()) {
-            throw new IllegalStateException(String.format("The fat Tooling API JAR file does not exist: %s", fatToolingApiJar.getAbsolutePath()));
-        }
-
-        return fatToolingApiJar;
     }
 
     public GradleDistribution distribution(String version) {
@@ -102,24 +104,37 @@ public class IntegrationTestBuildContext {
         if (version.startsWith("#")) {
             return new BuildServerGradleDistribution(version, previousVersionDir.file(version));
         }
+
+        if (LocallyBuiltGradleDistribution.isLocallyBuiltVersion(version)) {
+            return new LocallyBuiltGradleDistribution(version);
+        }
         return new ReleasedGradleDistribution(version, previousVersionDir.file(version));
     }
 
-    protected static TestFile file(String propertyName, String defaultFile) {
-        String defaultPath;
-        if (defaultFile == null) {
-            defaultPath = null;
-        } else if (new File(defaultFile).isAbsolute()) {
-            defaultPath = defaultFile;
-        } else {
-            defaultPath = TEST_DIR.file(defaultFile).getAbsolutePath();
+    protected static TestFile file(String propertyName, String defaultPath) {
+        TestFile testFile = optionalFile(propertyName);
+        if (testFile != null) {
+            return testFile;
         }
-        String path = System.getProperty(propertyName, defaultPath);
-        if (path == null) {
-            throw new RuntimeException(String.format("You must set the '%s' property to run the integration tests. The default passed was: '%s'",
-                propertyName, defaultFile));
+        if (defaultPath == null) {
+            throw new RuntimeException("You must set the '" + propertyName + "' property to run the integration tests.");
         }
-        return new TestFile(new File(path));
+        return testFile(defaultPath);
+    }
+
+    @Nullable
+    private static TestFile optionalFile(String propertyName) {
+        String path = System.getProperty(propertyName);
+        // MODULE_WORKING_DIR doesn't seem to work correctly and MODULE_DIR seems to be in `.idea/modules/<path-to-subproject>`
+        // See https://youtrack.jetbrains.com/issue/IDEA-194910
+        return path != null ? new TestFile(new File(path.replace(".idea/modules/", ""))) : null;
+    }
+
+    private static TestFile testFile(String path) {
+        File file = new File(path);
+        return file.isAbsolute()
+            ? new TestFile(file)
+            : new TestFile(TEST_DIR.file(path).getAbsoluteFile());
     }
 
 }

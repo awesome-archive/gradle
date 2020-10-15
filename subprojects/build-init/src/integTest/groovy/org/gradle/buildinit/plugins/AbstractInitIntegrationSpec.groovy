@@ -19,10 +19,63 @@ package org.gradle.buildinit.plugins
 import org.gradle.buildinit.plugins.fixtures.ScriptDslFixture
 import org.gradle.buildinit.plugins.internal.modifiers.BuildInitDsl
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.DefaultTestExecutionResult
+import org.gradle.test.fixtures.file.TestFile
 
-class AbstractInitIntegrationSpec extends AbstractIntegrationSpec {
+abstract class AbstractInitIntegrationSpec extends AbstractIntegrationSpec {
+    final def targetDir = testDirectory.createDir("some-thing")
+    final def subprojectDir = subprojectName() ? targetDir.file(subprojectName()) : targetDir
+
+    abstract String subprojectName()
+
+    def setup() {
+        executer.withRepositoryMirrors()
+        executer.beforeExecute {
+            executer.inDirectory(targetDir)
+            executer.ignoreMissingSettingsFile()
+        }
+    }
+
+    void assertTestPassed(String className, String name) {
+        def result = new DefaultTestExecutionResult(subprojectDir)
+        result.assertTestClassesExecuted(className)
+        result.testClass(className).assertTestPassed(name)
+    }
+
+    void assertFunctionalTestPassed(String className, String name) {
+        def result = new DefaultTestExecutionResult(subprojectDir, 'build', '', '', 'functionalTest')
+        result.assertTestClassesExecuted(className)
+        result.testClass(className).assertTestPassed(name)
+    }
+
+    protected void commonFilesGenerated(BuildInitDsl scriptDsl, dslFixture = dslFixtureFor(scriptDsl)) {
+        dslFixture.assertGradleFilesGenerated()
+        targetDir.file(".gitignore").assertIsFile()
+        targetDir.file(".gitattributes").assertIsFile()
+    }
+    protected void commonJvmFilesGenerated(BuildInitDsl scriptDsl) {
+        commonFilesGenerated(scriptDsl)
+        subprojectDir.file("src/main/resources").assertIsDir()
+        subprojectDir.file("src/test/resources").assertIsDir()
+    }
 
     protected ScriptDslFixture dslFixtureFor(BuildInitDsl dsl) {
-        ScriptDslFixture.of(dsl, testDirectory)
+        ScriptDslFixture.of(dsl, targetDir, subprojectName())
+    }
+
+    protected ScriptDslFixture rootProjectDslFixtureFor(BuildInitDsl dsl) {
+        ScriptDslFixture.of(dsl, targetDir, null)
+    }
+
+    protected TestFile pom() {
+        targetDir.file("pom.xml") << """
+      <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+        <modelVersion>4.0.0</modelVersion>
+        <groupId>util</groupId>
+        <artifactId>util</artifactId>
+        <version>2.5</version>
+        <packaging>jar</packaging>
+      </project>"""
     }
 }

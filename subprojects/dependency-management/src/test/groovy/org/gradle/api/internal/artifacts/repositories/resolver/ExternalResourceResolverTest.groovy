@@ -18,7 +18,6 @@ package org.gradle.api.internal.artifacts.repositories.resolver
 
 import com.google.common.collect.ImmutableList
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier
-import org.gradle.api.internal.artifacts.ImmutableModuleIdentifierFactory
 import org.gradle.api.internal.artifacts.repositories.metadata.DefaultArtifactMetadataSource
 import org.gradle.api.internal.artifacts.repositories.metadata.ImmutableMetadataSources
 import org.gradle.api.internal.artifacts.repositories.metadata.MetadataArtifactProvider
@@ -27,6 +26,7 @@ import org.gradle.api.internal.artifacts.repositories.metadata.MutableModuleMeta
 import org.gradle.internal.component.external.model.ModuleComponentArtifactIdentifier
 import org.gradle.internal.component.external.model.ModuleComponentArtifactMetadata
 import org.gradle.internal.component.model.ComponentOverrideMetadata
+import org.gradle.internal.component.model.ImmutableModuleSources
 import org.gradle.internal.component.model.ModuleSource
 import org.gradle.internal.resolve.ArtifactResolveException
 import org.gradle.internal.resolve.result.BuildableArtifactResolveResult
@@ -54,19 +54,18 @@ class ExternalResourceResolverTest extends Specification {
     CacheAwareExternalResourceAccessor resourceAccessor = Stub()
     LocallyAvailableResourceFinder<ModuleComponentArtifactMetadata> locallyAvailableResourceFinder = Mock()
     FileStore<ModuleComponentArtifactIdentifier> fileStore = Stub()
-    ImmutableModuleIdentifierFactory moduleIdentifierFactory = Stub()
     ExternalResourceArtifactResolver artifactResolver = Mock()
     ImmutableMetadataSources metadataSources = Mock()
     ExternalResourceResolver resolver
 
     def setup() {
-        resolver = new TestResolver(name, true, repository, resourceAccessor, locallyAvailableResourceFinder, fileStore, moduleIdentifierFactory, metadataSources, Stub(MetadataArtifactProvider))
+        resolver = new TestResolver(name, true, repository, resourceAccessor, locallyAvailableResourceFinder, fileStore, metadataSources, Stub(MetadataArtifactProvider))
         resolver.artifactResolver = artifactResolver
     }
 
     def reportsNotFoundArtifactResolveResult() {
         when:
-        resolver.remoteAccess.resolveArtifact(artifact, moduleSource, artifactResult)
+        resolver.remoteAccess.resolveArtifact(artifact, ImmutableModuleSources.of(moduleSource), artifactResult)
 
         then:
         1 * artifactResolver.resolveArtifact(artifact, _) >> null
@@ -77,7 +76,7 @@ class ExternalResourceResolverTest extends Specification {
 
     def reportsFailedArtifactResolveResult() {
         when:
-        resolver.remoteAccess.resolveArtifact(artifact, moduleSource, artifactResult)
+        resolver.remoteAccess.resolveArtifact(artifact, ImmutableModuleSources.of(moduleSource), artifactResult)
 
         then:
         1 * artifactResolver.resolveArtifact(artifact, _) >> {
@@ -93,7 +92,7 @@ class ExternalResourceResolverTest extends Specification {
 
     def reportsResolvedArtifactResolveResult() {
         when:
-        resolver.remoteAccess.resolveArtifact(artifact, moduleSource, artifactResult)
+        resolver.remoteAccess.resolveArtifact(artifact, ImmutableModuleSources.of(moduleSource), artifactResult)
 
         then:
         1 * artifactResolver.resolveArtifact(artifact, _) >> Stub(LocallyAvailableExternalResource) {
@@ -109,7 +108,7 @@ class ExternalResourceResolverTest extends Specification {
         artifactIsTimestampedSnapshotVersion()
 
         when:
-        resolver.remoteAccess.resolveArtifact(artifact, moduleSource, artifactResult)
+        resolver.remoteAccess.resolveArtifact(artifact, ImmutableModuleSources.of(moduleSource), artifactResult)
 
         then:
         1 * artifactResolver.resolveArtifact(artifact, _) >> Stub(LocallyAvailableExternalResource) {
@@ -146,7 +145,7 @@ class ExternalResourceResolverTest extends Specification {
 
         then:
         1 * metadataSources.sources() >> ImmutableList.of(new DefaultArtifactMetadataSource(Mock(MutableModuleMetadataFactory)))
-        1 * artifactResolver.artifactExists({ it.componentId.is(id) && it.name.type == 'jar'}, _)
+        1 * artifactResolver.artifactExists({ it.componentId.is(id) && it.name.type == 'jar' }, _)
         1 * metadataResult.missing()
         0 * _
     }

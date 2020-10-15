@@ -17,20 +17,25 @@
 package org.gradle.language.jvm.internal;
 
 import org.gradle.api.file.FileCollection;
-import org.gradle.api.internal.file.collections.SimpleFileCollection;
-import org.gradle.api.internal.tasks.TaskDependencies;
+import org.gradle.api.file.ProjectLayout;
+import org.gradle.api.internal.tasks.TaskDependencyInternal;
 import org.gradle.api.tasks.TaskDependency;
 import org.gradle.jvm.Classpath;
 
-// Temporary Classpath implementation for new jvm component model
 public class EmptyClasspath implements Classpath {
+    private final ProjectLayout projectLayout;
+
+    public EmptyClasspath(ProjectLayout projectLayout) {
+        this.projectLayout = projectLayout;
+    }
+
     @Override
     public FileCollection getFiles() {
-        return new SimpleFileCollection();
+        return projectLayout.files();
     }
 
     @Override
     public TaskDependency getBuildDependencies() {
-        return TaskDependencies.EMPTY;
+        return TaskDependencyInternal.EMPTY;
     }
 }

@@ -18,15 +18,21 @@ package org.gradle.integtests.fixtures
 
 class FeaturePreviewsFixture {
 
-    static void enableGradleMetadata(File settings) {
+    static void enableGroovyCompilationAvoidance(File settings) {
         settings << """
-enableFeaturePreview('GRADLE_METADATA')
+enableFeaturePreview('GROOVY_COMPILATION_AVOIDANCE')
 """
     }
 
-    static void enableImprovedPomSupport(File settings) {
+    static void enableOneLockfilePerProject(File settings) {
         settings << """
-enableFeaturePreview('IMPROVED_POM_SUPPORT')
+enableFeaturePreview('ONE_LOCKFILE_PER_PROJECT')
+"""
+    }
+
+    static void enableUpdatedVersionSorting(File settings) {
+        settings << """
+            enableFeaturePreview('VERSION_ORDERING_V2')
 """
     }
 }

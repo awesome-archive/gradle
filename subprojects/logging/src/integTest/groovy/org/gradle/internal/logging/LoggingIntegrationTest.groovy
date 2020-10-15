@@ -17,6 +17,7 @@
 package org.gradle.internal.logging
 
 import org.gradle.integtests.fixtures.AbstractIntegrationTest
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.integtests.fixtures.Sample
 import org.gradle.integtests.fixtures.TestResources
 import org.gradle.integtests.fixtures.UsesSample
@@ -148,67 +149,62 @@ class LoggingIntegrationTest extends AbstractIntegrationTest {
         }
     }}
 
-    private final LogOutput brokenBuild = new LogOutput() {{
-        error('FAILURE: Build failed with an exception.')
-    }}
-
     @Test
-    public void quietLogging() {
+    @ToBeFixedForConfigurationCache(skip = ToBeFixedForConfigurationCache.Skip.FAILS_TO_CLEANUP)
+    void quietLogging() {
         checkOutput(this.&run, logOutput.quiet)
     }
 
     @Test
-    public void lifecycleLogging() {
+    @ToBeFixedForConfigurationCache(skip = ToBeFixedForConfigurationCache.Skip.FAILS_TO_CLEANUP)
+    void lifecycleLogging() {
         checkOutput(this.&run, logOutput.lifecycle)
     }
 
     @Test
-    public void infoLogging() {
+    @ToBeFixedForConfigurationCache(skip = ToBeFixedForConfigurationCache.Skip.FAILS_TO_CLEANUP)
+    void infoLogging() {
         checkOutput(this.&run, logOutput.info)
     }
 
     @Test
-    public void debugLogging() {
+    @ToBeFixedForConfigurationCache(skip = ToBeFixedForConfigurationCache.Skip.FAILS_TO_CLEANUP)
+    void debugLogging() {
         checkOutput(this.&run, logOutput.debug)
     }
 
-    @Test
-    public void lifecycleLoggingForBrokenBuild() {
-        checkOutput(this.&runBroken, brokenBuild.lifecycle)
-    }
-
-    @Test @UsesSample('userguide/tutorial/logging')
-    public void sampleQuietLogging() {
+    @Test @UsesSample('tutorial/logging/groovy')
+    void sampleQuietLogging() {
         checkOutput(this.&runSample, sample.quiet)
     }
 
-    @Test @UsesSample('userguide/tutorial/logging')
-    public void sampleLifecycleLogging() {
+    @Test @UsesSample('tutorial/logging/groovy')
+    void sampleLifecycleLogging() {
         checkOutput(this.&runSample, sample.lifecycle)
     }
 
-    @Test @UsesSample('userguide/tutorial/logging')
-    public void sampleInfoLogging() {
+    @Test @UsesSample('tutorial/logging/groovy')
+    void sampleInfoLogging() {
         checkOutput(this.&runSample, sample.info)
     }
 
-    @Test @UsesSample('userguide/tutorial/logging')
-    public void sampleDebugLogging() {
+    @Test @UsesSample('tutorial/logging/groovy')
+    void sampleDebugLogging() {
         checkOutput(this.&runSample, sample.debug)
     }
 
     @Test
-    public void multiThreadedQuietLogging() {
+    void multiThreadedQuietLogging() {
         checkOutput(this.&runMultiThreaded, multiThreaded.quiet)
     }
 
     @Test
-    public void multiThreadedlifecycleLogging() {
+    void multiThreadedlifecycleLogging() {
         checkOutput(this.&runMultiThreaded, multiThreaded.lifecycle)
     }
 
     @Test
-    public void multiThreadedDebugLogging() {
+    void multiThreadedDebugLogging() {
         checkOutput(this.&runMultiThreaded, multiThreaded.debug)
     }
 

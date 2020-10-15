@@ -16,8 +16,11 @@
 
 package org.gradle.internal.resolve.resolver;
 
+import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.strategy.VersionSelector;
 import org.gradle.internal.component.model.DependencyMetadata;
 import org.gradle.internal.resolve.result.BuildableComponentIdResolveResult;
+
+import javax.annotation.Nullable;
 
 public interface DependencyToComponentIdResolver {
     /**
@@ -25,5 +28,5 @@ public interface DependencyToComponentIdResolver {
      *
      * <p>At some point in the future, this should resolve to a set of candidates rather than a single instance.
      */
-    void resolve(DependencyMetadata dependency, BuildableComponentIdResolveResult result);
+    void resolve(DependencyMetadata dependency, VersionSelector acceptor, @Nullable VersionSelector rejector, BuildableComponentIdResolveResult result);
 }

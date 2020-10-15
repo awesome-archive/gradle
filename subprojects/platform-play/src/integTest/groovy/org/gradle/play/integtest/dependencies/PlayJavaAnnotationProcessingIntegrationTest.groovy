@@ -25,16 +25,18 @@ import static org.gradle.play.integtest.fixtures.Repositories.PLAY_REPOSITORIES
 class PlayJavaAnnotationProcessingIntegrationTest extends AbstractIntegrationSpec {
 
     def "can compile Java class incorporating annotation processing"() {
+        executer.noDeprecationChecks()
+
         given:
         buildFile << """
             plugins {
                 id 'play'
             }
-            
+
             $PLAY_REPOSITORIES
 
             dependencies {
-                play 'org.projectlombok:lombok:1.16.2'
+                play 'org.projectlombok:lombok:1.16.22'
             }
         """
 
@@ -44,16 +46,16 @@ class PlayJavaAnnotationProcessingIntegrationTest extends AbstractIntegrationSpe
             import lombok.AccessLevel;
             import lombok.Getter;
             import lombok.Setter;
-            
+
             public class GetterSetterExample {
                 @Getter
                 @Setter
                 private int age = 10;
-                
+
                 @Setter(AccessLevel.PROTECTED)
                 private String name;
-            
-                @Override 
+
+                @Override
                 public String toString() {
                     return String.format("%s (age: %d)", name, getAge());
                 }

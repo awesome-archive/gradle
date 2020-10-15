@@ -16,13 +16,17 @@
 
 package org.gradle.language.java
 
-import static JavaIntegrationTesting.applyJavaPlugin
+import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
 
+import static JavaIntegrationTesting.applyJavaPlugin
+import static org.gradle.language.java.JavaIntegrationTesting.expectJavaLangPluginDeprecationWarnings
+
+@UnsupportedWithConfigurationCache(because = "software model")
 class JarBinaryTypeVariantsTest extends VariantAwareDependencyResolutionSpec {
 
     def "can depend on a component without specifying any variant dimension"() {
         given:
-        applyJavaPlugin(buildFile)
+        applyJavaPlugin(buildFile, executer)
         addCustomLibraryType(buildFile)
 
         buildFile << '''
@@ -65,7 +69,7 @@ model {
 
     def "can depend on a component with explicit flavors"() {
         given:
-        applyJavaPlugin(buildFile)
+        applyJavaPlugin(buildFile, executer)
         addCustomLibraryType(buildFile)
 
         buildFile << '''
@@ -111,6 +115,7 @@ model {
 
         expect:
         succeeds ':firstPaidDefaultJar'
+        expectJavaLangPluginDeprecationWarnings(executer)
         succeeds ':firstFreeDefaultJar'
 
     }

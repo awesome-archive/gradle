@@ -16,6 +16,7 @@
 package org.gradle.ide.visualstudio
 
 import org.gradle.ide.visualstudio.fixtures.AbstractVisualStudioIntegrationSpec
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.integtests.fixtures.Sample
 import org.gradle.test.fixtures.file.TestDirectoryProvider
 import org.gradle.util.Requires
@@ -27,9 +28,10 @@ class NativeIdeSamplesIntegrationTest extends AbstractVisualStudioIntegrationSpe
     @Rule public final Sample visualStudio = sample(temporaryFolder, 'visual-studio')
 
     private static Sample sample(TestDirectoryProvider testDirectoryProvider, String name) {
-        return new Sample(testDirectoryProvider, "native-binaries/${name}", name)
+        return new Sample(testDirectoryProvider, "native-binaries/${name}/groovy", name)
     }
 
+    @ToBeFixedForConfigurationCache
     def "visual studio"() {
         given:
         sample visualStudio
@@ -51,6 +53,7 @@ class NativeIdeSamplesIntegrationTest extends AbstractVisualStudioIntegrationSpe
     }
 
     @Requires(TestPrecondition.MSBUILD)
+    @ToBeFixedForConfigurationCache
     def "build generated visual studio solution"() {
         useMsbuildTool()
 
@@ -67,8 +70,8 @@ class NativeIdeSamplesIntegrationTest extends AbstractVisualStudioIntegrationSpe
             .succeeds()
 
         then:
-        resultDebug.assertTasksExecuted(':compileMainExecutableMainCpp', ':linkMainExecutable', ':mainExecutable', ':installMainExecutable', ':compileHelloSharedLibraryHelloCpp', ':linkHelloSharedLibrary', ':helloSharedLibrary')
-        resultDebug.assertTasksNotSkipped(':compileMainExecutableMainCpp', ':linkMainExecutable', ':mainExecutable', ':installMainExecutable', ':compileHelloSharedLibraryHelloCpp', ':linkHelloSharedLibrary', ':helloSharedLibrary')
+        resultDebug.size() == 1
+        resultDebug[0].assertTasksExecuted(':compileMainExecutableMainCpp', ':linkMainExecutable', ':mainExecutable', ':installMainExecutable', ':compileHelloSharedLibraryHelloCpp', ':linkHelloSharedLibrary', ':helloSharedLibrary')
         installation(visualStudio.dir.file('build/install/main')).assertInstalled()
     }
 }

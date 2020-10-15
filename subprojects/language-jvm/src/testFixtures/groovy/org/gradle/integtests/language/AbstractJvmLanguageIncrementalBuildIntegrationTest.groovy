@@ -18,13 +18,13 @@ package org.gradle.integtests.language
 
 import org.apache.commons.lang.StringUtils
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
+import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
 import org.gradle.integtests.fixtures.jvm.JvmSourceFile
 import org.gradle.integtests.fixtures.jvm.TestJvmComponent
 import org.gradle.test.fixtures.archive.JarTestFixture
 import org.gradle.test.fixtures.file.TestFile
-import spock.lang.IgnoreIf
 
+@UnsupportedWithConfigurationCache(because = "software model")
 abstract class AbstractJvmLanguageIncrementalBuildIntegrationTest extends AbstractIntegrationSpec {
     abstract TestJvmComponent getTestComponent();
 
@@ -54,8 +54,18 @@ abstract class AbstractJvmLanguageIncrementalBuildIntegrationTest extends Abstra
 """
     }
 
+    def expectDeprecationWarnings() {
+        executer.expectDocumentedDeprecationWarning("The ${testComponent.languageName}-lang plugin has been deprecated. This is scheduled to be removed in Gradle 7.0. " +
+            "Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_6.html#upgrading_jvm_plugins")
+        executer.expectDocumentedDeprecationWarning("The jvm-component plugin has been deprecated. This is scheduled to be removed in Gradle 7.0. " +
+            "Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_6.html#upgrading_jvm_plugins")
+        executer.expectDocumentedDeprecationWarning("The jvm-resources plugin has been deprecated. This is scheduled to be removed in Gradle 7.0. " +
+            "Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_6.html#upgrading_jvm_plugins")
+    }
+
     def "builds jar"() {
         when:
+        expectDeprecationWarnings()
         run "mainJar"
 
         then:
@@ -65,28 +75,31 @@ abstract class AbstractJvmLanguageIncrementalBuildIntegrationTest extends Abstra
         jarFile("build/jars/main/jar/main.jar").hasDescendants(testComponent.expectedOutputs*.fullPath as String[])
     }
 
-    @IgnoreIf({GradleContextualExecuter.parallel})
     def "does not re-execute build with no change"() {
         given:
+        expectDeprecationWarnings()
         run "mainJar"
 
         when:
+        expectDeprecationWarnings()
         run "mainJar"
 
         then:
-        nonSkippedTasks.empty
+        allSkipped()
     }
 
     def "rebuilds jar and classfile is removed when source file removed"() {
         given:
+        expectDeprecationWarnings()
         run "mainJar"
 
         when:
         sourceFiles[1].delete()
+        expectDeprecationWarnings()
         run "mainJar"
 
         then:
-        executedAndNotSkipped mainCompileTaskName, ":createMainJar", ":mainJar"
+        executedAndNotSkipped ":createMainJar", ":mainJar"
 
 
         and:
@@ -95,10 +108,12 @@ abstract class AbstractJvmLanguageIncrementalBuildIntegrationTest extends Abstra
 
     def "rebuilds jar without resource when resource removed"() {
         given:
+        expectDeprecationWarnings()
         run "mainJar"
 
         when:
         resourceFiles[1].delete()
+        expectDeprecationWarnings()
         run "mainJar"
 
         then:
@@ -110,10 +125,12 @@ abstract class AbstractJvmLanguageIncrementalBuildIntegrationTest extends Abstra
 
     def "rebuilds jar when source file changed"() {
         given:
+        expectDeprecationWarnings()
         run "mainJar"
 
         when:
         testComponent.changeSources(sourceFiles)
+        expectDeprecationWarnings()
         run "mainJar"
 
         then:
@@ -122,10 +139,12 @@ abstract class AbstractJvmLanguageIncrementalBuildIntegrationTest extends Abstra
 
     def "rebuilds jar when resource file changed"() {
         given:
+        expectDeprecationWarnings()
         run "mainJar"
 
         when:
         resourceFiles[0].text = "Some different text"
+        expectDeprecationWarnings()
         run "mainJar"
 
         then:
@@ -134,11 +153,13 @@ abstract class AbstractJvmLanguageIncrementalBuildIntegrationTest extends Abstra
 
     def "rebuilds jar when source file added"() {
         given:
+        expectDeprecationWarnings()
         run "mainJar"
 
         when:
         testComponent.writeAdditionalSources(file("src/main"))
 
+        expectDeprecationWarnings()
         run "mainJar"
 
         then:
@@ -151,10 +172,12 @@ abstract class AbstractJvmLanguageIncrementalBuildIntegrationTest extends Abstra
 
     def "rebuilds jar when resource file added"() {
         given:
+        expectDeprecationWarnings()
         run "mainJar"
 
         when:
         file("src/main/resources/Extra.txt") << "an extra resource"
+        expectDeprecationWarnings()
         run "mainJar"
 
         then:
@@ -167,10 +190,12 @@ abstract class AbstractJvmLanguageIncrementalBuildIntegrationTest extends Abstra
 
     def "recompiles but does not rebuild jar when source file changed such that bytecode is the same"() {
         given:
+        expectDeprecationWarnings()
         run "mainJar"
 
         when:
         sourceFiles[0].text = sourceFiles[0].text + "// Line trailing comment"
+        expectDeprecationWarnings()
         run "mainJar"
 
         then:
@@ -179,11 +204,11 @@ abstract class AbstractJvmLanguageIncrementalBuildIntegrationTest extends Abstra
     }
 
     def assertOutputs(List<JvmSourceFile> expectedClasses, List<JvmSourceFile> expectedResources) {
-        String[] classes = expectedClasses.collect { it.fullPath }
-        String[] resources = expectedResources.collect { it.fullPath }
+        def classes = expectedClasses.collect { it.fullPath }
+        def resources = expectedResources.collect { it.fullPath }
         file("build/classes/main/jar").assertHasDescendants(classes)
-        file("build/resources/main/jar").assertHasDescendants(resources)
-        jarFile("build/jars/main/jar/main.jar").hasDescendants(classes + resources as String[])
+        file("build/resources/main/jar").assertHasDescendants(resources, true)
+        jarFile("build/jars/main/jar/main.jar").hasDescendants((classes + resources) as String[])
         return true
     }
 

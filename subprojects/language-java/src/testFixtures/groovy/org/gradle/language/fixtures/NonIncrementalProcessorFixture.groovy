@@ -22,8 +22,6 @@ import groovy.transform.CompileStatic
  * An annotation processor which does all the things that we don't support for
  * incremental compilation:
  *
- *  - reading resources
- *  - writing resources
  *  - generating files without originating elements
  *
  *  Useful for testing error reporting.
@@ -31,8 +29,15 @@ import groovy.transform.CompileStatic
 @CompileStatic
 class NonIncrementalProcessorFixture extends AnnotationProcessorFixture {
 
+    private boolean providesNoOriginatingElements
+
     NonIncrementalProcessorFixture() {
         super("Thing")
+    }
+
+    NonIncrementalProcessorFixture providingNoOriginatingElements() {
+        providesNoOriginatingElements = true
+        this
     }
 
     String getGeneratorCode() {
@@ -41,7 +46,7 @@ for (Element element : elements) {
     TypeElement typeElement = (TypeElement) element;
     String className = typeElement.getSimpleName().toString() + "Thing";
     try {
-        JavaFileObject sourceFile = filer.createSourceFile(className);
+        JavaFileObject sourceFile = filer.createSourceFile(className${providesNoOriginatingElements ? "" : ", element"});
         Writer writer = sourceFile.openWriter();
         try {
             writer.write("class " + className + " {");
@@ -54,12 +59,6 @@ for (Element element : elements) {
         }
     } catch (IOException e) {
         messager.printMessage(Diagnostic.Kind.ERROR, "Failed to generate source file " + className);
-    }
-    try {
-        filer.getResource(StandardLocation.SOURCE_OUTPUT, "", "thing.txt");
-        filer.createResource(StandardLocation.SOURCE_OUTPUT, "", "thing.txt");
-    } catch (IOException e) {
-        messager.printMessage(Diagnostic.Kind.ERROR, "Failed to generate resource file thing.txt");
     }
 }
 """

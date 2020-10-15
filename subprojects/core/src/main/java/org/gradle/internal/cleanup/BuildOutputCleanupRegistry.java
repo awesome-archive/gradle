@@ -16,8 +16,14 @@
 
 package org.gradle.internal.cleanup;
 
-import java.io.File;
+import org.gradle.api.file.FileCollection;
+import org.gradle.internal.service.scopes.Scopes;
+import org.gradle.internal.service.scopes.ServiceScope;
 
+import java.io.File;
+import java.util.Set;
+
+@ServiceScope(Scopes.Gradle.class)
 public interface BuildOutputCleanupRegistry {
 
     /**
@@ -31,4 +37,9 @@ public interface BuildOutputCleanupRegistry {
      * A file is owned by the build if it is registered as an output directly or within a directory registered as an output.
      */
     boolean isOutputOwnedByBuild(File file);
+
+    /**
+     * Gets the set of registered outputs as file collections.
+     */
+    Set<FileCollection> getRegisteredOutputs();
 }

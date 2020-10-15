@@ -31,6 +31,8 @@ import java.util.Set;
  * <p>You can obtain a {@code FileTree} instance using {@link org.gradle.api.Project#fileTree(java.util.Map)},
  * {@link org.gradle.api.Project#zipTree(Object)} or {@link org.gradle.api.Project#tarTree(Object)}.
  * </p>
+ *
+ * <p>The order of the files in a {@code FileTree} is not stable, even on a single computer.
  */
 @HasInternalProtocol
 public interface FileTree extends FileCollection {
@@ -119,12 +121,16 @@ public interface FileTree extends FileCollection {
      *
      * @return this
      */
+    @Override
     FileTree getAsFileTree();
 
     /**
      * Returns the contents of this tree as a flattened Set.
      *
+     * <p>The order of the files in a {@code FileTree} is not stable, even on a single computer.
+     *
      * @return The files. Returns an empty set if this tree is empty.
      */
+    @Override
     Set<File> getFiles();
 }

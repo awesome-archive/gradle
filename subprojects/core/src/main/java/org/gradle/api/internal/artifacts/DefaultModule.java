@@ -15,10 +15,12 @@
  */
 package org.gradle.api.internal.artifacts;
 
+import org.gradle.api.artifacts.component.ProjectComponentIdentifier;
+
 public class DefaultModule implements Module {
-    private String group;
-    private String name;
-    private String version;
+    private final String group;
+    private final String name;
+    private final String version;
     private String status = DEFAULT_STATUS;
 
     public DefaultModule(String group, String name, String version) {
@@ -34,23 +36,28 @@ public class DefaultModule implements Module {
         this.status = status;
     }
 
+    @Override
     public String getGroup() {
         return group;
     }
 
+    @Override
     public String getName() {
         return name;
     }
 
+    @Override
     public String getVersion() {
         return version;
     }
 
+    @Override
     public String getStatus() {
         return status;
     }
 
-    public String getProjectPath() {
+    @Override
+    public ProjectComponentIdentifier getProjectId() {
         return null;
     }
 }

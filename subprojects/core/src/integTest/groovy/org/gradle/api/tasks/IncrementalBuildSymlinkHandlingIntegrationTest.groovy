@@ -35,11 +35,13 @@ f.delete() // invalidates cache
 task work {
     inputs.file('in.txt')
     inputs.dir('in-dir')
-    outputs.file('out.txt')
-    outputs.dir('out-dir')
+    def outTxt = file('out.txt')
+    def outDir = file('out-dir')
+    outputs.file(outTxt)
+    outputs.dir(outDir)
     doLast {
-        file('out.txt').text = 'content'
-        def f2 = file('out-dir/file1.txt')
+        outTxt.text = 'content'
+        def f2 = new File(outDir, 'file1.txt')
         f2.parentFile.mkdirs()
         f2 << 'content'
     }
@@ -122,17 +124,16 @@ task work {
         result.assertTasksSkipped(":work")
     }
 
-    def "symlink may reference missing input file"() {
+    def "symlink may not reference missing input file"() {
         file("in-dir").createDir()
         def link = file("in.txt")
         link.createLink("other")
         assert !link.exists()
 
         expect:
-        executer.expectDeprecationWarning().withFullDeprecationStackTraceDisabled()
-        succeeds("work")
-        output.contains """A problem was found with the configuration of task ':work'. Registering invalid inputs and outputs via TaskInputs and TaskOutputs methods has been deprecated and is scheduled to be removed in Gradle 5.0.
- - File '$link' specified for property '\$1' does not exist."""
+        fails("work")
+        failure.assertHasDescription("A problem was found with the configuration of task ':work' (type 'DefaultTask').")
+        failure.assertHasCause("File '$link' specified for property '\$1' does not exist.")
     }
 
     def "can replace input file with symlink to file with same content"() {

@@ -32,12 +32,12 @@ import org.junit.Test
 import spock.lang.Specification
 
 import static org.gradle.api.internal.file.copy.CopyActionExecuterUtil.visit
-import static org.hamcrest.Matchers.equalTo
+import static org.hamcrest.CoreMatchers.equalTo
 
 class ZipCopyActionTest extends Specification {
 
     @Rule
-    public final TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider()
+    public final TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider(getClass())
 
     ZipCopyAction visitor
     TestFile zipFile

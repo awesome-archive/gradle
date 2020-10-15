@@ -19,8 +19,8 @@ import com.google.common.net.UrlEscapers
 import com.google.gson.Gson
 import com.google.gson.JsonElement
 import groovy.xml.MarkupBuilder
-import org.gradle.api.artifacts.repositories.PasswordCredentials
-import org.gradle.internal.BiAction
+import org.gradle.api.credentials.PasswordCredentials
+import org.gradle.internal.credentials.DefaultPasswordCredentials
 import org.gradle.internal.hash.HashUtil
 import org.gradle.test.fixtures.server.ExpectOne
 import org.gradle.test.fixtures.server.ServerExpectation
@@ -28,22 +28,25 @@ import org.gradle.test.fixtures.server.ServerWithExpectations
 import org.gradle.test.matchers.UserAgentMatcher
 import org.gradle.util.GFileUtils
 import org.hamcrest.Matcher
-import org.mortbay.io.EndPoint
-import org.mortbay.jetty.Handler
-import org.mortbay.jetty.HttpHeaders
-import org.mortbay.jetty.HttpStatus
-import org.mortbay.jetty.MimeTypes
-import org.mortbay.jetty.Request
-import org.mortbay.jetty.handler.AbstractHandler
+import org.eclipse.jetty.server.Handler
+import org.eclipse.jetty.http.HttpHeader
+import org.eclipse.jetty.http.HttpStatus
+import org.eclipse.jetty.http.MimeTypes
+import org.eclipse.jetty.server.Request
+import org.eclipse.jetty.server.handler.AbstractHandler
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
+import javax.servlet.ServletException
 import javax.servlet.http.HttpServletRequest
 import javax.servlet.http.HttpServletResponse
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.zip.GZIPOutputStream
 
+/**
+ * Due to be replaced by {@link BlockingHttpServer}. You should prefer using that class where possible, however there is a bunch of stuff on this fixture that is missing from {@link BlockingHttpServer}.
+ */
 class HttpServer extends ServerWithExpectations implements HttpServerFixture {
 
     private final static Logger logger = LoggerFactory.getLogger(HttpServer.class)
@@ -90,14 +93,24 @@ class HttpServer extends ServerWithExpectations implements HttpServerFixture {
     @Override
     Handler getCustomHandler() {
         return new AbstractHandler() {
-            void handle(String target, HttpServletRequest request, HttpServletResponse response, int dispatch) {
+            @Override
+            void handle(String target, Request baseRequest, HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
                 String d = request.getQueryString()
-                if (request.handled) {
+                if (baseRequest.handled) {
                     return
                 }
                 onFailure(new AssertionError("Received unexpected ${request.method} request to ${target}."))
                 response.sendError(404, "'$target' does not exist")
             }
+        }
+    }
+
+    @Override
+    String toString() {
+        if (server.started) {
+            return "HttpServer " + String.valueOf(getUri())
+        } else {
+            return "HttpServer (unstarted)"
         }
     }
 
@@ -153,12 +166,23 @@ class HttpServer extends ServerWithExpectations implements HttpServerFixture {
         allow(path, false, ['GET'], notFound())
     }
 
-    private Action fileHandler(String path, File srcFile) {
+    protected SendFileAction fileHandler(String path, File srcFile) {
         return new SendFileAction(path, srcFile, false)
     }
 
     private Action revalidateFileHandler(String path, File srcFile) {
         return new SendFileAction(path, srcFile, true)
+    }
+
+    static class ServiceUnavailableAction extends ActionSupport {
+        ServiceUnavailableAction(String displayName) {
+            super(displayName)
+        }
+
+        @Override
+        void handle(HttpServletRequest request, HttpServletResponse response) {
+            response.sendError(503, "service unavailable")
+        }
     }
 
     class SendFileAction extends ActionSupport {
@@ -278,7 +302,7 @@ class HttpServer extends ServerWithExpectations implements HttpServerFixture {
     private Action broken() {
         new ActionSupport("return 500 broken") {
             void handle(HttpServletRequest request, HttpServletResponse response) {
-                response.sendError(500, "broken")
+                response.setStatus(500, "broken")
             }
         }
     }
@@ -294,6 +318,7 @@ class HttpServer extends ServerWithExpectations implements HttpServerFixture {
     private Action blocking() {
         new ActionSupport("throw socket timeout exception") {
             CountDownLatch latch = new CountDownLatch(1)
+
             void handle(HttpServletRequest request, HttpServletResponse response) {
                 try {
                     latch.await(60, TimeUnit.SECONDS)
@@ -322,7 +347,7 @@ class HttpServer extends ServerWithExpectations implements HttpServerFixture {
      * Allows one HEAD request for the given URL with http authentication.
      */
     void expectHead(String path, String username, String password, File srcFile, Long lastModified = null, Long contentLength = null) {
-        expect(path, false, ['HEAD'], withAuthentication(path, username, password, fileHandler(path, srcFile)))
+        expect(path, false, ['HEAD'], fileHandler(path, srcFile), new DefaultPasswordCredentials(username, password))
     }
 
     /**
@@ -350,7 +375,7 @@ class HttpServer extends ServerWithExpectations implements HttpServerFixture {
      * Expects one GET request for the given URL, with the given credentials. Reads the request content from the given file.
      */
     HttpResourceInteraction expectGet(String path, String username, String password, File srcFile) {
-        return expect(path, false, ['GET'], withAuthentication(path, username, password, fileHandler(path, srcFile)))
+        return expect(path, false, ['GET'], fileHandler(path, srcFile), new DefaultPasswordCredentials(username, password))
     }
 
     /**
@@ -362,7 +387,7 @@ class HttpServer extends ServerWithExpectations implements HttpServerFixture {
                 def file = srcFile
                 if (file.isFile()) {
                     response.setHeader("Content-Encoding", "gzip")
-                    response.setDateHeader(HttpHeaders.LAST_MODIFIED, srcFile.lastModified())
+                    response.setDateHeader(HttpHeader.LAST_MODIFIED.asString(), srcFile.lastModified())
                     def stream = new GZIPOutputStream(response.outputStream)
                     stream.write(file.bytes)
                     stream.close()
@@ -376,30 +401,34 @@ class HttpServer extends ServerWithExpectations implements HttpServerFixture {
     /**
      * Expects one GET request for the given URL, responding with a redirect.
      */
-    void expectGetRedirected(String path, String location) {
-        expectRedirected('GET', path, location)
+    void expectGetRedirected(String path, String location, PasswordCredentials passwordCredentials = null) {
+        expectRedirected('GET', path, location, passwordCredentials)
     }
 
     /**
      * Expects one HEAD request for the given URL, responding with a redirect.
      */
-    void expectHeadRedirected(String path, String location) {
-        expectRedirected('HEAD', path, location)
+    void expectHeadRedirected(String path, String location, PasswordCredentials passwordCredentials = null) {
+        expectRedirected('HEAD', path, location, passwordCredentials)
     }
 
     /**
      * Expects one PUT request for the given URL, responding with a redirect.
      */
-    void expectPutRedirected(String path, String location) {
-        expectRedirected('PUT', path, location)
+    void expectPutRedirected(String path, String location, PasswordCredentials passwordCredentials = null) {
+        expectRedirected('PUT', path, location, passwordCredentials)
     }
 
-    private void expectRedirected(String method, String path, String location) {
-        expect(path, false, [method], new ActionSupport("redirect to $location") {
+    private void expectRedirected(String method, String path, String location, PasswordCredentials credentials) {
+        expect(path, false, [method], redirectTo(location), credentials)
+    }
+
+    private HttpServer.Action redirectTo(location) {
+        new ActionSupport("redirect to $location") {
             void handle(HttpServletRequest request, HttpServletResponse response) {
                 response.sendRedirect(location)
             }
-        })
+        }
     }
 
     /**
@@ -428,16 +457,20 @@ class HttpServer extends ServerWithExpectations implements HttpServerFixture {
      * Expects one GET request for the given URL, returning an apache-compatible directory listing with the given File names.
      */
     void expectGetDirectoryListing(String path, String username, String password, File directory) {
-        expect(path, false, ['GET'], withAuthentication(path, username, password, new ActionSupport("return listing of directory $directory.name") {
+        expect(path, false, ['GET'], listDirectory(directory), new DefaultPasswordCredentials(username, password))
+    }
+
+    private HttpServer.Action listDirectory(File directory) {
+        new ActionSupport("return listing of directory $directory.name") {
             void handle(HttpServletRequest request, HttpServletResponse response) {
                 sendDirectoryListing(response, directory)
             }
-        }))
+        }
     }
 
     private sendFile(HttpServletResponse response, File file, Long lastModified, Long contentLength, String contentType) {
         if (sendLastModified) {
-            response.setDateHeader(HttpHeaders.LAST_MODIFIED, lastModified ?: file.lastModified())
+            response.setDateHeader(HttpHeader.LAST_MODIFIED.asString(), lastModified ?: file.lastModified())
         }
         def content = file.bytes
 
@@ -468,7 +501,7 @@ class HttpServer extends ServerWithExpectations implements HttpServerFixture {
             }
 
             if (value != null) {
-                response.addHeader(HttpHeaders.ETAG, value)
+                response.addHeader(HttpHeader.ETAG.asString(), value)
             }
         }
     }
@@ -495,7 +528,7 @@ class HttpServer extends ServerWithExpectations implements HttpServerFixture {
     /**
      * Expects one PUT request for the given URL. Writes the request content to the given file.
      */
-    void expectPut(String path, File destFile, int statusCode = HttpStatus.ORDINAL_200_OK, PasswordCredentials credentials = null, long expectedContentLength = -1) {
+    void expectPut(String path, File destFile, int statusCode = HttpStatus.OK_200, PasswordCredentials credentials = null, long expectedContentLength = -1) {
         def action = new ActionSupport("write request to $destFile.name (content length: $expectedContentLength) and return status $statusCode") {
             void handle(HttpServletRequest request, HttpServletResponse response) {
                 if (HttpServer.this.expectedUserAgent != null) {
@@ -524,17 +557,16 @@ class HttpServer extends ServerWithExpectations implements HttpServerFixture {
      * Expects one PUT request for the given URL, with the given credentials. Writes the request content to the given file.
      */
     void expectPut(String path, String username, String password, File destFile) {
-        expect(path, false, ['PUT'], withAuthentication(path, username, password, new ActionSupport("write request to $destFile.name") {
-            void handle(HttpServletRequest request, HttpServletResponse response) {
+        expect(path, false, ['PUT'], fileWriter(destFile), new DefaultPasswordCredentials(username, password))
+    }
 
-                if (request.remoteUser != username) {
-                    response.sendError(500, "unexpected username '${request.remoteUser}'")
-                    return
-                }
+    private Action fileWriter(File destFile) {
+        new ActionSupport("write request to $destFile.name") {
+            void handle(HttpServletRequest request, HttpServletResponse response) {
                 destFile.parentFile.mkdirs()
                 destFile.bytes = request.inputStream.bytes
             }
-        }))
+        }
     }
 
     /**
@@ -571,7 +603,7 @@ class HttpServer extends ServerWithExpectations implements HttpServerFixture {
         }
     }
 
-    private Action withQueryString(String query, Action action) {
+    private static Action withQueryString(String query, Action action) {
         return new Action() {
             @Override
             HttpResourceInteraction getInteraction() {
@@ -589,6 +621,25 @@ class HttpServer extends ServerWithExpectations implements HttpServerFixture {
         }
     }
 
+    private static Action withLenientQueryString(String query, Action action) {
+        return new Action() {
+            @Override
+            HttpResourceInteraction getInteraction() {
+                return action.interaction
+            }
+
+            String getDisplayName() {
+                return action.displayName
+            }
+
+            void handle(HttpServletRequest request, HttpServletResponse response) {
+                if (request.queryString.startsWith(query)) {
+                    action.handle(request, response)
+                }
+            }
+        }
+    }
+
     void expect(String path, Collection<String> methods, PasswordCredentials passwordCredentials = null, Action action) {
         expect(path, false, methods, action, passwordCredentials)
     }
@@ -596,16 +647,18 @@ class HttpServer extends ServerWithExpectations implements HttpServerFixture {
     HttpResourceInteraction expect(String path, boolean matchPrefix, Collection<String> methods, Action action, PasswordCredentials credentials = null) {
         if (credentials != null) {
             action = withAuthentication(path, credentials.username, credentials.password, action)
+        } else {
+            action = refuseAuthentication(path, action)
         }
 
         HttpExpectOne expectation = new HttpExpectOne(action, methods, path)
         expectations << expectation
         add(path, matchPrefix, methods, new AbstractHandler() {
-            void handle(String target, HttpServletRequest request, HttpServletResponse response, int dispatch) {
-                if (expectation.run) {
+            @Override
+            void handle(String target, Request baseRequest, HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
+                if (expectation.atomicRun.getAndSet(true)) {
                     return
                 }
-                expectation.run = true
                 action.handle(request, response)
                 request.handled = true
             }
@@ -614,9 +667,32 @@ class HttpServer extends ServerWithExpectations implements HttpServerFixture {
         return action.interaction
     }
 
-    private void allow(String path, boolean matchPrefix, Collection<String> methods, Action action) {
+    private Action refuseAuthentication(String path, Action action) {
+        new Action() {
+            @Override
+            HttpResourceInteraction getInteraction() {
+                return action.interaction
+            }
+
+            String getDisplayName() {
+                return action.displayName
+            }
+
+            void handle(HttpServletRequest request, HttpServletResponse response) {
+
+                if (authenticationScheme.handler.containsUnexpectedAuthentication(request)) {
+                    response.sendError(500, "unexpected authentication in headers ")
+                    return
+                }
+                action.handle(request, response)
+            }
+        }
+    }
+
+    protected void allow(String path, boolean matchPrefix, Collection<String> methods, Action action) {
         add(path, matchPrefix, methods, new AbstractHandler() {
-            void handle(String target, HttpServletRequest request, HttpServletResponse response, int dispatch) {
+            @Override
+            void handle(String target, Request baseRequest, HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
                 action.handle(request, response)
                 request.handled = true
             }
@@ -627,13 +703,14 @@ class HttpServer extends ServerWithExpectations implements HttpServerFixture {
         assert path.startsWith('/')
         def prefix = path == '/' ? '/' : path + '/'
         collection.addHandler(new AbstractHandler() {
-            void handle(String target, HttpServletRequest request, HttpServletResponse response, int dispatch) {
+            @Override
+            void handle(String target, Request baseRequest, HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
                 if (methods != null && !methods.contains(request.method)) {
                     return
                 }
                 boolean match = request.pathInfo == path || (matchPrefix && request.pathInfo.startsWith(prefix))
                 if (match && !request.handled) {
-                    handler.handle(target, request, response, dispatch)
+                    handler.handle(target, baseRequest, request, response)
                 }
             }
         })
@@ -647,11 +724,8 @@ class HttpServer extends ServerWithExpectations implements HttpServerFixture {
      * Blocks on SSL handshake for 60 seconds.
      */
     void expectSslHandshakeBlocking() {
-        sslPreHandler = new BiAction<EndPoint, Request>() {
-            @Override
-            void execute(EndPoint endPoint, Request request) {
-                Thread.sleep(TimeUnit.SECONDS.toMillis(60))
-            }
+        sslPreHandler {
+            Thread.sleep(TimeUnit.SECONDS.toMillis(60))
         }
     }
 
@@ -679,7 +753,7 @@ class HttpServer extends ServerWithExpectations implements HttpServerFixture {
         void handle(HttpServletRequest request, HttpServletResponse response)
     }
 
-    static abstract class ActionSupport implements Action {
+    protected static abstract class ActionSupport implements Action {
         final String displayName
         final HttpResourceInteraction interaction = new DefaultResourceInteraction()
 

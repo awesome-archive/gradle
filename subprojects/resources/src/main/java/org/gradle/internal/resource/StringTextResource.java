@@ -16,6 +16,13 @@
 
 package org.gradle.internal.resource;
 
+import org.gradle.api.resources.ResourceException;
+import org.gradle.internal.Describables;
+import org.gradle.internal.DisplayName;
+import org.gradle.internal.hash.HashCode;
+import org.gradle.internal.hash.Hashing;
+import org.gradle.internal.hash.PrimitiveHasher;
+
 import javax.annotation.Nullable;
 import java.io.File;
 import java.io.Reader;
@@ -24,8 +31,11 @@ import java.net.URI;
 import java.nio.charset.Charset;
 
 public class StringTextResource implements TextResource {
+    private static final HashCode SIGNATURE = Hashing.signature(StringTextResource.class);
+
     private final String displayName;
     private final CharSequence contents;
+    private HashCode contentHash;
 
     public StringTextResource(String displayName, CharSequence contents) {
         this.displayName = displayName;
@@ -35,6 +45,16 @@ public class StringTextResource implements TextResource {
     @Override
     public String getDisplayName() {
         return displayName;
+    }
+
+    @Override
+    public DisplayName getLongDisplayName() {
+        return Describables.of(displayName);
+    }
+
+    @Override
+    public DisplayName getShortDisplayName() {
+        return getLongDisplayName();
     }
 
     @Override
@@ -55,6 +75,17 @@ public class StringTextResource implements TextResource {
     @Override
     public String getText() {
         return contents.toString();
+    }
+
+    @Override
+    public HashCode getContentHash() throws ResourceException {
+        if (contentHash == null) {
+            PrimitiveHasher hasher = Hashing.newPrimitiveHasher();
+            hasher.putHash(SIGNATURE);
+            hasher.putString(getText());
+            contentHash = hasher.hash();
+        }
+        return contentHash;
     }
 
     @Override

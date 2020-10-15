@@ -17,6 +17,7 @@
 package org.gradle.internal.event;
 
 import org.gradle.api.Action;
+import org.gradle.internal.Cast;
 import org.gradle.internal.dispatch.Dispatch;
 import org.gradle.internal.dispatch.MethodInvocation;
 import org.gradle.internal.dispatch.ReflectionDispatch;
@@ -56,7 +57,7 @@ public abstract class BroadcastDispatch<T> extends AbstractBroadcastDispatch<T> 
 
     public BroadcastDispatch<T> add(String methodName, Action<?> action) {
         assertIsMethod(methodName);
-        return add(action, new ActionInvocationHandler(methodName, action));
+        return add(action, new ActionInvocationHandler(methodName, Cast.<Action<Object>>uncheckedNonnullCast(action)));
     }
 
     abstract BroadcastDispatch<T> add(Object handler, Dispatch<MethodInvocation> dispatch);
@@ -68,7 +69,7 @@ public abstract class BroadcastDispatch<T> extends AbstractBroadcastDispatch<T> 
             }
         }
         throw new IllegalArgumentException(String.format("Method %s() not found for listener type %s.", methodName,
-                type.getSimpleName()));
+            type.getSimpleName()));
     }
 
     public abstract BroadcastDispatch<T> remove(Object listener);
@@ -77,15 +78,18 @@ public abstract class BroadcastDispatch<T> extends AbstractBroadcastDispatch<T> 
 
     public abstract BroadcastDispatch<T> removeAll(Collection<?> listeners);
 
+    public abstract void visitListeners(Action<T> visitor);
+
     private static class ActionInvocationHandler implements Dispatch<MethodInvocation> {
         private final String methodName;
-        private final Action action;
+        private final Action<Object> action;
 
-        ActionInvocationHandler(String methodName, Action action) {
+        ActionInvocationHandler(String methodName, Action<Object> action) {
             this.methodName = methodName;
             this.action = action;
         }
 
+        @Override
         public void dispatch(MethodInvocation message) {
             if (message.getMethod().getName().equals(methodName)) {
                 action.execute(message.getArguments()[0]);
@@ -121,6 +125,10 @@ public abstract class BroadcastDispatch<T> extends AbstractBroadcastDispatch<T> 
         @Override
         BroadcastDispatch<T> add(Object handler, Dispatch<MethodInvocation> dispatch) {
             return new SingletonDispatch<T>(type, handler, dispatch);
+        }
+
+        @Override
+        public void visitListeners(Action<T> visitor) {
         }
 
         @Override
@@ -163,7 +171,7 @@ public abstract class BroadcastDispatch<T> extends AbstractBroadcastDispatch<T> 
 
         @Override
         public boolean equals(Object obj) {
-            SingletonDispatch<T> other = (SingletonDispatch<T>) obj;
+            SingletonDispatch<T> other = Cast.uncheckedNonnullCast(obj);
             return handler == other.handler || handler.equals(other.handler);
         }
 
@@ -223,6 +231,13 @@ public abstract class BroadcastDispatch<T> extends AbstractBroadcastDispatch<T> 
         @Override
         public boolean isEmpty() {
             return false;
+        }
+
+        @Override
+        public void visitListeners(Action<T> visitor) {
+            if (getType().isInstance(handler)) {
+                visitor.execute(getType().cast(handler));
+            }
         }
 
         @Override
@@ -312,6 +327,13 @@ public abstract class BroadcastDispatch<T> extends AbstractBroadcastDispatch<T> 
                 return this;
             }
             return new CompositeDispatch<T>(type, result);
+        }
+
+        @Override
+        public void visitListeners(Action<T> visitor) {
+            for (SingletonDispatch<T> dispatcher : dispatchers) {
+                dispatcher.visitListeners(visitor);
+            }
         }
 
         @Override

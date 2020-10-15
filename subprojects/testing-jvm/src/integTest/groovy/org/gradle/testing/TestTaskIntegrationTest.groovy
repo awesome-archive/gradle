@@ -16,8 +16,10 @@
 
 package org.gradle.testing
 
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.integtests.fixtures.TargetCoverage
 import org.gradle.test.fixtures.file.TestFile
+import org.gradle.testing.fixture.JUnitCoverage
 import org.gradle.testing.fixture.JUnitMultiVersionIntegrationSpec
 import org.gradle.util.Requires
 import org.gradle.util.TestPrecondition
@@ -31,6 +33,7 @@ import static org.gradle.testing.fixture.JUnitCoverage.JUNIT_VINTAGE_JUPITER
 class TestTaskIntegrationTest extends JUnitMultiVersionIntegrationSpec {
 
     @Issue("GRADLE-2702")
+    @ToBeFixedForConfigurationCache(because = "early dependency resolution")
     def "should not resolve configuration results when there are no tests"() {
         buildFile << """
             apply plugin: 'java'
@@ -112,7 +115,7 @@ class TestTaskIntegrationTest extends JUnitMultiVersionIntegrationSpec {
         buildFile << """
             apply plugin: 'java'
             ${jcenterRepository()}
-            dependencies { testCompile 'junit:junit:4.12' }
+            dependencies { testImplementation 'junit:junit:4.13' }
             test {
                 maxParallelForks = $maxParallelForks
             }
@@ -139,9 +142,9 @@ class TestTaskIntegrationTest extends JUnitMultiVersionIntegrationSpec {
                 apply plugin: 'java'
                 ${jcenterRepository()}
             }
-            dependencies { 
-                testCompile 'junit:junit:4.12'
-                testCompile project(":dependency") 
+            dependencies {
+                testImplementation 'junit:junit:4.13'
+                testImplementation project(":dependency")
             }
         """
         settingsFile << """
@@ -180,8 +183,8 @@ class TestTaskIntegrationTest extends JUnitMultiVersionIntegrationSpec {
             apply plugin: 'java'
             ${jcenterRepository()}
 
-            dependencies { 
-                testCompile 'junit:junit:4.12' 
+            dependencies {
+                testImplementation 'junit:junit:4.13'
             }
         """
         file("src/test/java/MyTest.java") << """
@@ -211,31 +214,6 @@ class TestTaskIntegrationTest extends JUnitMultiVersionIntegrationSpec {
         fails 'test'
     }
 
-    @Requires(TestPrecondition.ONLINE)
-    def "emits deprecation warning when using testClassesDir"() {
-        buildFile << """
-            apply plugin: 'java'
-            ${jcenterRepository()}
-
-            dependencies { 
-                testCompile 'junit:junit:4.12' 
-            }
-            compileTestJava {
-                destinationDir = file("build/non-standard")
-            }
-            test {
-                testClassesDir = compileTestJava.destinationDir
-                classpath = sourceSets.test.runtimeClasspath + files(compileTestJava.destinationDir)
-            }
-        """
-        file('src/test/java/MyTest.java') << standaloneTestClass()
-        when:
-        executer.expectDeprecationWarning()
-        succeeds("test")
-        then:
-        result.assertOutputContains("The setTestClassesDir(File) method has been deprecated and is scheduled to be removed in Gradle 5.0. Please use the setTestClassesDirs(FileCollection) method instead.")
-    }
-
     @Issue("https://github.com/gradle/gradle/issues/3627")
     def "can reference properties from TestTaskReports when using @CompileStatic"() {
         buildFile << """
@@ -257,7 +235,54 @@ class TestTaskIntegrationTest extends JUnitMultiVersionIntegrationSpec {
         """
 
         expect:
-        succeeds("tasks")
+        succeeds("help")
+    }
+
+    @Unroll
+    def "reports failure of TestExecuter regardless of filters"() {
+        given:
+        file('src/test/java/MyTest.java') << standaloneTestClass()
+        buildFile << """
+            import org.gradle.api.internal.tasks.testing.*
+
+            apply plugin: 'java'
+
+            ${jcenterRepository()}
+            dependencies {
+                testImplementation 'junit:junit:${JUnitCoverage.NEWEST}'
+            }
+
+            test {
+                doFirst {
+                    testExecuter = new TestExecuter<JvmTestExecutionSpec>() {
+                        @Override
+                        void execute(JvmTestExecutionSpec testExecutionSpec, TestResultProcessor resultProcessor) {
+                            DefaultTestSuiteDescriptor suite = new DefaultTestSuiteDescriptor(testExecutionSpec.path, testExecutionSpec.path)
+                            resultProcessor.started(suite, new TestStartEvent(System.currentTimeMillis()))
+                            try {
+                                throw new RuntimeException("boom!")
+                            } finally {
+                                resultProcessor.completed(suite.getId(), new TestCompleteEvent(System.currentTimeMillis()))
+                            }
+                        }
+
+                        @Override
+                        void stopNow() {
+                            // do nothing
+                        }
+                    }
+                }
+            }
+        """
+
+        when:
+        fails("test", *extraArgs)
+
+        then:
+        result.assertHasCause('boom!')
+
+        where:
+        extraArgs << [[], ["--tests", "MyTest"]]
     }
 
     private static String standaloneTestClass() {
@@ -285,7 +310,7 @@ class TestTaskIntegrationTest extends JUnitMultiVersionIntegrationSpec {
             ${jcenterRepository()}
 
             dependencies {
-                testCompile 'junit:junit:4.12'
+                testImplementation 'junit:junit:4.13'
             }
 
             sourceCompatibility = 1.9
@@ -293,7 +318,7 @@ class TestTaskIntegrationTest extends JUnitMultiVersionIntegrationSpec {
         """
     }
 
-    private int classFormat(TestFile path) {
+    private static int classFormat(TestFile path) {
         path.bytes[7] & 0xFF
     }
 }

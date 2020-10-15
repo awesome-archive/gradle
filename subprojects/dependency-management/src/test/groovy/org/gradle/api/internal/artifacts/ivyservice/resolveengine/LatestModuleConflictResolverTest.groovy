@@ -16,13 +16,15 @@
 
 package org.gradle.api.internal.artifacts.ivyservice.resolveengine
 
+import org.gradle.api.internal.FeaturePreviews
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.strategy.DefaultVersionComparator
+import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.strategy.VersionParser
 import spock.lang.Unroll
 
 class LatestModuleConflictResolverTest extends AbstractConflictResolverTest {
 
     def setup() {
-        resolver = new LatestModuleConflictResolver(new DefaultVersionComparator())
+        resolver = new LatestModuleConflictResolver(new DefaultVersionComparator(new FeaturePreviews()), new VersionParser(), true)
     }
 
     @Unroll
@@ -43,51 +45,6 @@ class LatestModuleConflictResolverTest extends AbstractConflictResolverTest {
         ['1.1', '1.2', '1.0']        | '1.2'
         ['1.0', '1.0-beta-1']        | '1.0'
         ['1.0-beta-1', '1.0-beta-2'] | '1.0-beta-2'
-    }
-
-    def "rejections can fail conflict resolution"() {
-        given:
-        prefer('1.2')
-        strictly('1.1')
-
-        when:
-        resolveConflicts()
-
-        then:
-        resolutionFailedWith """Cannot find a version of 'org:foo' that satisfies the version constraints: 
-   Dependency path ':root:' --> 'org:foo' prefers '1.2'
-   Dependency path ':root:' --> 'org:foo' prefers '1.1', rejects ']1.1,)'
-"""
-    }
-
-    def "reasonable error message when path to dependency isn't simple"() {
-        given:
-        prefer('1.2', module('org', 'bar', '1.0', module('org', 'baz', '1.0')))
-        strictly('1.1', module('com', 'other', '15'))
-
-        when:
-        resolveConflicts()
-
-        then:
-        resolutionFailedWith """Cannot find a version of 'org:foo' that satisfies the version constraints: 
-   Dependency path ':root:' --> 'org:baz:1.0' --> 'org:bar:1.0' --> 'org:foo' prefers '1.2'
-   Dependency path ':root:' --> 'com:other:15' --> 'org:foo' prefers '1.1', rejects ']1.1,)'
-"""
-    }
-
-    def "recognizes a rejectAll clause"() {
-        given:
-        prefer('1.2', module('org', 'bar', '1.0', module('org', 'baz', '1.0')))
-        participants << module('org', 'foo', '', module('com', 'other', '15')).rejectAll()
-
-        when:
-        resolveConflicts()
-
-        then:
-        resolutionFailedWith """Module 'org:foo' has been rejected:
-   Dependency path ':root:' --> 'org:baz:1.0' --> 'org:bar:1.0' --> 'org:foo' prefers '1.2'
-   Dependency path ':root:' --> 'com:other:15' --> 'org:foo' rejects all versions
-"""
     }
 
     def "can upgrade non strict version"() {
@@ -113,6 +70,19 @@ class LatestModuleConflictResolverTest extends AbstractConflictResolverTest {
 
         then:
         selected '1.0-beta-1'
+    }
+
+    def "does not select a release version over unqualified"() {
+        resolver = new LatestModuleConflictResolver(new DefaultVersionComparator(new FeaturePreviews()), new VersionParser(), false)
+        given:
+        prefer('1.0-beta-1').release()
+        prefer('1.0-beta-2')
+
+        when:
+        resolveConflicts()
+
+        then:
+        selected '1.0-beta-2'
     }
 
 }

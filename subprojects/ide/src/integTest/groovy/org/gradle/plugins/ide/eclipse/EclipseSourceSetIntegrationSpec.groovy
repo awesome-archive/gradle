@@ -16,6 +16,7 @@
 
 package org.gradle.plugins.ide.eclipse
 
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.integtests.fixtures.TestResources
 import org.junit.Rule
 
@@ -24,6 +25,7 @@ class EclipseSourceSetIntegrationSpec extends AbstractEclipseIntegrationSpec {
     @Rule
     public final TestResources testResources = new TestResources(testDirectoryProvider)
 
+    @ToBeFixedForConfigurationCache
     def "Source set defined on dependencies"() {
         setup:
         buildFile << """
@@ -33,9 +35,9 @@ class EclipseSourceSetIntegrationSpec extends AbstractEclipseIntegrationSpec {
             ${jcenterRepository()}
 
             dependencies {
-                compile 'com.google.guava:guava:18.0'
+                implementation 'com.google.guava:guava:18.0'
                 compileOnly 'commons-logging:commons-logging:1.2'
-                testCompile 'junit:junit:4.12'
+                testImplementation 'junit:junit:4.13'
             }
         """
 
@@ -46,9 +48,10 @@ class EclipseSourceSetIntegrationSpec extends AbstractEclipseIntegrationSpec {
         EclipseClasspathFixture classpath = classpath('.')
         classpath.lib('guava-18.0.jar').assertHasAttribute('gradle_used_by_scope', 'main,test')
         classpath.lib('commons-logging-1.2.jar').assertHasAttribute('gradle_used_by_scope', '')
-        classpath.lib('junit-4.12.jar').assertHasAttribute('gradle_used_by_scope', 'test')
+        classpath.lib('junit-4.13.jar').assertHasAttribute('gradle_used_by_scope', 'test')
     }
 
+    @ToBeFixedForConfigurationCache
     def "Source sets defined on source folders"() {
         setup:
         buildFile << """
@@ -67,6 +70,7 @@ class EclipseSourceSetIntegrationSpec extends AbstractEclipseIntegrationSpec {
         classpath.sourceDir('src/test/java').assertHasAttribute('gradle_used_by_scope', 'test')
     }
 
+    @ToBeFixedForConfigurationCache
     def "Source set information is customizable in whenMerged block"() {
         setup:
         buildFile << """
@@ -76,8 +80,8 @@ class EclipseSourceSetIntegrationSpec extends AbstractEclipseIntegrationSpec {
             ${jcenterRepository()}
 
             dependencies {
-                compile 'com.google.guava:guava:18.0'
-                testCompile 'junit:junit:4.12'
+                implementation 'com.google.guava:guava:18.0'
+                testImplementation 'junit:junit:4.13'
             }
 
             eclipse.classpath.file.whenMerged {
@@ -95,16 +99,17 @@ class EclipseSourceSetIntegrationSpec extends AbstractEclipseIntegrationSpec {
         then:
         EclipseClasspathFixture classpath = classpath('.')
         classpath.sourceDir('src/test/java').assertHasAttribute('gradle_used_by_scope', 'test,integTest')
-        classpath.lib('junit-4.12.jar').assertHasAttribute('gradle_used_by_scope', 'test')
+        classpath.lib('junit-4.13.jar').assertHasAttribute('gradle_used_by_scope', 'test')
         classpath.lib('guava-18.0.jar').assertHasAttribute('gradle_used_by_scope', 'main,test,integTest')
     }
 
+    @ToBeFixedForConfigurationCache
     def "Source dirs have default output locations"() {
         setup:
         buildFile << """
             apply plugin: 'java'
             apply plugin: 'eclipse'
-            
+
             sourceSets {
                 integTest {
                     java {
@@ -131,6 +136,7 @@ class EclipseSourceSetIntegrationSpec extends AbstractEclipseIntegrationSpec {
         classpath.sourceDir('src/int_test/java').assertOutputLocation('bin/integTest')
     }
 
+    @ToBeFixedForConfigurationCache
     def "Source folder output location can be customized in whenMerged block"() {
         setup:
         buildFile << """
@@ -154,19 +160,20 @@ class EclipseSourceSetIntegrationSpec extends AbstractEclipseIntegrationSpec {
         classpath.sourceDir('src/main/resources').assertOutputLocation('out/res')
     }
 
+    @ToBeFixedForConfigurationCache
     def "Overlapping default and source folder output paths are deduplicated"() {
         setup:
         buildFile << """
             apply plugin: 'java'
             apply plugin: 'eclipse'
-            
+
             sourceSets {
                 "default" {
                     java {
                         srcDirs 'src/default/java'
                     }
                 }
-                
+
                 default_ {
                     java {
                         srcDirs 'src/default_/java'
@@ -186,5 +193,31 @@ class EclipseSourceSetIntegrationSpec extends AbstractEclipseIntegrationSpec {
         classpath.output == 'bin/default'
         classpath.sourceDir('src/default/java').assertOutputLocation('bin/default_')
         classpath.sourceDir('src/default_/java').assertOutputLocation('bin/default__')
+    }
+
+    @ToBeFixedForConfigurationCache
+    def "custom source set defined on dependencies"() {
+        setup:
+        buildFile << """
+            apply plugin: 'java'
+            apply plugin: 'eclipse'
+
+            ${jcenterRepository()}
+
+            sourceSets {
+                integTest
+            }
+
+            dependencies {
+                integTestImplementation 'com.google.guava:guava:18.0'
+            }
+        """
+
+        when:
+        run 'eclipse'
+
+        then:
+        EclipseClasspathFixture classpath = classpath('.')
+        classpath.lib('guava-18.0.jar').assertHasAttribute('gradle_used_by_scope', 'integTest')
     }
 }

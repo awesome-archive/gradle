@@ -16,34 +16,34 @@
 
 package org.gradle.api.internal.changedetection.state
 
-import org.gradle.api.file.FileTreeElement
 import org.gradle.api.internal.cache.StringInterner
 import org.gradle.api.internal.changedetection.state.CachingFileHasher.FileInfo
 import org.gradle.api.internal.file.TestFiles
 import org.gradle.cache.PersistentIndexedCache
+import org.gradle.internal.file.FileMetadata.AccessType
+import org.gradle.internal.file.impl.DefaultFileMetadata
 import org.gradle.internal.hash.FileHasher
-import org.gradle.internal.hash.Hashing
-import org.gradle.internal.nativeintegration.filesystem.DefaultFileMetadata
+import org.gradle.internal.hash.HashCode
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
 import org.junit.Rule
 import spock.lang.Specification
 
 class CachingFileHasherTest extends Specification {
     @Rule
-    TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider()
+    TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider(getClass())
     def target = Mock(FileHasher)
     def cache = Mock(PersistentIndexedCache)
-    def cacheAccess = Mock(TaskHistoryStore)
+    def cacheAccess = Mock(CrossBuildFileHashCache)
     def timeStampInspector = Mock(FileTimeStampInspector)
-    def hash = Hashing.md5().hashString("hello")
-    def oldHash = Hashing.md5().hashString("hi")
+    def hash = HashCode.fromInt(0x0123)
+    def oldHash = HashCode.fromInt(0x0321)
     def file = tmpDir.createFile("testfile")
     def fileSystem = TestFiles.fileSystem()
     CachingFileHasher hasher
 
     def setup() {
         file.write("some-content")
-        1 * cacheAccess.createCache("fileHashes", _, _, _, _) >> cache
+        1 * cacheAccess.createCache({ it.cacheName == "fileHashes"  }, _, _) >> cache
         hasher = new CachingFileHasher(target, cacheAccess, new StringInterner(), timeStampInspector, "fileHashes", fileSystem)
     }
 
@@ -145,39 +145,13 @@ class CachingFileHasherTest extends Specification {
         0 * _._
     }
 
-    def hashesFileDetails() {
+    def hashesGivenFileLengthAndLastModified() {
         long lastModified = 123l
         long length = 321l
-        def fileDetails = Mock(FileTreeElement)
+        def fileMetadata = DefaultFileMetadata.file(lastModified, length, AccessType.DIRECT)
 
         when:
-        def result = hasher.hash(fileDetails)
-
-        then:
-        result == hash
-
-        and:
-        _ * fileDetails.file >> file
-        _ * fileDetails.lastModified >> lastModified
-        _ * fileDetails.size >> length
-        1 * timeStampInspector.timestampCanBeUsedToDetectFileChange(file.absolutePath, lastModified) >> true
-        1 * cache.get(file.absolutePath) >> null
-        1 * target.hash(file) >> hash
-        1 * cache.put(file.absolutePath, _) >> { String key, FileInfo fileInfo ->
-            assert fileInfo.hash == hash
-            assert fileInfo.length == length
-            assert fileInfo.timestamp == lastModified
-        }
-        0 * _._
-    }
-
-    def hashesGivenFileMetadataSnapshot() {
-        long lastModified = 123l
-        long length = 321l
-        def fileDetails = DefaultFileMetadata.file(lastModified, length)
-
-        when:
-        def result = hasher.hash(file, fileDetails)
+        def result = hasher.hash(file, fileMetadata.length, fileMetadata.lastModified)
 
         then:
         result == hash

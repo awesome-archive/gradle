@@ -17,37 +17,52 @@ package org.gradle.api.internal.file.copy;
 
 
 import org.gradle.api.Action;
-import org.gradle.api.file.*;
+import org.gradle.api.file.DuplicatesStrategy;
+import org.gradle.api.file.FileCopyDetails;
+import org.gradle.api.file.FileTree;
+import org.gradle.api.file.FileTreeElement;
+import org.gradle.api.file.RelativePath;
 import org.gradle.api.specs.Spec;
 
+import javax.annotation.Nullable;
 import java.util.Collection;
 import java.util.List;
 
 public interface CopySpecResolver {
 
     boolean isCaseSensitive();
+    @Nullable
     Integer getFileMode();
+    @Nullable
     Integer getDirMode();
     boolean getIncludeEmptyDirs();
     String getFilteringCharset();
 
     RelativePath getDestPath();
 
+    /**
+     * Returns the source files of this copy spec.
+     */
     FileTree getSource();
 
+    /**
+     * Returns the source files of this copy spec and all of its children.
+     */
     FileTree getAllSource();
 
     Collection<? extends Action<? super FileCopyDetails>> getAllCopyActions();
 
-    public List<String> getAllIncludes();
+    List<String> getAllIncludes();
 
-    public List<String> getAllExcludes();
+    List<String> getAllExcludes();
 
-    public List<Spec<FileTreeElement>> getAllIncludeSpecs();
+    List<Spec<FileTreeElement>> getAllIncludeSpecs();
 
-    public List<Spec<FileTreeElement>> getAllExcludeSpecs();
+    List<Spec<FileTreeElement>> getAllExcludeSpecs();
 
     DuplicatesStrategy getDuplicatesStrategy();
+
+    boolean isDefaultDuplicateStrategy();
 
     void walk(Action<? super CopySpecResolver> action);
 

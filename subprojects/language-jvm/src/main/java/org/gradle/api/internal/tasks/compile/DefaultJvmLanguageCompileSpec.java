@@ -17,8 +17,8 @@
 package org.gradle.api.internal.tasks.compile;
 
 import com.google.common.collect.ImmutableList;
-import org.gradle.api.file.FileCollection;
 
+import javax.annotation.Nullable;
 import java.io.File;
 import java.io.Serializable;
 import java.util.List;
@@ -28,9 +28,11 @@ public class DefaultJvmLanguageCompileSpec implements JvmLanguageCompileSpec, Se
     private File tempDir;
     private List<File> classpath;
     private File destinationDir;
-    private FileCollection source;
+    private Iterable<File> sourceFiles;
+    private Integer release;
     private String sourceCompatibility;
     private String targetCompatibility;
+    private List<File> sourceRoots;
 
     @Override
     public File getWorkingDir() {
@@ -46,6 +48,7 @@ public class DefaultJvmLanguageCompileSpec implements JvmLanguageCompileSpec, Se
     public File getDestinationDir() {
         return destinationDir;
     }
+
     @Override
     public void setDestinationDir(File destinationDir) {
         this.destinationDir = destinationDir;
@@ -62,17 +65,20 @@ public class DefaultJvmLanguageCompileSpec implements JvmLanguageCompileSpec, Se
     }
 
     @Override
-    public FileCollection getSource() {
-        return source;
+    public Iterable<File> getSourceFiles() {
+        return sourceFiles;
     }
 
     @Override
-    public void setSource(FileCollection source) {
-        this.source = source;
+    public void setSourceFiles(Iterable<File> sourceFiles) {
+        this.sourceFiles = sourceFiles;
     }
 
     @Override
     public List<File> getCompileClasspath() {
+        if (classpath == null) {
+            classpath = ImmutableList.of();
+        }
         return classpath;
     }
 
@@ -81,35 +87,46 @@ public class DefaultJvmLanguageCompileSpec implements JvmLanguageCompileSpec, Se
         this.classpath = classpath;
     }
 
-    @Deprecated
     @Override
-    public Iterable<File> getClasspath() {
-        return classpath;
-    }
-
-    @Deprecated
-    @Override
-    public void setClasspath(Iterable<File> classpath) {
-        this.classpath = ImmutableList.copyOf(classpath);
+    @Nullable
+    public Integer getRelease() {
+        return release;
     }
 
     @Override
+    public void setRelease(@Nullable Integer release) {
+        this.release = release;
+    }
+
+    @Override
+    @Nullable
     public String getSourceCompatibility() {
         return sourceCompatibility;
     }
 
     @Override
-    public void setSourceCompatibility(String sourceCompatibility) {
+    public void setSourceCompatibility(@Nullable String sourceCompatibility) {
         this.sourceCompatibility = sourceCompatibility;
     }
 
     @Override
+    @Nullable
     public String getTargetCompatibility() {
         return targetCompatibility;
     }
 
     @Override
-    public void setTargetCompatibility(String targetCompatibility) {
+    public void setTargetCompatibility(@Nullable String targetCompatibility) {
         this.targetCompatibility = targetCompatibility;
+    }
+
+    @Override
+    public List<File> getSourceRoots() {
+        return sourceRoots;
+    }
+
+    @Override
+    public void setSourcesRoots(List<File> sourceRoots) {
+        this.sourceRoots = sourceRoots;
     }
 }

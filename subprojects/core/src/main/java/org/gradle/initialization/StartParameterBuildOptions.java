@@ -16,14 +16,19 @@
 
 package org.gradle.initialization;
 
+import com.google.common.base.Splitter;
 import org.gradle.api.Transformer;
+import org.gradle.api.artifacts.verification.DependencyVerificationMode;
 import org.gradle.api.internal.StartParameterInternal;
 import org.gradle.api.internal.file.BasicFileResolver;
 import org.gradle.internal.buildoption.BooleanBuildOption;
 import org.gradle.internal.buildoption.BooleanCommandLineOptionConfiguration;
 import org.gradle.internal.buildoption.BuildOption;
+import org.gradle.internal.buildoption.BuildOptionSet;
 import org.gradle.internal.buildoption.CommandLineOptionConfiguration;
 import org.gradle.internal.buildoption.EnabledOnlyBooleanBuildOption;
+import org.gradle.internal.buildoption.EnumBuildOption;
+import org.gradle.internal.buildoption.IntegerBuildOption;
 import org.gradle.internal.buildoption.ListBuildOption;
 import org.gradle.internal.buildoption.Origin;
 import org.gradle.internal.buildoption.StringBuildOption;
@@ -32,16 +37,16 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.stream.Collectors;
 
-public class StartParameterBuildOptions {
+public class StartParameterBuildOptions extends BuildOptionSet<StartParameterInternal> {
 
     private static List<BuildOption<StartParameterInternal>> options;
 
     static {
-        List<BuildOption<StartParameterInternal>> options = new ArrayList<BuildOption<StartParameterInternal>>();
+        List<BuildOption<StartParameterInternal>> options = new ArrayList<>();
         options.add(new ProjectCacheDirOption());
         options.add(new RerunTasksOption());
-        options.add(new RecompileScriptsOption());
         options.add(new ProfileOption());
         options.add(new ContinueOption());
         options.add(new OfflineOption());
@@ -57,15 +62,28 @@ public class StartParameterBuildOptions {
         options.add(new ConfigureOnDemandOption());
         options.add(new BuildCacheOption());
         options.add(new BuildCacheDebugLoggingOption());
+        options.add(new WatchFileSystemOption());
+        options.add(new WatchFileSystemDebugLoggingOption());
+        options.add(new DeprecatedWatchFileSystemOption());
+        options.add(new VfsVerboseLoggingOption());
         options.add(new BuildScanOption());
+        options.add(new DependencyLockingWriteOption());
+        options.add(new DependencyVerificationWriteOption());
+        options.add(new DependencyVerificationModeOption());
+        options.add(new DependencyLockingUpdateOption());
+        options.add(new RefreshKeysOption());
+        options.add(new ExportKeysOption());
+        options.add(new ConfigurationCacheProblemsOption());
+        options.add(new ConfigurationCacheOption());
+        options.add(new ConfigurationCacheMaxProblemsOption());
+        options.add(new ConfigurationCacheRecreateOption());
+        options.add(new ConfigurationCacheQuietOption());
         StartParameterBuildOptions.options = Collections.unmodifiableList(options);
     }
 
-    public static List<BuildOption<StartParameterInternal>> get() {
+    @Override
+    public List<? extends BuildOption<? super StartParameterInternal>> getAllOptions() {
         return options;
-    }
-
-    private StartParameterBuildOptions() {
     }
 
     public static class ProjectCacheDirOption extends StringBuildOption<StartParameterInternal> {
@@ -88,20 +106,6 @@ public class StartParameterBuildOptions {
         @Override
         public void applyTo(StartParameterInternal settings, Origin origin) {
             settings.setRerunTasks(true);
-        }
-    }
-
-    public static class RecompileScriptsOption extends EnabledOnlyBooleanBuildOption<StartParameterInternal> {
-        private static final String LONG_OPTION = "recompile-scripts";
-
-        public RecompileScriptsOption() {
-            super(null, CommandLineOptionConfiguration.create(LONG_OPTION, "Force build script recompiling.").deprecated());
-        }
-
-        @Override
-        public void applyTo(StartParameterInternal settings, Origin origin) {
-            settings.setRecompileScripts(true);
-            settings.addDeprecation("--" + LONG_OPTION);
         }
     }
 
@@ -164,7 +168,7 @@ public class StartParameterBuildOptions {
 
     public static class ContinuousOption extends EnabledOnlyBooleanBuildOption<StartParameterInternal> {
         public ContinuousOption() {
-            super(null, CommandLineOptionConfiguration.create("continuous", "t", "Enables continuous build. Gradle does not exit and will re-execute tasks when task file inputs change.").incubating());
+            super(null, CommandLineOptionConfiguration.create("continuous", "t", "Enables continuous build. Gradle does not exit and will re-execute tasks when task file inputs change."));
         }
 
         @Override
@@ -178,13 +182,12 @@ public class StartParameterBuildOptions {
         private static final String SHORT_OPTION = "a";
 
         public NoProjectDependenciesRebuildOption() {
-            super(null, CommandLineOptionConfiguration.create(LONG_OPTION, SHORT_OPTION, "Do not rebuild project dependencies.").deprecated());
+            super(null, CommandLineOptionConfiguration.create(LONG_OPTION, SHORT_OPTION, "Do not rebuild project dependencies."));
         }
 
         @Override
         public void applyTo(StartParameterInternal settings, Origin origin) {
             settings.setBuildProjectDependencies(false);
-            settings.addDeprecation(String.format("--%s/-%s", LONG_OPTION, SHORT_OPTION));
         }
     }
 
@@ -240,7 +243,7 @@ public class StartParameterBuildOptions {
 
     public static class IncludeBuildOption extends ListBuildOption<StartParameterInternal> {
         public IncludeBuildOption() {
-            super(null, CommandLineOptionConfiguration.create("include-build", "Include the specified build in the composite.").incubating());
+            super(null, CommandLineOptionConfiguration.create("include-build", "Include the specified build in the composite."));
         }
 
         @Override
@@ -292,11 +295,70 @@ public class StartParameterBuildOptions {
         }
     }
 
+    public static class WatchFileSystemOption extends BooleanBuildOption<StartParameterInternal> {
+        public static final String LONG_OPTION = "watch-fs";
+        public static final String GRADLE_PROPERTY = "org.gradle.vfs.watch";
+
+        public WatchFileSystemOption() {
+            super(GRADLE_PROPERTY, BooleanCommandLineOptionConfiguration.create(
+                LONG_OPTION,
+                "Enables watching the file system for changes, allowing data about the file system to be re-used for the next build.",
+                "Disables watching the file system."
+            ).incubating());
+        }
+
+        @Override
+        public void applyTo(boolean value, StartParameterInternal startParameter, Origin origin) {
+            startParameter.setWatchFileSystem(value);
+        }
+    }
+
+    @Deprecated
+    public static class DeprecatedWatchFileSystemOption extends BooleanBuildOption<StartParameterInternal> {
+        public static final String GRADLE_PROPERTY = "org.gradle.unsafe.watch-fs";
+
+        public DeprecatedWatchFileSystemOption() {
+            super(GRADLE_PROPERTY);
+        }
+
+        @Override
+        public void applyTo(boolean value, StartParameterInternal startParameter, Origin origin) {
+            startParameter.setWatchFileSystem(value);
+            startParameter.setWatchFileSystemUsingDeprecatedOption(true);
+        }
+    }
+
+    public static class WatchFileSystemDebugLoggingOption extends BooleanBuildOption<StartParameterInternal> {
+        public static final String GRADLE_PROPERTY = "org.gradle.vfs.watch.debug";
+
+        public WatchFileSystemDebugLoggingOption() {
+            super(GRADLE_PROPERTY);
+        }
+
+        @Override
+        public void applyTo(boolean value, StartParameterInternal startParameter, Origin origin) {
+            startParameter.setWatchFileSystemDebugLogging(value);
+        }
+    }
+
+    public static class VfsVerboseLoggingOption extends BooleanBuildOption<StartParameterInternal> {
+        public static final String GRADLE_PROPERTY = "org.gradle.vfs.verbose";
+
+        public VfsVerboseLoggingOption() {
+            super(GRADLE_PROPERTY);
+        }
+
+        @Override
+        public void applyTo(boolean value, StartParameterInternal startParameter, Origin origin) {
+            startParameter.setVfsVerboseLogging(value);
+        }
+    }
+
     public static class BuildScanOption extends BooleanBuildOption<StartParameterInternal> {
         public static final String LONG_OPTION = "scan";
 
         public BuildScanOption() {
-            super(null, BooleanCommandLineOptionConfiguration.create(LONG_OPTION, "Creates a build scan. Gradle will emit a warning if the build scan plugin has not been applied. (https://gradle.com/build-scans)", "Disables the creation of a build scan. For more information about build scans, please visit https://gradle.com/build-scans.").incubating());
+            super(null, BooleanCommandLineOptionConfiguration.create(LONG_OPTION, "Creates a build scan. Gradle will emit a warning if the build scan plugin has not been applied. (https://gradle.com/build-scans)", "Disables the creation of a build scan. For more information about build scans, please visit https://gradle.com/build-scans."));
         }
 
         @Override
@@ -306,6 +368,197 @@ public class StartParameterBuildOptions {
             } else {
                 settings.setNoBuildScan(true);
             }
+        }
+    }
+
+    public static class DependencyLockingWriteOption extends EnabledOnlyBooleanBuildOption<StartParameterInternal> {
+        public static final String LONG_OPTION = "write-locks";
+
+        public DependencyLockingWriteOption() {
+            super(null, CommandLineOptionConfiguration.create(LONG_OPTION, "Persists dependency resolution for locked configurations, ignoring existing locking information if it exists").incubating());
+        }
+
+        @Override
+        public void applyTo(StartParameterInternal settings, Origin origin) {
+            settings.setWriteDependencyLocks(true);
+        }
+    }
+
+    public static class DependencyVerificationWriteOption extends StringBuildOption<StartParameterInternal> {
+        public static final String SHORT_OPTION = "M";
+        public static final String LONG_OPTION = "write-verification-metadata";
+
+        DependencyVerificationWriteOption() {
+            super(null, CommandLineOptionConfiguration.create(LONG_OPTION, SHORT_OPTION,
+                "Generates checksums for dependencies used in the project (comma-separated list)").incubating());
+        }
+
+        @Override
+        public void applyTo(String value, StartParameterInternal settings, Origin origin) {
+            List<String> checksums = Splitter.on(",")
+                .omitEmptyStrings()
+                .trimResults()
+                .splitToList(value)
+                .stream()
+                .map(String::toLowerCase)
+                .collect(Collectors.toList());
+            settings.setWriteDependencyVerifications(checksums);
+        }
+    }
+
+    public static class DependencyVerificationModeOption extends EnumBuildOption<DependencyVerificationMode, StartParameterInternal> {
+
+        private static final String GRADLE_PROPERTY = "org.gradle.dependency.verification";
+        private static final String LONG_OPTION = "dependency-verification";
+        private static final String SHORT_OPTION = "F";
+
+        public DependencyVerificationModeOption() {
+            super(LONG_OPTION,
+                DependencyVerificationMode.class,
+                DependencyVerificationMode.values(),
+                GRADLE_PROPERTY,
+                CommandLineOptionConfiguration.create(
+                    LONG_OPTION, SHORT_OPTION, "Configures the dependency verification mode (strict, lenient or off)").incubating()
+            );
+        }
+
+        @Override
+        public void applyTo(DependencyVerificationMode value, StartParameterInternal settings, Origin origin) {
+            settings.setDependencyVerificationMode(value);
+        }
+    }
+
+    public static class DependencyLockingUpdateOption extends ListBuildOption<StartParameterInternal> {
+
+        public DependencyLockingUpdateOption() {
+            super(null, CommandLineOptionConfiguration.create("update-locks", "Perform a partial update of the dependency lock, letting passed in module notations change version.").incubating());
+        }
+
+        @Override
+        public void applyTo(List<String> modulesToUpdate, StartParameterInternal settings, Origin origin) {
+            settings.setLockedDependenciesToUpdate(modulesToUpdate);
+        }
+    }
+
+    public static class RefreshKeysOption extends EnabledOnlyBooleanBuildOption<StartParameterInternal> {
+
+        private static final String LONG_OPTION = "refresh-keys";
+
+        public RefreshKeysOption() {
+            super(null,
+                CommandLineOptionConfiguration.create(LONG_OPTION, "Refresh the public keys used for dependency verification.").incubating());
+        }
+
+        @Override
+        public void applyTo(StartParameterInternal settings, Origin origin) {
+            settings.setRefreshKeys(true);
+        }
+    }
+
+    public static class ExportKeysOption extends EnabledOnlyBooleanBuildOption<StartParameterInternal> {
+
+        private static final String LONG_OPTION = "export-keys";
+
+        public ExportKeysOption() {
+            super(null,
+                CommandLineOptionConfiguration.create(LONG_OPTION, "Exports the public keys used for dependency verification.").incubating());
+        }
+
+        @Override
+        public void applyTo(StartParameterInternal settings, Origin origin) {
+            settings.setExportKeys(true);
+        }
+    }
+
+    public static class ConfigurationCacheOption extends BooleanBuildOption<StartParameterInternal> {
+
+        public static final String PROPERTY_NAME = "org.gradle.unsafe.configuration-cache";
+        public static final String LONG_OPTION = "configuration-cache";
+
+        public ConfigurationCacheOption() {
+            super(
+                PROPERTY_NAME,
+                BooleanCommandLineOptionConfiguration.create(
+                    LONG_OPTION,
+                    "Enables the configuration cache. Gradle will try to reuse the build configuration from previous builds.",
+                    "Disables the configuration cache."
+                ).incubating()
+            );
+        }
+
+        @Override
+        public void applyTo(boolean value, StartParameterInternal settings, Origin origin) {
+            settings.setConfigurationCache(value);
+        }
+    }
+
+    public static class ConfigurationCacheProblemsOption extends EnumBuildOption<ConfigurationCacheProblemsOption.Value, StartParameterInternal> {
+
+        public static final String PROPERTY_NAME = "org.gradle.unsafe.configuration-cache-problems";
+        public static final String LONG_OPTION = "configuration-cache-problems";
+
+        public enum Value {
+            FAIL, WARN
+        }
+
+        public ConfigurationCacheProblemsOption() {
+            super(
+                LONG_OPTION,
+                Value.class,
+                Value.values(),
+                PROPERTY_NAME,
+                CommandLineOptionConfiguration.create(
+                    LONG_OPTION,
+                    "Configures how the configuration cache handles problems (fail or warn). Defaults to fail."
+                ).incubating()
+            );
+        }
+
+        @Override
+        public void applyTo(Value value, StartParameterInternal settings, Origin origin) {
+            settings.setConfigurationCacheProblems(value);
+        }
+    }
+
+    public static class ConfigurationCacheMaxProblemsOption extends IntegerBuildOption<StartParameterInternal> {
+
+        public static final String PROPERTY_NAME = "org.gradle.unsafe.configuration-cache.max-problems";
+
+        public ConfigurationCacheMaxProblemsOption() {
+            super(PROPERTY_NAME);
+        }
+
+        @Override
+        public void applyTo(int value, StartParameterInternal settings, Origin origin) {
+            settings.setConfigurationCacheMaxProblems(value);
+        }
+    }
+
+    public static class ConfigurationCacheRecreateOption extends BooleanBuildOption<StartParameterInternal> {
+
+        public static final String PROPERTY_NAME = "org.gradle.unsafe.configuration-cache.recreate-cache";
+
+        public ConfigurationCacheRecreateOption() {
+            super(PROPERTY_NAME);
+        }
+
+        @Override
+        public void applyTo(boolean value, StartParameterInternal settings, Origin origin) {
+            settings.setConfigurationCacheRecreateCache(value);
+        }
+    }
+
+    public static class ConfigurationCacheQuietOption extends BooleanBuildOption<StartParameterInternal> {
+
+        public static final String PROPERTY_NAME = "org.gradle.unsafe.configuration-cache.quiet";
+
+        public ConfigurationCacheQuietOption() {
+            super(PROPERTY_NAME);
+        }
+
+        @Override
+        public void applyTo(boolean value, StartParameterInternal settings, Origin origin) {
+            settings.setConfigurationCacheQuiet(value);
         }
     }
 }

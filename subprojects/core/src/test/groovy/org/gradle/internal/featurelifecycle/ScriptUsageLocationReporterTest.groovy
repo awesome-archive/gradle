@@ -18,6 +18,7 @@ package org.gradle.internal.featurelifecycle
 
 import org.gradle.groovy.scripts.Script
 import org.gradle.groovy.scripts.ScriptSource
+import org.gradle.internal.Describables
 import spock.lang.Specification
 
 class ScriptUsageLocationReporterTest extends Specification {
@@ -42,7 +43,7 @@ class ScriptUsageLocationReporterTest extends Specification {
     def "reports location when immediate caller is a script"() {
         def scriptSource = Stub(ScriptSource) {
             getFileName() >> "some-file.gradle"
-            getDisplayName() >> "build script 'some-file.gradle'"
+            getLongDisplayName() >> Describables.of("build script 'some-file.gradle'")
         }
         def stack = [
                 new StackTraceElement("SomeClass", "method", "some-file.gradle", 12),
@@ -53,7 +54,7 @@ class ScriptUsageLocationReporterTest extends Specification {
         def result = new StringBuilder()
 
         given:
-        reporter.scriptClassLoaded(scriptSource, Script)
+        reporter.onScriptClassLoaded(scriptSource, Script)
 
         when:
         reporter.reportLocation(usage, result)
@@ -65,7 +66,7 @@ class ScriptUsageLocationReporterTest extends Specification {
     def "reports location when second caller is a script"() {
         def scriptSource = Stub(ScriptSource) {
             getFileName() >> "some-file.gradle"
-            getDisplayName() >> "build script 'some-file.gradle'"
+            getLongDisplayName() >> Describables.of("build script 'some-file.gradle'")
         }
         def stack = [
                 new StackTraceElement("SomeLibrary", "method", "SomeLibrary.java", 103),
@@ -78,7 +79,7 @@ class ScriptUsageLocationReporterTest extends Specification {
         def result = new StringBuilder()
 
         given:
-        reporter.scriptClassLoaded(scriptSource, Script)
+        reporter.onScriptClassLoaded(scriptSource, Script)
 
         when:
         reporter.reportLocation(usage, result)
@@ -90,7 +91,7 @@ class ScriptUsageLocationReporterTest extends Specification {
     def "does not report location when subsequent caller is a script"() {
         def scriptSource = Stub(ScriptSource) {
             getFileName() >> "some-file.gradle"
-            getDisplayName() >> "build script 'some-file.gradle'"
+            getLongDisplayName() >> Describables.of("build script 'some-file.gradle'")
         }
         def stack = [
                 new StackTraceElement("SomeLibrary", "method", "SomeLibrary.java", 103),
@@ -103,7 +104,7 @@ class ScriptUsageLocationReporterTest extends Specification {
         def result = new StringBuilder()
 
         given:
-        reporter.scriptClassLoaded(scriptSource, Script)
+        reporter.onScriptClassLoaded(scriptSource, Script)
 
         when:
         reporter.reportLocation(usage, result)

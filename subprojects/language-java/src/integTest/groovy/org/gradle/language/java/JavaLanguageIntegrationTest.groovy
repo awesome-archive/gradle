@@ -17,16 +17,16 @@
 package org.gradle.language.java
 
 import org.gradle.api.JavaVersion
+import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
 import org.gradle.integtests.fixtures.jvm.TestJvmComponent
 import org.gradle.integtests.language.AbstractJvmLanguageIntegrationTest
 import org.gradle.jvm.platform.internal.DefaultJavaPlatform
 import org.gradle.language.fixtures.BadJavaComponent
 import org.gradle.language.fixtures.TestJavaComponent
-import org.gradle.test.fixtures.file.LeaksFileHandles
 import org.gradle.util.Requires
 import org.gradle.util.TestPrecondition
 
-@LeaksFileHandles
+@UnsupportedWithConfigurationCache(because = "software model")
 class JavaLanguageIntegrationTest extends AbstractJvmLanguageIntegrationTest {
     TestJvmComponent app = new TestJavaComponent()
 
@@ -48,7 +48,7 @@ class JavaLanguageIntegrationTest extends AbstractJvmLanguageIntegrationTest {
 
         and:
         badApp.compilerErrors.each {
-            assert errorOutput.contains(it)
+            assert failure.assertHasErrorOutput(it)
         }
     }
 
@@ -61,7 +61,7 @@ class JavaLanguageIntegrationTest extends AbstractJvmLanguageIntegrationTest {
             model {
                 components {
                     myLib(JvmLibrarySpec) {
-                        targetPlatform "java6"
+                        targetPlatform "java7"
                     }
                 }
             }
@@ -70,11 +70,11 @@ class JavaLanguageIntegrationTest extends AbstractJvmLanguageIntegrationTest {
         succeeds "assemble"
 
         and:
-        jarFile("build/jars/myLib/jar/myLib.jar").javaVersion == JavaVersion.VERSION_1_6
+        jarFile("build/jars/myLib/jar/myLib.jar").javaVersion == JavaVersion.VERSION_1_7
         jarFile("build/jars/myLib/jar/myLib.jar").hasDescendants(app.sources*.classFile.fullPath as String[])
     }
 
-    @Requires(TestPrecondition.JDK8_OR_LATER)
+    @Requires(TestPrecondition.JDK9_OR_LATER)
     def "multiple targets should produce in the correct bytecode"() {
         when:
         app.writeSources(file("src/myLib"))
@@ -84,9 +84,9 @@ class JavaLanguageIntegrationTest extends AbstractJvmLanguageIntegrationTest {
             model {
                 components {
                     myLib(JvmLibrarySpec) {
-                        targetPlatform "java6"
                         targetPlatform "java7"
                         targetPlatform "java8"
+                        targetPlatform "java9"
                     }
                 }
             }
@@ -95,9 +95,9 @@ class JavaLanguageIntegrationTest extends AbstractJvmLanguageIntegrationTest {
         succeeds "assemble"
 
         and:
-        jarFile("build/jars/myLib/java6Jar/myLib.jar").javaVersion == JavaVersion.VERSION_1_6
         jarFile("build/jars/myLib/java7Jar/myLib.jar").javaVersion == JavaVersion.VERSION_1_7
         jarFile("build/jars/myLib/java8Jar/myLib.jar").javaVersion == JavaVersion.VERSION_1_8
+        jarFile("build/jars/myLib/java9Jar/myLib.jar").javaVersion == JavaVersion.VERSION_1_9
     }
 
     def "erroneous target should produce reasonable error message"() {

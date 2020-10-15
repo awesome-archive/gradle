@@ -16,7 +16,6 @@
 
 package org.gradle.tooling.provider.model;
 
-import org.gradle.api.Incubating;
 import org.gradle.api.Project;
 
 /**
@@ -34,8 +33,9 @@ import org.gradle.api.Project;
  *
  * <p>Although it is not enforced, the model object should be immutable, as the tooling API will do some caching and other performance optimizations on the
  * assumption that the model is effectively immutable. The tooling API does not make any guarantees about how the client application will use the model object.</p>
+ *
+ * <p>Plugins can register their own tooling model builder implementations using {@link ToolingModelBuilderRegistry}.</p>
  */
-@Incubating
 public interface ToolingModelBuilder {
     /**
      * Indicates whether this builder can construct the given model.

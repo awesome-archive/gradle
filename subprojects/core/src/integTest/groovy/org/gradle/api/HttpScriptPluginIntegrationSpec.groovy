@@ -17,16 +17,20 @@ package org.gradle.api
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.TestResources
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.test.fixtures.keystore.TestKeyStore
 import org.gradle.test.fixtures.server.http.HttpServer
 import org.gradle.test.matchers.UserAgentMatcher
+import org.gradle.util.GUtil
 import org.gradle.util.GradleVersion
 import spock.lang.Issue
 import spock.lang.Unroll
 
 class HttpScriptPluginIntegrationSpec extends AbstractIntegrationSpec {
-    @org.junit.Rule HttpServer server = new HttpServer()
-    @org.junit.Rule TestResources resources = new TestResources(temporaryFolder)
+    @org.junit.Rule
+    HttpServer server = new HttpServer()
+    @org.junit.Rule
+    TestResources resources = new TestResources(temporaryFolder)
 
     def setup() {
         settingsFile << "rootProject.name = 'project'"
@@ -35,15 +39,14 @@ class HttpScriptPluginIntegrationSpec extends AbstractIntegrationSpec {
         executer.requireOwnGradleUserHomeDir()
     }
 
-    @Unroll
-    def "can apply script via #scheme"() {
-        when:
-        if (useKeystore) {
-            def keyStore = TestKeyStore.init(resources.dir)
-            keyStore.enableSslWithServerCert(server)
-            keyStore.configureServerCert(executer)
-        }
+    private void applyTrustStore() {
+        def keyStore = TestKeyStore.init(resources.dir)
+        keyStore.enableSslWithServerCert(server)
+        keyStore.configureServerCert(executer)
+    }
 
+    def "can apply script via http"() {
+        when:
         def script = file('external.gradle')
         server.expectGet('/external.gradle', script)
 
@@ -60,11 +63,72 @@ class HttpScriptPluginIntegrationSpec extends AbstractIntegrationSpec {
 
         then:
         succeeds()
+    }
 
-        where:
-        scheme  | useKeystore
-        "http"  | false
-        "https" | true
+    def "emits useful warning when applying script via http"() {
+        when:
+        server.useHostname()
+        def script = file('external.gradle')
+        server.expectGet('/external.gradle', script)
+
+        script << """
+            task doStuff
+            assert buildscript.sourceFile == null
+            assert "${server.uri}/external.gradle" == buildscript.sourceURI as String
+"""
+
+        buildFile << """
+            apply from: '$server.uri/external.gradle'
+            defaultTasks 'doStuff'
+"""
+
+        then:
+        executer.expectDocumentedDeprecationWarning("Applying script plugins from insecure URIs has been deprecated. This is scheduled to be removed in Gradle 7.0. " +
+            "The provided URI '${server.uri("/external.gradle")}' uses an insecure protocol (HTTP). " +
+            "Use '${GUtil.toSecureUrl(server.uri("/external.gradle"))}' instead or try 'apply from: resources.text.fromInsecureUri(\"${server.uri("/external.gradle")}\")' to silence the warning. " +
+            "See https://docs.gradle.org/current/dsl/org.gradle.api.resources.TextResourceFactory.html#org.gradle.api.resources.TextResourceFactory:fromInsecureUri(java.lang.Object) for more details.")
+        succeeds()
+    }
+
+    def "does not complain when applying script plugin via http using text resource"() {
+        when:
+        server.useHostname()
+        def script = file('external.gradle')
+        server.expectGet('/external.gradle', script)
+
+        script << """
+            task doStuff
+        """
+
+        buildFile << """
+            apply from: resources.text.fromInsecureUri("$server.uri/external.gradle")
+            defaultTasks 'doStuff'
+        """
+
+        then:
+        succeeds()
+    }
+
+    def "can apply script via https"() {
+        applyTrustStore()
+
+        when:
+        def script = file('external.gradle')
+        server.expectGet('/external.gradle', script)
+
+        script << """
+            task doStuff
+            assert buildscript.sourceFile == null
+            assert "${server.uri}/external.gradle" == buildscript.sourceURI as String
+"""
+
+        buildFile << """
+            apply from: '$server.uri/external.gradle'
+            defaultTasks 'doStuff'
+"""
+
+        then:
+        succeeds()
     }
 
     @Issue("https://github.com/gradle/gradle/issues/2891")
@@ -114,6 +178,7 @@ class HttpScriptPluginIntegrationSpec extends AbstractIntegrationSpec {
         succeeds()
     }
 
+    @ToBeFixedForConfigurationCache(because = "remote scripts skipped")
     def "does not cache URIs with query parts"() {
         when:
         def queryString = 'p=foo;a=blob_plain;f=bar;hb=foo/bar/foo'
@@ -154,7 +219,7 @@ class HttpScriptPluginIntegrationSpec extends AbstractIntegrationSpec {
         server.stop()
         expect:
         fails("--offline")
-        result.error.contains("Could not read script '$url'")
+        failure.assertHasCause("Could not read script '$url'")
     }
 
     def "uses encoding specified by http server"() {
@@ -184,6 +249,7 @@ task check {
 
     def "assumes utf-8 encoding when none specified by http server"() {
         given:
+        applyTrustStore()
         executer.withDefaultCharacterEncoding("ISO-8859-15")
 
         and:
@@ -247,6 +313,7 @@ task check {
     }
 
     @Unroll
+    @ToBeFixedForConfigurationCache(because = "remote scripts skipped")
     def "can recover from failure to download cached #source resource by running with --offline"() {
         given:
         def scriptFile = file("script.gradle")
@@ -276,7 +343,7 @@ task check {
         then:
         args('-I', 'init.gradle')
         fails 'check'
-        errorOutput.contains("Could not get resource '${scriptUri}'")
+        failure.assertHasCause("Could not get resource '${scriptUri}'")
 
         when:
         args('--offline', '-I', 'init.gradle')
@@ -291,6 +358,7 @@ task check {
         "initscript"  | "init.gradle"     | "init-script-plugin.gradle"
     }
 
+    @ToBeFixedForConfigurationCache(because = "test expects script evaluation")
     def "will only request resource once for build invocation"() {
         given:
         def scriptName = "script-once.gradle"
@@ -313,7 +381,7 @@ task check {
         args('-I', 'init.gradle')
 
         then:
-        succeeds 'tasks'
+        succeeds 'help'
         output.count('loaded external script') == 4
 
         when:
@@ -322,10 +390,11 @@ task check {
         args('-I', 'init.gradle')
 
         then:
-        succeeds 'tasks'
+        succeeds 'help'
         output.count('loaded external script') == 4
     }
 
+    @ToBeFixedForConfigurationCache(because = "test expects script evaluation")
     def "will refresh cached value on subsequent build invocation"() {
         given:
         def scriptName = "script-cached.gradle"
@@ -340,7 +409,7 @@ task check {
         server.expectGet('/' + scriptName, scriptFile)
 
         then:
-        succeeds 'tasks'
+        succeeds 'help'
         output.contains('loaded external script 1')
 
         when:
@@ -349,7 +418,7 @@ task check {
         server.expectGet('/' + scriptName, scriptFile)
 
         then:
-        succeeds 'tasks'
+        succeeds 'help'
         output.contains('loaded external script 2')
 
         when:
@@ -357,7 +426,7 @@ task check {
         args("--offline")
 
         then:
-        succeeds 'tasks'
+        succeeds 'help'
         output.contains('loaded external script 2')
     }
 
@@ -380,9 +449,9 @@ task check {
 
         and:
         failure.assertHasDescription("A problem occurred evaluating root project 'project'.")
-                .assertHasCause("Could not read '${scriptUrl}' as it does not exist.")
-                .assertHasFileName("Build file '${buildFile}'")
-                .assertHasLineNumber(2)
+            .assertHasCause("Could not read '${scriptUrl}' as it does not exist.")
+            .assertHasFileName("Build file '${buildFile}'")
+            .assertHasLineNumber(2)
 
         when:
         server.resetExpectations()

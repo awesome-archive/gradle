@@ -19,13 +19,15 @@ package org.gradle.launcher.daemon.server.scaninfo
 import org.gradle.integtests.fixtures.daemon.DaemonIntegrationSpec
 import org.gradle.integtests.fixtures.executer.ExecutionResult
 import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
+import org.gradle.integtests.fixtures.timeout.IntegrationTestTimeout
 import org.gradle.launcher.daemon.client.SingleUseDaemonClient
 import org.gradle.util.GFileUtils
+import org.gradle.util.Requires
+import org.gradle.util.TestPrecondition
 import spock.lang.IgnoreIf
-import spock.lang.Timeout
 import spock.lang.Unroll
 
-@Timeout(300)
+@IntegrationTestTimeout(300)
 class DaemonScanInfoIntegrationSpec extends DaemonIntegrationSpec {
     static final EXPIRATION_CHECK_FREQUENCY = 50
     public static final String EXPIRATION_EVENT = "expiration_event.txt"
@@ -50,9 +52,11 @@ class DaemonScanInfoIntegrationSpec extends DaemonIntegrationSpec {
         """
 
         expect:
-        executer.withArguments('help', '--continuous', '-i').run().getExecutedTasks().contains(':help')
+        executer.withArguments('help', '--continuous', '-i').run().assertTasksExecuted(':help')
     }
 
+    //Java 9 and above needs --add-opens to make environment variable mutation work
+    @Requires(TestPrecondition.JDK8_OR_EARLIER)
     def "should capture basic data when a foreground daemon runs multiple builds"() {
         given:
         buildFile << """
@@ -70,8 +74,8 @@ class DaemonScanInfoIntegrationSpec extends DaemonIntegrationSpec {
         captureResults << executer.withTasks('capture2').run()
 
         then:
-        captureResults[0].getExecutedTasks().contains(':capture1')
-        captureResults[1].getExecutedTasks().contains(':capture2')
+        captureResults[0].assertTaskExecuted(':capture1')
+        captureResults[1].assertTaskExecuted(':capture2')
 
         cleanup:
         daemon?.abort()
@@ -159,8 +163,8 @@ class DaemonScanInfoIntegrationSpec extends DaemonIntegrationSpec {
         result = executer.withArgument('--no-daemon').withTasks('capture').run()
 
         then:
-        executedTasks.contains(':capture')
-        result.output.contains(SingleUseDaemonClient.MESSAGE)
+        executed(':capture')
+        outputContains(SingleUseDaemonClient.MESSAGE)
 
         and:
         daemons.daemon.stops()
@@ -170,7 +174,7 @@ class DaemonScanInfoIntegrationSpec extends DaemonIntegrationSpec {
         """
     task $name {
         doLast {
-            DaemonScanInfo info = project.getServices().get(DaemonScanInfo)
+            DaemonScanInfo info = services.get(DaemonScanInfo)
             ${assertInfo(buildCount, daemonCount, singleUse)}
         }
     }
@@ -179,7 +183,7 @@ class DaemonScanInfoIntegrationSpec extends DaemonIntegrationSpec {
 
     static String captureAndAssert() {
         return """
-           DaemonScanInfo info = project.getServices().get(DaemonScanInfo)
+           DaemonScanInfo info = services.get(DaemonScanInfo)
            ${assertInfo(1, 1)}
            """
     }
@@ -208,7 +212,7 @@ class DaemonScanInfoIntegrationSpec extends DaemonIntegrationSpec {
 
     static String registerExpirationListener() {
         """
-        def daemonScanInfo = project.getServices().get(DaemonScanInfo)
+        def daemonScanInfo = services.get(DaemonScanInfo)
 
         daemonScanInfo.notifyOnUnhealthy(new Action<String>() {
             @Override
@@ -234,7 +238,7 @@ class DaemonScanInfoIntegrationSpec extends DaemonIntegrationSpec {
             public DaemonExpirationResult checkExpiration() {
                 DaemonContext dc = null
                 try {
-                    dc = project.getServices().get(DaemonContext)
+                    dc = services.get(DaemonContext)
                 } catch (Exception e) {
                     // ignore
                 }
@@ -242,7 +246,7 @@ class DaemonScanInfoIntegrationSpec extends DaemonIntegrationSpec {
             }
         }
 
-        def daemon =  project.getServices().get(Daemon)
+        def daemon =  services.get(Daemon)
         daemon.scheduleExpirationChecks(new AllDaemonExpirationStrategy([new TestExpirationStrategy(project)]), $EXPIRATION_CHECK_FREQUENCY)
         """
     }
@@ -255,7 +259,7 @@ class DaemonScanInfoIntegrationSpec extends DaemonIntegrationSpec {
         import org.gradle.launcher.daemon.server.expiry.*
         import java.util.concurrent.CountDownLatch
         import java.util.concurrent.TimeUnit
-            
+
         def latch = new CountDownLatch(1)
         """
     }

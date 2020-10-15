@@ -15,11 +15,22 @@
  */
 package org.gradle.plugins.ide
 
-import org.gradle.test.fixtures.server.http.*
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
+import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
+import org.gradle.test.fixtures.file.TestFile
+import org.gradle.test.fixtures.server.http.HttpArtifact
+import org.gradle.test.fixtures.server.http.HttpServer
+import org.gradle.test.fixtures.server.http.IvyHttpModule
+import org.gradle.test.fixtures.server.http.IvyHttpRepository
+import org.gradle.test.fixtures.server.http.MavenHttpRepository
 import org.junit.Rule
+import spock.lang.IgnoreIf
 
 abstract class AbstractSourcesAndJavadocJarsIntegrationTest extends AbstractIdeIntegrationSpec {
-    @Rule HttpServer server
+    @Rule
+    HttpServer server
+
+    String groovyAllVersion = "1.3-2.5.12"
 
     def setup() {
         server.start()
@@ -43,6 +54,7 @@ abstract class AbstractSourcesAndJavadocJarsIntegrationTest extends AbstractIdeI
         succeeds "resolve"
     }
 
+    @ToBeFixedForConfigurationCache
     def "sources and javadoc jars from maven repositories are resolved, attached and cached"() {
         def repo = mavenHttpRepo
         def module = repo.module("some", "module", "1.0")
@@ -54,7 +66,7 @@ abstract class AbstractSourcesAndJavadocJarsIntegrationTest extends AbstractIdeI
 
         buildFile << """
 dependencies {
-    compile 'some:module:1.0:api'
+    implementation 'some:module:1.0:api'
 }
 """
 
@@ -75,6 +87,7 @@ dependencies {
         ideFileContainsEntry("module-1.0-api.jar", "module-1.0-sources.jar", "module-1.0-javadoc.jar")
     }
 
+    @ToBeFixedForConfigurationCache
     def "ignores missing sources and javadoc jars in maven repositories"() {
         def repo = mavenHttpRepo
         repo.module("some", "module", "1.0").publish().allowAll()
@@ -87,6 +100,7 @@ dependencies {
         ideFileContainsNoSourcesAndJavadocEntry()
     }
 
+    @ToBeFixedForConfigurationCache
     def "ignores broken source or javadoc artifacts in maven repository"() {
         def repo = mavenHttpRepo
         def module = repo.module("some", "module", "1.0")
@@ -128,6 +142,7 @@ dependencies {
         succeeds "resolve"
     }
 
+    @ToBeFixedForConfigurationCache
     def "sources and javadoc jars from ivy repositories are resolved, attached and cached"() {
         def repo = ivyHttpRepo
         def module = repo.module("some", "module", "1.0")
@@ -150,6 +165,7 @@ dependencies {
         ideFileContainsEntry("module-1.0.jar", "module-1.0-my-sources.jar", "module-1.0-my-javadoc.jar")
     }
 
+    @ToBeFixedForConfigurationCache
     def "all sources and javadoc jars resolved from ivy repo are attached to all artifacts for module"() {
         def repo = ivyHttpRepo
         def module = repo.module("some", "module", "1.0")
@@ -169,8 +185,8 @@ dependencies {
         useIvyRepo(repo)
         buildFile << """
 dependencies {
-    compile 'some:module:1.0:api'
-    testCompile 'some:module:1.0:tests'
+    implementation 'some:module:1.0:api'
+    testImplementation 'some:module:1.0:tests'
 }"""
 
         succeeds ideTask
@@ -183,6 +199,7 @@ dependencies {
         ideFileContainsEntry("module-1.0-tests.jar", sources, javadoc)
     }
 
+    @ToBeFixedForConfigurationCache
     def "all sources jars from ivy repositories are attached when there are multiple unclassified artifacts"() {
         def repo = ivyHttpRepo
 
@@ -210,6 +227,7 @@ dependencies {
         ideFileContainsEntry("foo-api-1.0.jar", ["foo-sources-1.0.jar", "foo-api-sources-1.0.jar"], ["foo-javadoc-1.0.jar", "foo-api-javadoc-1.0.jar"])
     }
 
+    @ToBeFixedForConfigurationCache
     def "ignores missing sources and javadoc jars in ivy repositories"() {
         def repo = ivyHttpRepo
         final module = repo.module("some", "module", "1.0")
@@ -227,6 +245,7 @@ dependencies {
         ideFileContainsNoSourcesAndJavadocEntry()
     }
 
+    @ToBeFixedForConfigurationCache
     def "ignores broken source or javadoc artifacts in ivy repository"() {
         def repo = ivyHttpRepo
         def module = repo.module("some", "module", "1.0")
@@ -252,6 +271,7 @@ dependencies {
         ideFileContainsNoSourcesAndJavadocEntry()
     }
 
+    @ToBeFixedForConfigurationCache
     def "sources and javadoc jars stored with maven scheme in ivy repositories are resolved and attached"() {
         def repo = ivyHttpRepo
         def module = repo.module("some", "module", "1.0")
@@ -270,7 +290,7 @@ dependencies {
         ideFileContainsEntry("module-1.0.jar", "module-1.0-sources.jar", "module-1.0-javadoc.jar")
     }
 
-
+    @ToBeFixedForConfigurationCache
     def "sources and javadoc jars from flatdir repositories are resolved and attached"() {
         file("repo/module-1.0.jar").createFile()
         file("repo/module-1.0-sources.jar").createFile()
@@ -284,6 +304,191 @@ dependencies {
         ideFileContainsEntry("module-1.0.jar", "module-1.0-sources.jar", "module-1.0-javadoc.jar")
     }
 
+    @ToBeFixedForConfigurationCache
+    @IgnoreIf({ GradleContextualExecuter.noDaemon || GradleContextualExecuter.embedded })
+    def "does not download gradleApi() sources when sources download is disabled"() {
+        given:
+        executer.withEnvironmentVars('GRADLE_REPO_OVERRIDE': "$server.uri/")
+
+        buildScript """
+            apply plugin: "java"
+            apply plugin: "idea"
+            apply plugin: "eclipse"
+
+            dependencies {
+                implementation gradleApi()
+            }
+
+            idea.module.downloadSources = false
+            eclipse.classpath.downloadSources = false
+            """
+        when:
+        succeeds ideTask
+
+        then:
+        assertSourcesDirectoryDoesNotExistInDistribution()
+        ideFileContainsGradleApi("gradle-api")
+    }
+
+    @ToBeFixedForConfigurationCache
+    @IgnoreIf({ GradleContextualExecuter.noDaemon || GradleContextualExecuter.embedded })
+    def "does not download gradleApi() sources when offline"() {
+        given:
+        executer.withEnvironmentVars('GRADLE_REPO_OVERRIDE': "$server.uri/")
+
+        buildScript """
+            apply plugin: "java"
+            apply plugin: "idea"
+            apply plugin: "eclipse"
+
+            dependencies {
+                implementation gradleApi()
+            }
+            """
+        when:
+        args("--offline")
+        succeeds ideTask
+
+        then:
+        assertSourcesDirectoryDoesNotExistInDistribution()
+        ideFileContainsGradleApi("gradle-api")
+    }
+
+    @ToBeFixedForConfigurationCache
+    def "sources for localGroovy() are downloaded and attached"() {
+        given:
+        def repo = givenGroovyAllExistsInGradleRepo()
+        executer.withEnvironmentVars('GRADLE_LIBS_REPO_OVERRIDE': "$repo.uri/")
+
+        buildScript """
+            apply plugin: "java"
+            apply plugin: "idea"
+            apply plugin: "eclipse"
+
+            dependencies {
+                implementation localGroovy()
+            }
+            """
+
+        when:
+        succeeds ideTask
+
+        then:
+        ideFileContainsEntry("groovy-all-${groovyAllVersion}.jar", ["groovy-all-${groovyAllVersion}-sources.jar"], [])
+    }
+
+    @ToBeFixedForConfigurationCache
+    def "sources for localGroovy() are downloaded and attached when using gradleApi()"() {
+        given:
+        def repo = givenGroovyAllExistsInGradleRepo()
+        executer.withEnvironmentVars('GRADLE_LIBS_REPO_OVERRIDE': "$repo.uri/")
+
+        buildScript """
+            apply plugin: "java"
+            apply plugin: "idea"
+            apply plugin: "eclipse"
+
+            dependencies {
+                implementation gradleApi()
+            }
+            """
+
+        when:
+        succeeds ideTask
+
+        then:
+        ideFileContainsEntry("groovy-all-${groovyAllVersion}.jar", ["groovy-all-${groovyAllVersion}-sources.jar"], [])
+    }
+
+    @ToBeFixedForConfigurationCache
+    @IgnoreIf({ GradleContextualExecuter.embedded })
+    def "sources for localGroovy() are downloaded and attached when using gradleTestKit()"() {
+        given:
+        def repo = givenGroovyAllExistsInGradleRepo()
+        executer.withEnvironmentVars('GRADLE_LIBS_REPO_OVERRIDE': "$repo.uri/")
+
+        buildScript """
+            apply plugin: "java"
+            apply plugin: "idea"
+            apply plugin: "eclipse"
+
+            dependencies {
+                implementation gradleTestKit()
+            }
+            """
+
+        when:
+        succeeds ideTask
+
+        then:
+        ideFileContainsEntry("groovy-all-${groovyAllVersion}.jar", ["groovy-all-${groovyAllVersion}-sources.jar"], [])
+    }
+
+    @ToBeFixedForConfigurationCache
+    def "does not download localGroovy() sources when sources download is disabled"() {
+        given:
+        executer.withEnvironmentVars('GRADLE_LIBS_REPO_OVERRIDE': "$server.uri/")
+
+        buildScript """
+            apply plugin: "java"
+            apply plugin: "idea"
+            apply plugin: "eclipse"
+
+            dependencies {
+                implementation localGroovy()
+            }
+
+            idea.module.downloadSources = false
+            eclipse.classpath.downloadSources = false
+            """
+
+        when:
+        succeeds ideTask
+
+        then:
+        ideFileContainsNoSourcesAndJavadocEntry()
+    }
+
+    @ToBeFixedForConfigurationCache
+    def "does not download localGroovy() sources when offline"() {
+        given:
+        executer.withEnvironmentVars('GRADLE_LIBS_REPO_OVERRIDE': "$server.uri/")
+
+        buildScript """
+            apply plugin: "java"
+            apply plugin: "idea"
+            apply plugin: "eclipse"
+
+            dependencies {
+                implementation localGroovy()
+            }
+            """
+
+        when:
+        args("--offline")
+        succeeds ideTask
+
+        then:
+        ideFileContainsNoSourcesAndJavadocEntry()
+    }
+
+    void assertSourcesDirectoryDoesNotExistInDistribution() {
+        gradleDistributionSrcDir().assertDoesNotExist()
+    }
+
+    private TestFile gradleDistributionSrcDir() {
+        return new TestFile(distribution.gradleHomeDir, "src")
+    }
+
+    def givenGroovyAllExistsInGradleRepo() {
+        def repo = mavenHttpRepo
+        def module = repo.module("org.gradle.groovy", "groovy-all", groovyAllVersion)
+        module.artifact(classifier: "sources")
+        module.publish()
+        module.allowAll()
+        return repo
+    }
+
     private useIvyRepo(def repo) {
         buildFile << """repositories { ivy { url "$repo.uri" } }"""
     }
@@ -291,7 +496,6 @@ dependencies {
     private useMavenRepo(def repo) {
         buildFile << """repositories { maven { url "$repo.uri" } }"""
     }
-
 
     private static void addCompleteConfigurations(IvyHttpModule module) {
         module.configuration("default")
@@ -318,7 +522,7 @@ apply plugin: "idea"
 apply plugin: "eclipse"
 
 dependencies {
-    compile("some:module:1.0")
+    implementation("some:module:1.0")
 }
 
 idea {
@@ -335,7 +539,7 @@ eclipse {
 
 task resolve {
     doLast {
-        configurations.compile.each { println it }
+        configurations.runtimeClasspath.each { println it }
     }
 }
 """
@@ -346,8 +550,14 @@ task resolve {
     void ideFileContainsEntry(String jar, String sources, String javadoc) {
         ideFileContainsEntry(jar, [sources], [javadoc])
     }
+
     abstract void ideFileContainsEntry(String jar, List<String> sources, List<String> javadoc)
+
+    abstract void ideFileContainsGradleApi(String apiJarPrefix)
+
     abstract void ideFileContainsNoSourcesAndJavadocEntry()
+
     abstract void expectBehaviorAfterBrokenMavenArtifact(HttpArtifact httpArtifact)
+
     abstract void expectBehaviorAfterBrokenIvyArtifact(HttpArtifact httpArtifact)
 }

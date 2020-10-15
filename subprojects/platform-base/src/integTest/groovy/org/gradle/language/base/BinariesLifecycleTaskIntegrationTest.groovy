@@ -17,8 +17,10 @@
 package org.gradle.language.base
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.hamcrest.Matchers
+import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
+import org.gradle.internal.logging.text.DiagnosticsVisitor
 
+@UnsupportedWithConfigurationCache(because = "software model")
 class BinariesLifecycleTaskIntegrationTest extends AbstractIntegrationSpec {
     def setup() {
         settingsFile << """rootProject.name = 'assemble-binary'"""
@@ -41,7 +43,7 @@ class BinariesLifecycleTaskIntegrationTest extends AbstractIntegrationSpec {
                         }
 
                         @Override
-                        public void explain(org.gradle.util.TreeVisitor<? super String> visitor) {
+                        public void explain(${DiagnosticsVisitor.name} visitor) {
                             visitor.node("Binary \${name} has 'notBuildable' in the name")
                         }
                     };
@@ -68,11 +70,11 @@ class BinariesLifecycleTaskIntegrationTest extends AbstractIntegrationSpec {
 
         then:
         failureDescriptionContains("Execution failed for task ':assemble'.")
-        failure.assertThatCause(Matchers.<String>allOf(
-            Matchers.startsWith("No buildable binaries found:"),
-            Matchers.containsString("SampleBinary 'lib:notBuildableBinary1': Binary notBuildableBinary1 has 'notBuildable' in the name"),
-            Matchers.containsString("SampleBinary 'lib:notBuildableBinary2': Binary notBuildableBinary2 has 'notBuildable' in the name")
-        ))
+        failure.assertHasCause("""No buildable binaries found:
+  - SampleBinary 'lib:notBuildableBinary1':
+      - Binary notBuildableBinary1 has 'notBuildable' in the name
+  - SampleBinary 'lib:notBuildableBinary2':
+      - Binary notBuildableBinary2 has 'notBuildable' in the name""")
     }
 
     def "builds those component binaries that are buildable and skips those that are not" () {

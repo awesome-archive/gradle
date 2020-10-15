@@ -23,7 +23,7 @@ import spock.lang.Specification
 import static org.gradle.util.TextUtil.toPlatformLineSeparators
 
 class ArgWriterTest extends Specification {
-    @Rule TestNameTestDirectoryProvider tmpDir
+    @Rule TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider(getClass())
     final StringWriter writer = new StringWriter()
     final PrintWriter printWriter = new PrintWriter(writer, true)
     final ArgWriter argWriter = ArgWriter.unixStyle(printWriter)
@@ -50,6 +50,16 @@ class ArgWriterTest extends Specification {
 
         then:
         writer.toString() == toPlatformLineSeparators('"ab c" "d e f"\n')
+    }
+
+    def "javaStyle quotes argument with hash"() {
+        def argWriter = ArgWriter.javaStyle(printWriter)
+
+        when:
+        argWriter.args("ab#c", "d#e#f")
+
+        then:
+        writer.toString() == toPlatformLineSeparators('"ab#c" "d#e#f"\n')
     }
 
     def "quotes empty argument"() {

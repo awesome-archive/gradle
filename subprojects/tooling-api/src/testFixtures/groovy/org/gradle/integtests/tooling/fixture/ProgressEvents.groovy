@@ -28,9 +28,14 @@ import org.gradle.tooling.events.ProgressEvent
 import org.gradle.tooling.events.ProgressListener
 import org.gradle.tooling.events.StartEvent
 import org.gradle.tooling.events.SuccessResult
+import org.gradle.tooling.events.configuration.ProjectConfigurationOperationDescriptor
 import org.gradle.tooling.events.task.TaskOperationDescriptor
 import org.gradle.tooling.events.test.TestOperationDescriptor
+import org.gradle.tooling.events.transform.TransformOperationDescriptor
+import org.gradle.tooling.events.work.WorkItemOperationDescriptor
 import org.gradle.util.GradleVersion
+
+import java.util.function.Predicate
 
 class ProgressEvents implements ProgressListener {
     private final List<ProgressEvent> events = []
@@ -83,13 +88,14 @@ class ProgressEvents implements ProgressListener {
                             || descriptor.displayName.startsWith('Cross-configure project ')
                             || descriptor.displayName.startsWith('Resolve files of')
                             || descriptor.displayName.startsWith('Executing ')
+                            || descriptor.displayName.startsWith('Execute container callback action')
                             || descriptor.displayName.startsWith('Resolving ')
                         ) {
                             // Ignore this for now
                         } else {
                             def duplicateName = operations.find({
                                 it.descriptor.displayName == descriptor.displayName &&
-                                it.parent.descriptor == descriptor.parent
+                                    it.parent.descriptor == descriptor.parent
                             })
                             if (duplicateName != null) {
                                 // Same display name and same parent
@@ -216,6 +222,23 @@ class ProgressEvents implements ProgressListener {
     }
 
     /**
+     * Returns all events for test class and method execution
+     */
+    List<Operation> getTestClassesAndMethods() {
+        assertHasZeroOrMoreTrees()
+        return operations.findAll { it.testClassOrMethod } as List
+    }
+
+
+    /**
+     * Returns all events for test task or executor execution
+     */
+    List<Operation> getTestTasksAndExecutors() {
+        assertHasZeroOrMoreTrees()
+        return operations.findAll { it.test && !it.testClassOrMethod } as List
+    }
+
+    /**
      * Returns all tasks, in the order started.
      */
     List<Operation> getTasks() {
@@ -311,12 +334,43 @@ class ProgressEvents implements ProgressListener {
             return descriptor instanceof TestOperationDescriptor
         }
 
+        boolean isTestClassOrMethod() {
+            return isTest() && (descriptor.className || descriptor.methodName)
+        }
+
         boolean isTask() {
             return descriptor instanceof TaskOperationDescriptor
         }
 
+        boolean isWorkItem() {
+            try {
+                // the class is not present in pre 5.1 TAPI
+                return descriptor instanceof WorkItemOperationDescriptor
+            } catch (NoClassDefFoundError ignore) {
+                false
+            }
+        }
+
+        boolean isProjectConfiguration() {
+            try {
+                // the class is not present in pre 5.1 TAPI
+                return descriptor instanceof ProjectConfigurationOperationDescriptor
+            } catch (NoClassDefFoundError ignore) {
+                false
+            }
+        }
+
+        boolean isTransform() {
+            try {
+                // the class is not present in pre 5.1 TAPI
+                return descriptor instanceof TransformOperationDescriptor
+            } catch (NoClassDefFoundError ignore) {
+                false
+            }
+        }
+
         boolean isBuildOperation() {
-            return !test && !task
+            return !test && !task && !workItem && !projectConfiguration && !transform
         }
 
         boolean isSuccessful() {
@@ -358,25 +412,40 @@ class ProgressEvents implements ProgressListener {
             return children.findAll { it.descriptor.displayName == displayName }
         }
 
-        Operation descendant(String displayName) {
+        List<Operation> descendants(Spec<? super Operation> filter) {
             def found = [] as List<Operation>
             def recurse
             recurse = { List<Operation> children ->
                 children.each { child ->
-                    if (child.descriptor.displayName == displayName) {
-                        found += child
+                    if (filter.isSatisfiedBy(child)) {
+                        found << child
                     }
                     recurse child.children
                 }
             }
             recurse children
+            found
+        }
+
+        Operation descendant(String... displayNames) {
+            def found = descendants { it.descriptor.displayName in displayNames }
             if (found.size() == 1) {
                 return found[0]
             }
             if (found.empty) {
-                throw new AssertionFailedError("No operation with display name '$displayName' found in descendants of '$descriptor.displayName':\n${describeOperationsTree(children)}")
+                throw new AssertionFailedError("No operation with display name '${displayNames[0]}' found in descendants of '$descriptor.displayName':\n${describeOperationsTree(children)}")
             }
-            throw new AssertionFailedError("More than one operation with display name '$displayName' found in descendants of '$descriptor.displayName':\n${describeOperationsTree(children)}")
+            throw new AssertionFailedError("More than one operation with display name '${displayNames[0]}' found in descendants of '$descriptor.displayName':\n${describeOperationsTree(children)}")
+        }
+
+        boolean hasAncestor(Operation ancestor) {
+            return hasAncestor({ it == ancestor })
+        }
+
+        boolean hasAncestor(Predicate<? super Operation> predicate) {
+            return parent == null
+                ? false
+                : (predicate.test(parent) || parent.hasAncestor(predicate))
         }
     }
 

@@ -19,6 +19,7 @@ import org.apache.commons.io.FilenameUtils
 import org.gradle.api.Project
 import org.gradle.ide.visualstudio.fixtures.AbstractVisualStudioIntegrationSpec
 import org.gradle.ide.visualstudio.fixtures.MSBuildExecutor
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
 import org.gradle.nativeplatform.fixtures.app.CppHelloWorldApp
 import org.gradle.nativeplatform.fixtures.app.ExeWithLibraryUsingLibraryHelloWorldApp
@@ -53,6 +54,7 @@ class VisualStudioSoftwareModelMultiProjectIntegrationTest extends AbstractVisua
         """
     }
 
+    @ToBeFixedForConfigurationCache
     def "create visual studio solution for executable that depends on a library in another project"() {
         when:
         app.executable.writeSources(file("exe/src/main"))
@@ -117,6 +119,7 @@ class VisualStudioSoftwareModelMultiProjectIntegrationTest extends AbstractVisua
         mainSolution.assertReferencesProject(libProject, projectConfigurations)
     }
 
+    @ToBeFixedForConfigurationCache
     def "visual studio solution does not reference the components of a project if it does not have visual studio plugin applied"() {
         when:
         app.executable.writeSources(file("exe/src/main"))
@@ -169,7 +172,7 @@ class VisualStudioSoftwareModelMultiProjectIntegrationTest extends AbstractVisua
         """
         file("other", "build.gradle") << """
             apply plugin: 'cpp'
-            
+
             model {
                 components {
                     greeting(NativeLibrarySpec)
@@ -217,6 +220,7 @@ class VisualStudioSoftwareModelMultiProjectIntegrationTest extends AbstractVisua
         file("other").listFiles().every { !(it.name.endsWith(".vcxproj") || it.name.endsWith(".vcxproj.filters")) }
     }
 
+    @ToBeFixedForConfigurationCache
     def "create visual studio solution for executable that transitively depends on multiple projects"() {
         given:
         def app = new ExeWithLibraryUsingLibraryHelloWorldApp()
@@ -289,6 +293,7 @@ class VisualStudioSoftwareModelMultiProjectIntegrationTest extends AbstractVisua
     }
 
     @Requires(TestPrecondition.MSBUILD)
+    @ToBeFixedForConfigurationCache
     def "can build executable that depends on static library in another project from visual studio"() {
         useMsbuildTool()
 
@@ -327,12 +332,13 @@ class VisualStudioSoftwareModelMultiProjectIntegrationTest extends AbstractVisua
             .succeeds()
 
         then:
-        resultDebug.assertTasksExecuted(':exe:compileMainDebugExecutableMainCpp', ':exe:linkMainDebugExecutable', ':exe:mainDebugExecutable', ':exe:installMainDebugExecutable', ':lib:compileHelloDebugStaticLibraryHelloCpp', ':lib:createHelloDebugStaticLibrary', ':lib:helloDebugStaticLibrary')
-        resultDebug.assertTasksNotSkipped(':exe:compileMainDebugExecutableMainCpp', ':exe:linkMainDebugExecutable', ':exe:mainDebugExecutable', ':exe:installMainDebugExecutable', ':lib:compileHelloDebugStaticLibraryHelloCpp', ':lib:createHelloDebugStaticLibrary', ':lib:helloDebugStaticLibrary')
+        resultDebug.size() == 1
+        resultDebug[0].assertTasksExecuted(':exe:compileMainDebugExecutableMainCpp', ':exe:linkMainDebugExecutable', ':exe:mainDebugExecutable', ':exe:installMainDebugExecutable', ':lib:compileHelloDebugStaticLibraryHelloCpp', ':lib:createHelloDebugStaticLibrary', ':lib:helloDebugStaticLibrary')
         installation('exe/build/install/main/debug').assertInstalled()
     }
 
     @Requires(TestPrecondition.MSBUILD)
+    @ToBeFixedForConfigurationCache
     def "can clean from visual studio with dependencies"() {
         useMsbuildTool()
         def debugBinary = executable('exe/build/exe/main/debug/main')
@@ -384,6 +390,7 @@ class VisualStudioSoftwareModelMultiProjectIntegrationTest extends AbstractVisua
         file("lib/build").assertDoesNotExist()
     }
 
+    @ToBeFixedForConfigurationCache
     def "create visual studio solution where multiple components have same name"() {
         given:
         def app = new ExeWithLibraryUsingLibraryHelloWorldApp()
@@ -455,6 +462,7 @@ class VisualStudioSoftwareModelMultiProjectIntegrationTest extends AbstractVisua
         greetLibProject.projectConfigurations['debug'].includePath == filePath("src/main/headers")
     }
 
+    @ToBeFixedForConfigurationCache
     def "create visual studio solution for executable with project dependency cycle"() {
         given:
         def app = new ExeWithLibraryUsingLibraryHelloWorldApp()
@@ -521,6 +529,7 @@ class VisualStudioSoftwareModelMultiProjectIntegrationTest extends AbstractVisua
 
     /** @see IdePlugin#toGradleCommand(Project) */
     @IgnoreIf({GradleContextualExecuter.daemon || GradleContextualExecuter.noDaemon})
+    @ToBeFixedForConfigurationCache
     def "detects gradle wrapper and uses in vs project"() {
         when:
         hostGradleWrapperFile << "dummy wrapper"
@@ -549,6 +558,7 @@ class VisualStudioSoftwareModelMultiProjectIntegrationTest extends AbstractVisua
 
     /** @see IdePlugin#toGradleCommand(Project) */
     @IgnoreIf({!(GradleContextualExecuter.daemon || GradleContextualExecuter.noDaemon)})
+    @ToBeFixedForConfigurationCache
     def "detects executing gradle distribution and uses in vs project"() {
         when:
         hostGradleWrapperFile << "dummy wrapper"
@@ -575,6 +585,7 @@ class VisualStudioSoftwareModelMultiProjectIntegrationTest extends AbstractVisua
         }
     }
 
+    @ToBeFixedForConfigurationCache
     def "cleanVisualStudio removes all generated visual studio files"() {
         when:
         settingsFile << """
@@ -620,5 +631,64 @@ class VisualStudioSoftwareModelMultiProjectIntegrationTest extends AbstractVisua
 
         then:
         generatedFiles*.assertDoesNotExist()
+    }
+
+    @ToBeFixedForConfigurationCache
+    @IgnoreIf({ GradleContextualExecuter.isParallel() })
+    def "can create Visual Studio solution for multiproject depending on the same prebuilt binary from another project in parallel"() {
+        given:
+        settingsFile.text = """
+            rootProject.name = 'root'
+            include ':projectA', ':projectB', ':library'
+        """
+        buildFile << """
+            allprojects {
+                apply plugin: 'visual-studio'
+            }
+        """
+        file("projectA/build.gradle") << """
+            apply plugin: 'cpp'
+            model {
+                components {
+                    main(NativeExecutableSpec) {
+                        sources {
+                            cpp.lib project: ':library', library: 'hello', linkage: 'api'
+                        }
+                    }
+                }
+            }
+        """
+
+        file("projectB/build.gradle") << """
+            apply plugin: 'cpp'
+            model {
+                components {
+                    main(NativeExecutableSpec) {
+                        sources {
+                            cpp.lib project: ':library', library: 'hello', linkage: 'api'
+                        }
+                    }
+                }
+            }
+        """
+
+        file("library/build.gradle") << """
+            apply plugin: 'cpp'
+            model {
+                repositories {
+                    libs(PrebuiltLibraries) {
+                        hello {
+                            headers.srcDir "libs/src/hello/headers"
+                        }
+                    }
+                }
+            }
+        """
+
+        when:
+        succeeds '--parallel', "visualStudio"
+
+        then:
+        executedAndNotSkipped(':rootVisualStudioSolution', ':visualStudio', ':projectB:projectB_mainExeVisualStudioFilters', ':projectB:projectB_mainExeVisualStudioProject', ':projectB:visualStudio', ':projectA:projectA_mainExeVisualStudioFilters', ':projectA:projectA_mainExeVisualStudioProject', ':projectA:visualStudio')
     }
 }

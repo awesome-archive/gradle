@@ -20,6 +20,7 @@ import org.gradle.concurrent.ParallelismConfiguration;
 import org.gradle.internal.buildoption.BooleanBuildOption;
 import org.gradle.internal.buildoption.BooleanCommandLineOptionConfiguration;
 import org.gradle.internal.buildoption.BuildOption;
+import org.gradle.internal.buildoption.BuildOptionSet;
 import org.gradle.internal.buildoption.CommandLineOptionConfiguration;
 import org.gradle.internal.buildoption.Origin;
 import org.gradle.internal.buildoption.StringBuildOption;
@@ -28,7 +29,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-public class ParallelismBuildOptions {
+public class ParallelismBuildOptions extends BuildOptionSet<ParallelismConfiguration> {
 
     private static List<BuildOption<ParallelismConfiguration>> options;
 
@@ -43,14 +44,16 @@ public class ParallelismBuildOptions {
         return options;
     }
 
-    private ParallelismBuildOptions() {
+    @Override
+    public List<? extends BuildOption<? super ParallelismConfiguration>> getAllOptions() {
+        return options;
     }
 
     public static class ParallelOption extends BooleanBuildOption<ParallelismConfiguration> {
         public static final String GRADLE_PROPERTY = "org.gradle.parallel";
 
         public ParallelOption() {
-            super(GRADLE_PROPERTY, BooleanCommandLineOptionConfiguration.create("parallel", "Build projects in parallel. Gradle will attempt to determine the optimal number of executor threads to use.", "Disables parallel execution to build projects.").incubating());
+            super(GRADLE_PROPERTY, BooleanCommandLineOptionConfiguration.create("parallel", "Build projects in parallel. Gradle will attempt to determine the optimal number of executor threads to use.", "Disables parallel execution to build projects."));
         }
 
         @Override
@@ -65,7 +68,7 @@ public class ParallelismBuildOptions {
         public static final String HINT = "must be a positive, non-zero, integer";
 
         public MaxWorkersOption() {
-            super(GRADLE_PROPERTY, CommandLineOptionConfiguration.create(LONG_OPTION, "Configure the number of concurrent workers Gradle is allowed to use.").incubating());
+            super(GRADLE_PROPERTY, CommandLineOptionConfiguration.create(LONG_OPTION, "Configure the number of concurrent workers Gradle is allowed to use."));
         }
 
         @Override

@@ -16,6 +16,7 @@
 package org.gradle.nativeplatform
 
 import org.gradle.api.reporting.components.AbstractNativeComponentReportIntegrationTest
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.nativeplatform.fixtures.RequiresInstalledToolChain
 
 class PlatformNativeComponentReportIntegrationTest extends AbstractNativeComponentReportIntegrationTest {
@@ -23,6 +24,7 @@ class PlatformNativeComponentReportIntegrationTest extends AbstractNativeCompone
     // Should display installation directory
 
     @RequiresInstalledToolChain
+    @ToBeFixedForConfigurationCache(because = ":components")
     def "shows details of native C++ library"() {
         given:
         buildFile << """
@@ -79,6 +81,7 @@ Binaries
     }
 
     @RequiresInstalledToolChain
+    @ToBeFixedForConfigurationCache(because = ":components")
     def "shows details of native C++ library that is not buildable"() {
         given:
         buildFile << """
@@ -148,7 +151,8 @@ Binaries
         tool chain: unavailable
         shared library file: build/libs/someLib/shared/someLib.dll
         No tool chain is available to build for platform 'windows':
-          - ${toolChain.instanceDisplayName}: Don't know how to build for platform 'windows'.
+          - ${toolChain.instanceDisplayName}:
+              - Don't know how to build for platform 'windows'.
     Static library 'someLib:staticLibrary' (not buildable)
         build using task: :someLibStaticLibrary
         build type: build type 'debug'
@@ -157,11 +161,13 @@ Binaries
         tool chain: unavailable
         static library file: build/libs/someLib/static/someLib.lib
         No tool chain is available to build for platform 'windows':
-          - ${toolChain.instanceDisplayName}: Don't know how to build for platform 'windows'.
+          - ${toolChain.instanceDisplayName}:
+              - Don't know how to build for platform 'windows'.
 """
     }
 
     @RequiresInstalledToolChain
+    @ToBeFixedForConfigurationCache(because = ":components")
     def "shows details of polyglot native library with multiple variants"() {
         given:
         buildFile << """

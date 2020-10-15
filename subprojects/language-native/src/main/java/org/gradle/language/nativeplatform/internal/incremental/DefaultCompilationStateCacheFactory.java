@@ -16,7 +16,6 @@
 
 package org.gradle.language.nativeplatform.internal.incremental;
 
-import org.gradle.api.internal.changedetection.state.InMemoryCacheDecoratorFactory;
 import org.gradle.api.invocation.Gradle;
 import org.gradle.cache.CacheRepository;
 import org.gradle.cache.FileLockManager;
@@ -24,11 +23,15 @@ import org.gradle.cache.PersistentCache;
 import org.gradle.cache.PersistentIndexedCache;
 import org.gradle.cache.PersistentIndexedCacheParameters;
 import org.gradle.cache.PersistentStateCache;
+import org.gradle.cache.internal.InMemoryCacheDecoratorFactory;
+import org.gradle.internal.service.scopes.Scopes;
+import org.gradle.internal.service.scopes.ServiceScope;
 
 import java.io.Closeable;
 
 import static org.gradle.cache.internal.filelock.LockOptionsBuilder.mode;
 
+@ServiceScope(Scopes.Gradle.class)
 public class DefaultCompilationStateCacheFactory implements CompilationStateCacheFactory, Closeable {
 
     private final PersistentIndexedCache<String, CompilationState> compilationStateIndexedCache;
@@ -38,10 +41,10 @@ public class DefaultCompilationStateCacheFactory implements CompilationStateCach
         cache = cacheRepository
                 .cache(gradle, "nativeCompile")
                 .withDisplayName("native compile cache")
-                .withLockOptions(mode(FileLockManager.LockMode.None)) // Lock on demand
+                .withLockOptions(mode(FileLockManager.LockMode.OnDemand)) // Lock on demand
                 .open();
-        PersistentIndexedCacheParameters<String, CompilationState> parameters = new PersistentIndexedCacheParameters<String, CompilationState>("nativeCompile", String.class, new CompilationStateSerializer())
-                .cacheDecorator(inMemoryCacheDecoratorFactory.decorator(2000, false));
+        PersistentIndexedCacheParameters<String, CompilationState> parameters = PersistentIndexedCacheParameters.of("nativeCompile", String.class, new CompilationStateSerializer())
+            .withCacheDecorator(inMemoryCacheDecoratorFactory.decorator(2000, false));
 
         compilationStateIndexedCache = cache.createCache(parameters);
     }

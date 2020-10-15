@@ -25,10 +25,10 @@ import org.junit.Rule
 import spock.lang.Specification
 
 import static org.gradle.util.Matchers.isSerializable
-import static org.junit.Assert.assertThat
+import static org.hamcrest.MatcherAssert.assertThat
 
 class StartParameterTest extends Specification {
-    @Rule private TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider()
+    @Rule private TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider(getClass())
     @Rule private SetSystemProperties systemProperties = new SetSystemProperties()
 
     void "new instance has correct state"() {
@@ -48,11 +48,11 @@ class StartParameterTest extends Specification {
         parameter.continueOnFailure = true
         parameter.rerunTasks = true
         parameter.refreshDependencies = true
-        parameter.recompileScripts = true
         parameter.configureOnDemand = true
         parameter.parallelProjectExecutionEnabled = true
         parameter.buildCacheEnabled = true
-        parameter.interactive = true
+        parameter.writeDependencyLocks = true
+        parameter.lockedDependenciesToUpdate = ['foo']
         parameter.includeBuild(new File('participant'))
 
         when:
@@ -117,11 +117,11 @@ class StartParameterTest extends Specification {
         !parameter.dryRun
         !parameter.continueOnFailure
         !parameter.rerunTasks
-        !parameter.recompileScripts
         !parameter.refreshDependencies
         !parameter.parallelProjectExecutionEnabled
         !parameter.buildCacheEnabled
-        !parameter.interactive
+        !parameter.writeDependencyLocks
+        parameter.lockedDependenciesToUpdate.isEmpty()
 
         assertThat(parameter, isSerializable())
     }
@@ -280,12 +280,12 @@ class StartParameterTest extends Specification {
         parameter.excludedTaskNames = ['excluded1']
         parameter.dryRun = true
         parameter.continueOnFailure = true
-        parameter.recompileScripts = true
         parameter.rerunTasks = true
         parameter.refreshDependencies = true
         parameter.parallelProjectExecutionEnabled = true
         parameter.buildCacheEnabled = true
-        parameter.interactive = true
+        parameter.writeDependencyLocks = true
+        parameter.lockedDependenciesToUpdate = ['foo']
 
         assertThat(parameter, isSerializable())
 
@@ -302,11 +302,11 @@ class StartParameterTest extends Specification {
         newParameter.continueOnFailure == parameter.continueOnFailure
         newParameter.refreshDependencies == parameter.refreshDependencies
         newParameter.rerunTasks == parameter.rerunTasks
-        newParameter.recompileScripts == parameter.recompileScripts
         newParameter.systemPropertiesArgs == parameter.systemPropertiesArgs
         newParameter.parallelProjectExecutionEnabled == parameter.parallelProjectExecutionEnabled
         newParameter.buildCacheEnabled == parameter.buildCacheEnabled
-        newParameter.interactive == parameter.interactive
+        newParameter.writeDependencyLocks == parameter.writeDependencyLocks
+        newParameter.lockedDependenciesToUpdate == parameter.lockedDependenciesToUpdate
 
         newParameter.buildFile == null
         newParameter.taskRequests.empty

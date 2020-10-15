@@ -19,63 +19,110 @@ import org.gradle.api.Action;
 import org.gradle.api.artifacts.repositories.AuthenticationContainer;
 import org.gradle.api.artifacts.repositories.PasswordCredentials;
 import org.gradle.api.credentials.Credentials;
+import org.gradle.api.internal.FeaturePreviews;
+import org.gradle.api.model.ObjectFactory;
+import org.gradle.api.provider.Property;
+import org.gradle.api.provider.ProviderFactory;
 import org.gradle.authentication.Authentication;
+import org.gradle.internal.Cast;
 import org.gradle.internal.artifacts.repositories.AuthenticationSupportedInternal;
+import org.gradle.internal.authentication.AuthenticationInternal;
 import org.gradle.internal.reflect.Instantiator;
+import org.gradle.util.CollectionUtils;
 
-import javax.annotation.Nullable;
+import java.net.URI;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
 
-public abstract class AbstractAuthenticationSupportedRepository extends AbstractArtifactRepository implements AuthenticationSupportedInternal {
+public abstract class AbstractAuthenticationSupportedRepository extends AbstractResolutionAwareArtifactRepository implements AuthenticationSupportedInternal {
     private final AuthenticationSupporter delegate;
+    private final ProviderFactory providerFactory;
 
-    AbstractAuthenticationSupportedRepository(Instantiator instantiator, AuthenticationContainer authenticationContainer) {
-        this.delegate = new AuthenticationSupporter(instantiator, authenticationContainer);
+    AbstractAuthenticationSupportedRepository(Instantiator instantiator, AuthenticationContainer authenticationContainer, ObjectFactory objectFactory, ProviderFactory providerFactory, FeaturePreviews featurePreviews) {
+        super(objectFactory, featurePreviews);
+        this.delegate = new AuthenticationSupporter(instantiator, objectFactory, authenticationContainer, providerFactory);
+        this.providerFactory = providerFactory;
     }
 
     @Override
     public PasswordCredentials getCredentials() {
+        invalidateDescriptor();
         return delegate.getCredentials();
     }
 
     @Override
     public <T extends Credentials> T getCredentials(Class<T> credentialsType) {
+        invalidateDescriptor();
         return delegate.getCredentials(credentialsType);
     }
 
-    @Nullable
     @Override
-    public Credentials getConfiguredCredentials() {
+    public Property<Credentials> getConfiguredCredentials() {
         return delegate.getConfiguredCredentials();
     }
 
     @Override
     public void setConfiguredCredentials(Credentials credentials) {
+        invalidateDescriptor();
         delegate.setConfiguredCredentials(credentials);
     }
 
     @Override
     public void credentials(Action<? super PasswordCredentials> action) {
+        invalidateDescriptor();
         delegate.credentials(action);
     }
 
     @Override
     public <T extends Credentials> void credentials(Class<T> credentialsType, Action<? super T> action) throws IllegalStateException {
+        invalidateDescriptor();
         delegate.credentials(credentialsType, action);
     }
 
     @Override
+    public void credentials(Class<? extends Credentials> credentialsType) {
+        invalidateDescriptor();
+        delegate.credentials(credentialsType, providerFactory.provider(this::getName));
+    }
+
+    @Override
     public void authentication(Action<? super AuthenticationContainer> action) {
+        invalidateDescriptor();
         delegate.authentication(action);
     }
 
     @Override
     public AuthenticationContainer getAuthentication() {
+        invalidateDescriptor();
         return delegate.getAuthentication();
     }
 
     @Override
     public Collection<Authentication> getConfiguredAuthentication() {
-        return delegate.getConfiguredAuthentication();
+        Collection<Authentication> configuredAuthentication = delegate.getConfiguredAuthentication();
+
+        for (Authentication authentication : configuredAuthentication) {
+            AuthenticationInternal authenticationInternal = (AuthenticationInternal) authentication;
+            for (URI repositoryUrl : getRepositoryUrls()) {
+                // only care about HTTP hosts right now
+                if (repositoryUrl.getScheme().startsWith("http")) {
+                    authenticationInternal.addHost(repositoryUrl.getHost(), repositoryUrl.getPort());
+                }
+            }
+        }
+        return configuredAuthentication;
+    }
+
+    protected Collection<URI> getRepositoryUrls() {
+        return Collections.emptyList();
+    }
+
+    List<String> getAuthenticationSchemes() {
+        return CollectionUtils.collect(getConfiguredAuthentication(), authentication -> Cast.cast(AuthenticationInternal.class, authentication).getType().getSimpleName());
+    }
+
+    boolean usesCredentials() {
+        return delegate.usesCredentials();
     }
 }

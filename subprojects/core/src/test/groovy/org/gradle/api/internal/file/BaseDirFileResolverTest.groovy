@@ -17,8 +17,6 @@ package org.gradle.api.internal.file
 
 import org.gradle.api.InvalidUserDataException
 import org.gradle.api.PathValidation
-import org.gradle.api.file.FileCollection
-import org.gradle.api.internal.file.collections.DefaultConfigurableFileCollection
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
 import org.gradle.util.PreconditionVerifier
 import org.junit.Before
@@ -27,9 +25,10 @@ import org.junit.Test
 
 import java.util.concurrent.Callable
 
-import static org.gradle.api.internal.file.TestFiles.resolver
-import static org.hamcrest.Matchers.*
-import static org.junit.Assert.*
+import static org.hamcrest.CoreMatchers.equalTo
+import static org.junit.Assert.assertEquals
+import static org.hamcrest.MatcherAssert.assertThat
+import static org.junit.Assert.fail
 
 class BaseDirFileResolverTest {
     static final String TEST_PATH = 'testpath'
@@ -39,12 +38,12 @@ class BaseDirFileResolverTest {
     File testDir
 
     BaseDirFileResolver baseDirConverter
-    @Rule public TestNameTestDirectoryProvider rootDir = new TestNameTestDirectoryProvider()
+    @Rule public TestNameTestDirectoryProvider rootDir = new TestNameTestDirectoryProvider(getClass())
     @Rule public PreconditionVerifier preconditions = new PreconditionVerifier()
 
     @Before public void setUp() {
         baseDir = rootDir.testDirectory
-        baseDirConverter = new BaseDirFileResolver(TestFiles.fileSystem(), baseDir, resolver().getPatternSetFactory())
+        baseDirConverter = new BaseDirFileResolver(baseDir)
         testFile = new File(baseDir, 'testfile')
         testDir = new File(baseDir, 'testdir')
     }
@@ -59,7 +58,7 @@ class BaseDirFileResolverTest {
         baseDirConverter.resolve(TEST_PATH, PathValidation.NONE)
     }
 
-    @Test public void testPathValidationWithNonExistingFile() {
+    @Test public void testPathValidationWithNonexistentFile() {
         try {
             baseDirConverter.resolve(testFile.name, PathValidation.FILE)
             fail()
@@ -83,7 +82,7 @@ class BaseDirFileResolverTest {
         baseDirConverter.resolve(testFile.name, PathValidation.FILE)
     }
 
-    @Test public void testPathValidationWithNonExistingDirectory() {
+    @Test public void testPathValidationWithNonexistentDirectory() {
         try {
             baseDirConverter.resolve(testDir.name, PathValidation.DIRECTORY)
             fail()
@@ -114,7 +113,7 @@ class BaseDirFileResolverTest {
         baseDirConverter.resolve(testFile.name, PathValidation.EXISTS)
     }
 
-    @Test public void testExistsPathValidationWithNonExistingDir() {
+    @Test public void testExistsPathValidationWithNonexistentDir() {
         try {
             baseDirConverter.resolve(testDir.name, PathValidation.EXISTS)
             fail()
@@ -123,7 +122,7 @@ class BaseDirFileResolverTest {
         }
     }
 
-    @Test public void testExistsPathValidationWithNonExistingFile() {
+    @Test public void testExistsPathValidationWithNonexistentFile() {
         try {
             baseDirConverter.resolve(testFile.name, PathValidation.EXISTS)
             fail()
@@ -221,18 +220,6 @@ class BaseDirFileResolverTest {
         assertEquals(new File(baseDir, 'relative'), baseDirConverter.resolve(closure))
     }
 
-    @Test public void testFiles() {
-        FileCollection collection = baseDirConverter.resolveFiles('a', 'b')
-        assertThat(collection, instanceOf(DefaultConfigurableFileCollection))
-        assertThat(collection.from, equalTo(['a', 'b'] as LinkedHashSet))
-    }
-
-    @Test public void testFilesReturnsSourceFileCollection() {
-        FileCollection source = baseDirConverter.resolveFiles('a')
-        FileCollection collection = baseDirConverter.resolveFiles(source)
-        assertThat(collection, sameInstance(source))
-    }
-
     @Test public void testResolveAbsolutePathToUri() {
         File absoluteFile = new File('nonRelative').canonicalFile
         assertEquals(absoluteFile.toURI(), baseDirConverter.resolveUri(absoluteFile.path))
@@ -276,18 +263,38 @@ class BaseDirFileResolverTest {
 
     @Test public void testResolveRelativePathToRelativePath() {
         assertEquals("relative", baseDirConverter.resolveAsRelativePath("relative"))
+        assertEquals("relative", baseDirConverter.resolveForDisplay("relative"))
+
+        assertEquals("relative${File.separator}child".toString(), baseDirConverter.resolveAsRelativePath("relative/child"))
+        assertEquals("relative${File.separator}child".toString(), baseDirConverter.resolveForDisplay("relative/child"))
     }
 
     @Test public void testResolveAbsoluteChildPathToRelativePath() {
         def absoluteFile = new File(baseDir, 'child').absoluteFile
         assertEquals('child', baseDirConverter.resolveAsRelativePath(absoluteFile))
         assertEquals('child', baseDirConverter.resolveAsRelativePath(absoluteFile.absolutePath))
+
+        assertEquals('child', baseDirConverter.resolveForDisplay(absoluteFile))
+
+        def absoluteNestedFile = new File(baseDir, 'child/nested').absoluteFile
+        assertEquals("child${File.separator}nested".toString(), baseDirConverter.resolveAsRelativePath(absoluteNestedFile))
+        assertEquals("child${File.separator}nested".toString(), baseDirConverter.resolveAsRelativePath(absoluteNestedFile.absolutePath))
+
+        assertEquals("child${File.separator}nested".toString(), baseDirConverter.resolveForDisplay(absoluteNestedFile))
     }
 
     @Test public void testResolveAbsoluteSiblingPathToRelativePath() {
         def absoluteFile = new File(baseDir, '../sibling').absoluteFile
         assertEquals("..${File.separator}sibling".toString(), baseDirConverter.resolveAsRelativePath(absoluteFile))
         assertEquals("..${File.separator}sibling".toString(), baseDirConverter.resolveAsRelativePath(absoluteFile.absolutePath))
+
+        assertEquals("..${File.separator}sibling".toString(), baseDirConverter.resolveForDisplay(absoluteFile))
+
+        def absoluteNestedFile = new File(baseDir, '../sibling/nested').absoluteFile
+        assertEquals("..${File.separator}sibling${File.separator}nested".toString(), baseDirConverter.resolveAsRelativePath(absoluteNestedFile))
+        assertEquals("..${File.separator}sibling${File.separator}nested".toString(), baseDirConverter.resolveAsRelativePath(absoluteNestedFile.absolutePath))
+
+        assertEquals("..${File.separator}sibling${File.separator}nested".toString(), baseDirConverter.resolveForDisplay(absoluteNestedFile))
     }
 
     @Test public void testResolveBaseDirToRelativePath() {
@@ -295,11 +302,25 @@ class BaseDirFileResolverTest {
         assertEquals('.', baseDirConverter.resolveAsRelativePath(baseDir.absolutePath))
         assertEquals('.', baseDirConverter.resolveAsRelativePath('.'))
         assertEquals('.', baseDirConverter.resolveAsRelativePath("../$baseDir.name"))
+
+        assertEquals('.', baseDirConverter.resolveForDisplay(baseDir))
     }
 
     @Test public void testResolveParentDirToRelativePath() {
         assertEquals('..', baseDirConverter.resolveAsRelativePath(baseDir.parentFile))
         assertEquals('..', baseDirConverter.resolveAsRelativePath('..'))
+
+        assertEquals('..', baseDirConverter.resolveForDisplay(baseDir.parentFile))
+    }
+
+    @Test public void testAncestorToRelativePath() {
+        def ancestor = baseDir.parentFile.parentFile
+        assertEquals("..${File.separator}..".toString(), baseDirConverter.resolveAsRelativePath(ancestor))
+        assertEquals(ancestor.path, baseDirConverter.resolveForDisplay(ancestor))
+
+        def nested = new File(baseDir.parentFile.parentFile, "file")
+        assertEquals("..${File.separator}..${File.separator}file".toString(), baseDirConverter.resolveAsRelativePath(nested))
+        assertEquals(nested.path, baseDirConverter.resolveForDisplay(nested))
     }
 
     @Test public void testCreateFileResolver() {

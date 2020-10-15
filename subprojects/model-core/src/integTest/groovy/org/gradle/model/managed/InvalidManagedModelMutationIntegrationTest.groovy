@@ -17,7 +17,9 @@
 package org.gradle.model.managed
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
 
+@UnsupportedWithConfigurationCache(because = "software model")
 class InvalidManagedModelMutationIntegrationTest extends AbstractIntegrationSpec {
 
     def "mutating managed inputs of a rule is not allowed"() {

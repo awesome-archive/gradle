@@ -16,6 +16,9 @@
 
 package org.gradle.language.cpp
 
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
+import org.gradle.nativeplatform.fixtures.RequiresInstalledToolChain
+import org.gradle.nativeplatform.fixtures.ToolChainRequirement
 import org.gradle.nativeplatform.fixtures.app.CppApp
 import org.gradle.nativeplatform.fixtures.app.CppAppWithLibraries
 import org.gradle.nativeplatform.fixtures.app.CppAppWithLibrariesWithApiDependencies
@@ -24,7 +27,7 @@ import org.gradle.nativeplatform.fixtures.app.CppAppWithLibraryAndOptionalFeatur
 import org.gradle.nativeplatform.fixtures.app.CppAppWithOptionalFeature
 import org.gradle.nativeplatform.fixtures.app.CppCompilerDetectingTestApp
 import org.gradle.nativeplatform.fixtures.app.SourceElement
-import org.gradle.nativeplatform.platform.internal.DefaultNativePlatform
+import spock.lang.Issue
 
 import static org.gradle.util.Matchers.containsText
 
@@ -43,8 +46,8 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
     }
 
     @Override
-    protected List<String> getTasksToAssembleDevelopmentBinary() {
-        return [":compileDebugCpp", ":linkDebug", ":installDebug"]
+    protected List<String> getTasksToAssembleDevelopmentBinary(String variant) {
+        return [":compileDebug${variant.capitalize()}Cpp", ":linkDebug${variant.capitalize()}", ":installDebug${variant.capitalize()}"]
     }
 
     @Override
@@ -57,6 +60,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         return new CppApp()
     }
 
+    @ToBeFixedForConfigurationCache
     def "skip compile, link and install tasks when no source"() {
         given:
         buildFile << """
@@ -70,6 +74,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         result.assertTasksSkipped(tasks.debug.allToInstall, ':assemble')
     }
 
+    @ToBeFixedForConfigurationCache
     def "build fails when compilation fails"() {
         given:
         buildFile << """
@@ -90,6 +95,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         failure.assertThatCause(containsText("C++ compiler failed while compiling broken.cpp"))
     }
 
+    @ToBeFixedForConfigurationCache
     def "sources are compiled and linked with with C++ tools"() {
         settingsFile << "rootProject.name = 'app'"
         def app = new CppCompilerDetectingTestApp()
@@ -110,6 +116,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         installation("build/install/main/debug").exec().out == app.expectedOutput(toolChain)
     }
 
+    @ToBeFixedForConfigurationCache
     def "can build debug and release variants of executable"() {
         settingsFile << "rootProject.name = 'app'"
         def app = new CppAppWithOptionalFeature()
@@ -141,6 +148,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         installation("build/install/main/debug").exec().out == app.withFeatureDisabled().expectedOutput
     }
 
+    @ToBeFixedForConfigurationCache
     def "can use executable file as task dependency"() {
         settingsFile << "rootProject.name = 'app'"
         def app = new CppApp()
@@ -163,6 +171,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         executable("build/exe/main/debug/app").assertExists()
     }
 
+    @ToBeFixedForConfigurationCache
     def "can use objects as task dependency"() {
         settingsFile << "rootProject.name = 'app'"
         def app = new CppApp()
@@ -186,6 +195,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         objectFiles(app.main)*.assertExists()
     }
 
+    @ToBeFixedForConfigurationCache
     def "can use installDirectory as task dependency"() {
         settingsFile << "rootProject.name = 'app'"
         def app = new CppApp()
@@ -208,6 +218,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         installation("build/install/main/debug").exec().out == app.expectedOutput
     }
 
+    @ToBeFixedForConfigurationCache
     def "ignores non-C++ source files in source directory"() {
         settingsFile << "rootProject.name = 'app'"
         def app = new CppApp()
@@ -233,6 +244,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         installation("build/install/main/debug").exec().out == app.expectedOutput
     }
 
+    @ToBeFixedForConfigurationCache
     def "build logic can change source layout convention"() {
         settingsFile << "rootProject.name = 'app'"
         def app = new CppApp()
@@ -261,6 +273,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         installation("build/install/main/debug").exec().out == app.expectedOutput
     }
 
+    @ToBeFixedForConfigurationCache
     def "build logic can add individual source files"() {
         settingsFile << "rootProject.name = 'app'"
         def app = new CppApp()
@@ -293,6 +306,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         installation("build/install/main/debug").exec().out == app.expectedOutput
     }
 
+    @ToBeFixedForConfigurationCache
     def "build logic can change buildDir"() {
         settingsFile << "rootProject.name = 'app'"
         def app = new CppApp()
@@ -316,6 +330,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         installation("output/install/main/debug").exec().out == app.expectedOutput
     }
 
+    @ToBeFixedForConfigurationCache
     def "build logic can define the base name"() {
         def app = new CppApp()
 
@@ -337,6 +352,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         installation("build/install/main/debug").exec().out == app.expectedOutput
     }
 
+    @ToBeFixedForConfigurationCache
     def "build logic can change task output locations"() {
         settingsFile << "rootProject.name = 'app'"
         def app = new CppApp()
@@ -363,6 +379,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         installation("build/some-app").exec().out == app.expectedOutput
     }
 
+    @ToBeFixedForConfigurationCache
     def "can compile and link against a library"() {
         settingsFile << "include 'app', 'hello'"
         def app = new CppAppWithLibrary()
@@ -393,13 +410,118 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         installation.assertIncludesLibraries("hello")
     }
 
+    @ToBeFixedForConfigurationCache
+    def "can compile and link against a library when specifying multiple target machines"() {
+        settingsFile << "include 'app', 'hello'"
+        def app = new CppAppWithLibrary()
+
+        given:
+        buildFile << """
+            project(':app') {
+                apply plugin: 'cpp-application'
+                application {
+                    targetMachines = [machines.${currentHostOperatingSystemFamilyDsl}, machines.os('host-family')]
+                }
+                dependencies {
+                    implementation project(':hello')
+                }
+            }
+            project(':hello') {
+                apply plugin: 'cpp-library'
+                library {
+                    targetMachines = [machines.${currentHostOperatingSystemFamilyDsl}, machines.os('host-family')]
+                }
+            }
+        """
+        app.greeter.writeToProject(file("hello"))
+        app.main.writeToProject(file("app"))
+
+        expect:
+        succeeds ":app:assemble"
+
+        result.assertTasksExecuted(tasks(':hello').withOperatingSystemFamily(currentOsFamilyName).debug.allToLink, tasks(':app').withOperatingSystemFamily(currentOsFamilyName).debug.allToInstall, ":app:assemble")
+        executable("app/build/exe/main/debug/${currentOsFamilyName.toLowerCase()}/app").assertExists()
+        sharedLibrary("hello/build/lib/main/debug/${currentOsFamilyName.toLowerCase()}/hello").assertExists()
+        def installation = installation("app/build/install/main/debug/${currentOsFamilyName.toLowerCase()}")
+        installation.exec().out == app.expectedOutput
+        installation.assertIncludesLibraries("hello")
+    }
+
+    def "fails when dependency library does not specify the same target machines"() {
+        settingsFile << "include 'app', 'greeter'"
+        def app = new CppAppWithLibrary()
+
+        given:
+        buildFile << """
+            project(':app') {
+                apply plugin: 'cpp-application'
+                application {
+                    targetMachines = [machines.${currentHostOperatingSystemFamilyDsl}]
+                    dependencies {
+                        implementation project(':greeter')
+                    }
+                }
+            }
+            project(':greeter') {
+                apply plugin: 'cpp-library'
+                library {
+                    targetMachines = [machines.os('os-family')]
+                }
+            }
+        """
+        app.greeter.writeToProject(file("greeter"))
+        app.main.writeToProject(file("app"))
+
+        expect:
+        fails ":app:assemble"
+
+        and:
+        failure.assertHasCause("Could not resolve project :greeter")
+        failure.assertHasCause("No matching variant of project :greeter was found. The consumer was configured to find attribute 'org.gradle.usage' with value 'native-runtime', attribute 'org.gradle.native.debuggable' with value 'true', attribute 'org.gradle.native.optimized' with value 'false', attribute 'org.gradle.native.operatingSystem' with value '${currentOsFamilyName.toLowerCase()}', attribute 'org.gradle.native.architecture' with value '${currentArchitecture}' but:")
+    }
+
+    def "fails when dependency library does not specify the same target architecture"() {
+        settingsFile << "include 'app', 'greeter'"
+        def app = new CppAppWithLibrary()
+
+        given:
+        buildFile << """
+            project(':app') {
+                apply plugin: 'cpp-application'
+                application {
+                    targetMachines = [machines.${currentHostOperatingSystemFamilyDsl}]
+                    dependencies {
+                        implementation project(':greeter')
+                    }
+                }
+            }
+            project(':greeter') {
+                apply plugin: 'cpp-library'
+                library {
+                    targetMachines = [machines.${currentHostOperatingSystemFamilyDsl}.architecture('foo')]
+                }
+                ${configureToolChainSupport('foo')}
+            }
+        """
+        app.greeter.writeToProject(file("greeter"))
+        app.main.writeToProject(file("app"))
+
+        expect:
+        fails ":app:assemble"
+
+        and:
+        failure.assertHasCause("Could not resolve project :greeter")
+        failure.assertHasErrorOutput("Incompatible because this component declares attribute 'org.gradle.native.architecture' with value 'foo', attribute 'org.gradle.usage' with value 'native-link' and the consumer needed attribute 'org.gradle.native.architecture' with value '${currentArchitecture}', attribute 'org.gradle.usage' with value 'native-runtime'")
+    }
+
+    @ToBeFixedForConfigurationCache
     def "can directly depend on generated sources on includePath"() {
         settingsFile << "rootProject.name = 'app'"
 
         given:
         file("src/main/cpp/main.cpp") << """
             #include "foo.h"
-            
+
             int main(int argc, char** argv) {
                 return EXIT_VALUE;
             }
@@ -408,10 +530,12 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         and:
         buildFile << """
             apply plugin: 'cpp-application'
-            
+
+            def headerDirectory = objects.directoryProperty()
+
             task generateHeader {
-                ext.headerDirectory = newOutputDirectory()
-                headerDirectory.set(project.layout.buildDirectory.dir("headers"))
+                outputs.dir(headerDirectory)
+                headerDirectory.set(layout.buildDirectory.dir("headers"))
                 doLast {
                     def fooH = headerDirectory.file("foo.h").get().asFile
                     fooH.parentFile.mkdirs()
@@ -420,9 +544,9 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
                     '''
                 }
             }
-            
+
             application.binaries.whenElementFinalized { binary ->
-                def dependency = project.dependencies.create(files(generateHeader.headerDirectory))
+                def dependency = project.dependencies.create(files(headerDirectory))
                 binary.getIncludePathConfiguration().dependencies.add(dependency)
             }
          """
@@ -431,7 +555,8 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         succeeds "compileDebug"
     }
 
-    def "can compile and link against a library with explicit operating system family defined"() {
+    @ToBeFixedForConfigurationCache
+    def "can compile and link against a library with explicit target machine defined"() {
         settingsFile << "include 'app', 'hello'"
         def app = new CppAppWithLibrary()
 
@@ -443,13 +568,13 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
                     dependencies {
                         implementation project(':hello')
                     }
-                    operatingSystems = [objects.named(OperatingSystemFamily, '${DefaultNativePlatform.currentOperatingSystem.toFamilyName()}')]
+                    targetMachines = [machines.os('${currentOsFamilyName}').architecture('${currentArchitecture}')]
                 }
             }
             project(':hello') {
                 apply plugin: 'cpp-library'
                 library {
-                    operatingSystems = [objects.named(OperatingSystemFamily, '${DefaultNativePlatform.currentOperatingSystem.toFamilyName()}')]
+                    targetMachines = [machines.os('${currentOsFamilyName}').architecture('${currentArchitecture}')]
                 }
             }
         """
@@ -468,11 +593,13 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
     }
 
     def "fails compile and link against a library with different operating system family support"() {
-        settingsFile << "include 'app', 'hello'"
+        settingsFile << """
+            rootProject.name = 'test'
+            include 'app', 'hello'
+        """
         def app = new CppAppWithLibrary()
 
         given:
-        def currentOperatingSystemFamily = DefaultNativePlatform.currentOperatingSystem.toFamilyName()
         buildFile << """
             project(':app') {
                 apply plugin: 'cpp-application'
@@ -480,13 +607,13 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
                     dependencies {
                         implementation project(':hello')
                     }
-                    operatingSystems = [objects.named(OperatingSystemFamily, '${currentOperatingSystemFamily}')]
+                    targetMachines = [machines.os('${currentOsFamilyName}').architecture('${currentArchitecture}')]
                 }
             }
             project(':hello') {
                 apply plugin: 'cpp-library'
                 library {
-                    operatingSystems = [objects.named(OperatingSystemFamily, 'some-other-family')]
+                    targetMachines = [machines.os('some-other-family').architecture('${currentArchitecture}')]
                 }
             }
         """
@@ -496,13 +623,17 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         expect:
         fails ":app:assemble"
 
-        failure.assertHasCause """Unable to find a matching configuration of project :hello: Configuration 'cppApiElements':
-  - Required org.gradle.native.debuggable 'true' but no value provided.
-  - Required org.gradle.native.operatingSystem '${currentOperatingSystemFamily}' but no value provided.
-  - Required org.gradle.native.optimized 'false' but no value provided.
-  - Required org.gradle.usage 'native-runtime' and found incompatible value 'cplusplus-api'."""
+        failure.assertHasCause """No matching variant of project :hello was found. The consumer was configured to find attribute 'org.gradle.usage' with value 'native-runtime', attribute 'org.gradle.native.debuggable' with value 'true', attribute 'org.gradle.native.optimized' with value 'false', attribute 'org.gradle.native.operatingSystem' with value '${currentOsFamilyName}', attribute 'org.gradle.native.architecture' with value '${currentArchitecture}' but:
+  - Variant 'cppApiElements' capability test:hello:unspecified:
+      - Incompatible because this component declares attribute 'org.gradle.usage' with value 'cplusplus-api' and the consumer needed attribute 'org.gradle.usage' with value 'native-runtime'
+      - Other compatible attributes:
+          - Doesn't say anything about org.gradle.native.architecture (required '${currentArchitecture}')
+          - Doesn't say anything about org.gradle.native.debuggable (required 'true')
+          - Doesn't say anything about org.gradle.native.operatingSystem (required '${currentOsFamilyName}')
+          - Doesn't say anything about org.gradle.native.optimized (required 'false')"""
     }
 
+    @ToBeFixedForConfigurationCache
     def "can compile and link against a static library"() {
         settingsFile << "include 'app', 'hello'"
         def app = new CppAppWithLibrary()
@@ -517,7 +648,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
             }
             project(':hello') {
                 apply plugin: 'cpp-library'
-                
+
                 library.linkage = [Linkage.STATIC]
             }
         """
@@ -527,7 +658,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         expect:
         succeeds ":app:assemble"
 
-        result.assertTasksExecuted(compileAndStaticLinkTasks([':hello'], debug), compileAndLinkTasks([':app'], debug), installTaskDebug(':app'), ":app:assemble")
+        result.assertTasksExecuted(tasks(':hello').debug.allToCreate, tasks(':app').debug.allToInstall, ':app:assemble')
         executable("app/build/exe/main/debug/app").assertExists()
         staticLibrary("hello/build/lib/main/debug/hello").assertExists()
         def installation = installation("app/build/install/main/debug")
@@ -535,6 +666,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         installation.assertIncludesLibraries()
     }
 
+    @ToBeFixedForConfigurationCache
     def "can compile and link against a library with both linkages defined"() {
         settingsFile << "include 'app', 'hello'"
         def app = new CppAppWithLibrary()
@@ -549,7 +681,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
             }
             project(':hello') {
                 apply plugin: 'cpp-library'
-                
+
                 library.linkage = [Linkage.STATIC, Linkage.SHARED]
             }
         """
@@ -559,7 +691,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         expect:
         succeeds ":app:assemble"
 
-        result.assertTasksExecuted(compileAndLinkTasks([':hello'], debugShared), compileAndLinkTasks([':app'], debug), installTaskDebug(':app'), ":app:assemble")
+        result.assertTasksExecuted(tasks(':hello').withBuildType(debugShared).allToLink, tasks(':app').debug.allToInstall, ":app:assemble")
         executable("app/build/exe/main/debug/app").assertExists()
         sharedLibrary("hello/build/lib/main/debug/shared/hello").assertExists()
         def installation = installation("app/build/install/main/debug")
@@ -567,6 +699,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         installation.assertIncludesLibraries("hello")
     }
 
+    @ToBeFixedForConfigurationCache
     def "can compile and link against a library with debug and release variants"() {
         settingsFile << "include 'app', 'hello'"
         def app = new CppAppWithLibraryAndOptionalFeature()
@@ -613,6 +746,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         installation("app/build/install/main/debug").exec().out == app.withFeatureDisabled().expectedOutput
     }
 
+    @ToBeFixedForConfigurationCache
     def "can compile and link against library with api and implementation dependencies"() {
         settingsFile << "include 'app', 'deck', 'card', 'shuffle'"
         def app = new CppAppWithLibrariesWithApiDependencies()
@@ -647,7 +781,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         expect:
         succeeds ":app:assemble"
 
-        result.assertTasksExecuted(compileAndLinkTasks([':card', ':deck', ':shuffle', ':app'], debug), installTaskDebug(':app'), ":app:assemble")
+        result.assertTasksExecuted([':card', ':deck', ':shuffle'].collect { tasks(it).debug.allToLink }, tasks(':app').debug.allToInstall, ":app:assemble")
         sharedLibrary("deck/build/lib/main/debug/deck").assertExists()
         sharedLibrary("card/build/lib/main/debug/card").assertExists()
         sharedLibrary("shuffle/build/lib/main/debug/shuffle").assertExists()
@@ -657,6 +791,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         installation.exec().out == app.expectedOutput
     }
 
+    @ToBeFixedForConfigurationCache
     def "can compile and link against a static library with api and implementation dependencies"() {
         settingsFile << "include 'app', 'deck', 'card', 'shuffle'"
         def app = new CppAppWithLibrariesWithApiDependencies()
@@ -694,7 +829,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         expect:
         succeeds ":app:assemble"
 
-        result.assertTasksExecuted(compileAndStaticLinkTasks([':card', ':deck', ':shuffle'], debug), compileAndLinkTasks([':app'], debug), installTaskDebug(':app'), ":app:assemble")
+        result.assertTasksExecuted([':card', ':deck', ':shuffle'].collect { tasks(it).debug.allToCreate }, tasks(':app').debug.allToInstall, ":app:assemble")
         staticLibrary("deck/build/lib/main/debug/deck").assertExists()
         staticLibrary("card/build/lib/main/debug/card").assertExists()
         staticLibrary("shuffle/build/lib/main/debug/shuffle").assertExists()
@@ -704,6 +839,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         installation.exec().out == app.expectedOutput
     }
 
+    @ToBeFixedForConfigurationCache
     def "honors changes to library buildDir"() {
         settingsFile << "include 'app', 'lib1', 'lib2'"
         def app = new CppAppWithLibraries()
@@ -734,7 +870,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         expect:
         succeeds ":app:assemble"
 
-        result.assertTasksExecuted(compileAndLinkTasks([':lib1', ':lib2', ':app'], debug), installTaskDebug(':app'), ":app:assemble")
+        result.assertTasksExecuted([':lib1', ':lib2'].collect { tasks(it).debug.allToLink }, tasks(':app').debug.allToInstall, ":app:assemble")
 
         !file("lib2/build").exists()
         sharedLibrary("lib1/build/lib/main/debug/lib1").assertExists()
@@ -745,6 +881,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         sharedLibrary("app/build/install/main/debug/lib/lib2").file.assertExists()
     }
 
+    @ToBeFixedForConfigurationCache
     def "honors changes to library output locations"() {
         settingsFile << "include 'app', 'lib1', 'lib2'"
         def app = new CppAppWithLibraries()
@@ -781,7 +918,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         expect:
         succeeds ":app:assemble"
 
-        result.assertTasksExecuted(compileAndLinkTasks([':lib1', ':lib2', ':app'], debug), installTaskDebug(':app'), ":app:assemble")
+        result.assertTasksExecuted([':lib1', ':lib2'].collect { tasks(it).debug.allToLink }, tasks(':app').debug.allToInstall, ":app:assemble")
 
         file("lib2/build/shared/lib1_debug.dll").assertIsFile()
         if (toolChain.visualCpp) {
@@ -792,6 +929,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         file("app/build/install/main/debug/lib/lib1_debug.dll").assertIsFile()
     }
 
+    @ToBeFixedForConfigurationCache
     def "honors changes to library public header location"() {
         settingsFile << "include 'app', 'lib1', 'lib2'"
         def app = new CppAppWithLibraries()
@@ -830,7 +968,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         expect:
         succeeds ":app:assemble"
 
-        result.assertTasksExecuted(compileAndLinkTasks([':lib1', ':lib2', ':app'], debug), installTaskDebug(':app'), ":app:assemble")
+        result.assertTasksExecuted([':lib1', ':lib2'].collect { tasks(it).debug.allToLink }, tasks(':app').debug.allToInstall, ":app:assemble")
 
         sharedLibrary("lib1/build/lib/main/debug/lib1").assertExists()
         sharedLibrary("lib2/build/lib/main/debug/lib2").assertExists()
@@ -840,6 +978,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         sharedLibrary("app/build/install/main/debug/lib/lib2").file.assertExists()
     }
 
+    @ToBeFixedForConfigurationCache
     def "multiple components can share the same source directory"() {
         settingsFile << "include 'app', 'greeter', 'logger'"
         def app = new CppAppWithLibraries()
@@ -879,7 +1018,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
 
         expect:
         succeeds ":app:assemble"
-        result.assertTasksExecuted(compileAndLinkTasks([':greeter', ":logger", ':app'], debug), installTaskDebug(':app'), ":app:assemble")
+        result.assertTasksExecuted([':greeter', ":logger"].collect { tasks(it).debug.allToLink }, tasks(':app').debug.allToInstall, ":app:assemble")
 
         sharedLibrary("greeter/build/lib/main/debug/greeter").assertExists()
         sharedLibrary("logger/build/lib/main/debug/logger").assertExists()
@@ -889,6 +1028,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         sharedLibrary("app/build/install/main/debug/lib/logger").file.assertExists()
     }
 
+    @ToBeFixedForConfigurationCache
     def "can compile and link against libraries in included builds"() {
         settingsFile << """
             rootProject.name = 'app'
@@ -925,12 +1065,69 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
 
         expect:
         succeeds ":assemble"
-        result.assertTasksExecuted(compileAndLinkTasks([':lib1', ":lib2", ''], debug), installTaskDebug(), ":assemble")
+        result.assertTasksExecuted([':lib1', ":lib2"].collect { tasks(it).debug.allToLink }, tasks.debug.allToInstall, ":assemble")
         sharedLibrary("lib1/build/lib/main/debug/lib1").assertExists()
         sharedLibrary("lib2/build/lib/main/debug/lib2").assertExists()
         executable("build/exe/main/debug/app").assertExists()
         installation("build/install/main/debug").exec().out == app.expectedOutput
         sharedLibrary("build/install/main/debug/lib/lib1").file.assertExists()
         sharedLibrary("build/install/main/debug/lib/lib2").file.assertExists()
+    }
+
+    @RequiresInstalledToolChain(ToolChainRequirement.GCC_COMPATIBLE)
+    @ToBeFixedForConfigurationCache
+    def "system headers are not evaluated when compiler warnings are enabled"() {
+        settingsFile << "rootProject.name = 'app'"
+        def app = new CppCompilerDetectingTestApp()
+
+        given:
+        app.writeSources(file('src/main'))
+
+        and:
+        buildFile << """
+            apply plugin: 'cpp-application'
+
+            application {
+                binaries.configureEach {
+                    compileTask.get().compilerArgs.add("-Wall")
+                    compileTask.get().compilerArgs.add("-Werror")
+                }
+            }
+         """
+
+        expect:
+        succeeds "assemble"
+        result.assertTasksExecuted(tasks.debug.allToInstall, ':assemble')
+
+        executable("build/exe/main/debug/app").assertExists()
+        installation("build/install/main/debug").exec().out == app.expectedOutput(toolChain)
+    }
+
+    @Issue("https://github.com/gradle/gradle-native/issues/950")
+    @ToBeFixedForConfigurationCache
+    def "can handle candidate header directory which happens to match an existing file"() {
+        def app = new CppApp()
+
+        given:
+        app.sources.writeToSourceDir(file('src/main/cpp'))
+        app.greeter.headers.writeToSourceDir(file('src/main/headers'))
+        app.sum.headers.writeToSourceDir(file('src/sumHeaders/foo'))
+
+        file("src/main/cpp/main.cpp").text = file("src/main/cpp/main.cpp").text.replace("sum.h", "foo/sum.h")
+        file("src/main/cpp/sum.cpp").text = file("src/main/cpp/sum.cpp").text.replace("sum.h", "foo/sum.h")
+
+        // poison file
+        file('src/main/headers/foo').createNewFile()
+
+        buildFile << """
+            apply plugin: 'cpp-application'
+
+            application {
+                privateHeaders.from 'src/main/headers', 'src/sumHeaders'
+            }
+        """
+
+        expect:
+        succeeds "assemble"
     }
 }

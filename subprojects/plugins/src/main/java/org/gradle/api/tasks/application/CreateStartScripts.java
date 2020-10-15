@@ -22,7 +22,7 @@ package org.gradle.api.tasks.application;
  * <pre class='autoTested'>
  * task createStartScripts(type: CreateStartScripts) {
  *   outputDir = file('build/sample')
- *   mainClassName = 'org.gradle.test.Main'
+ *   mainClass = 'org.gradle.test.Main'
  *   applicationName = 'myApp'
  *   classpath = files('path/to/some.jar')
  * }
@@ -57,13 +57,14 @@ package org.gradle.api.tasks.application;
  * The default generators are of the type {@link org.gradle.jvm.application.scripts.TemplateBasedScriptGenerator}, with default templates.
  * This templates can be changed via the {@link org.gradle.jvm.application.scripts.TemplateBasedScriptGenerator#setTemplate(org.gradle.api.resources.TextResource)} method.
  * <p>
- * The default implementations used by this task use <a href="http://docs.groovy-lang.org/latest/html/documentation/template-engines.html#_simpletemplateengine">Groovy's SimpleTemplateEngine</a>
+ * The default implementations used by this task use <a href="https://docs.groovy-lang.org/latest/html/documentation/template-engines.html#_simpletemplateengine">Groovy's SimpleTemplateEngine</a>
  * to parse the template, with the following variables available:
  * <ul>
  * <li>{@code applicationName}</li>
  * <li>{@code optsEnvironmentVar}</li>
  * <li>{@code exitEnvironmentVar}</li>
- * <li>{@code mainClassName}</li>
+ * <li>{@code mainModule}</li>
+ * <li>{@code mainClass}</li>
  * <li>{@code defaultJvmOpts}</li>
  * <li>{@code appNameSystemProperty}</li>
  * <li>{@code appHomeRelativePath}</li>

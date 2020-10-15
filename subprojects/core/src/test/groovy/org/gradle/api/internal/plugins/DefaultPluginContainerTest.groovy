@@ -17,31 +17,34 @@ package org.gradle.api.internal.plugins
 
 import org.gradle.api.Plugin
 import org.gradle.api.Project
+import org.gradle.api.internal.CollectionCallbackActionDecorator
 import org.gradle.api.internal.initialization.ClassLoaderScope
 import org.gradle.api.internal.project.TestRuleSource
 import org.gradle.api.plugins.UnknownPluginException
+import org.gradle.configuration.internal.DefaultUserCodeApplicationContext
 import org.gradle.internal.operations.TestBuildOperationExecutor
-import org.gradle.internal.reflect.DirectInstantiator
 import org.gradle.model.internal.inspect.ModelRuleSourceDetector
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
+import org.gradle.testfixtures.CustomPluginWithInjection
+import org.gradle.util.TestUtil
 import org.junit.Rule
 import spock.lang.Specification
 import spock.lang.Subject
 
-public class DefaultPluginContainerTest extends Specification {
+class DefaultPluginContainerTest extends Specification {
 
-    def PluginInspector pluginInspector = new PluginInspector(new ModelRuleSourceDetector())
+    PluginInspector pluginInspector = new PluginInspector(new ModelRuleSourceDetector())
     def classLoader = new GroovyClassLoader(getClass().classLoader)
     def pluginRegistry = new DefaultPluginRegistry(pluginInspector, scope(classLoader))
     def target = Mock(PluginTarget)
-    def instantiator = DirectInstantiator.INSTANCE
-    def pluginManager = new DefaultPluginManager(pluginRegistry, instantiator, target, new TestBuildOperationExecutor())
+    def instantiator = TestUtil.instantiatorFactory().inject()
+    def pluginManager = new DefaultPluginManager(pluginRegistry, instantiator, target, new TestBuildOperationExecutor(), new DefaultUserCodeApplicationContext(), CollectionCallbackActionDecorator.NOOP, TestUtil.domainObjectCollectionFactory())
 
     @Subject
     def container = pluginManager.pluginContainer
 
     @Rule
-    TestNameTestDirectoryProvider testDirectoryProvider = new TestNameTestDirectoryProvider()
+    TestNameTestDirectoryProvider testDirectoryProvider = new TestNameTestDirectoryProvider(getClass())
     private Class<?> plugin1Class = classLoader.parseClass("""
         import org.gradle.api.Plugin
         import org.gradle.api.Project
@@ -65,14 +68,14 @@ public class DefaultPluginContainerTest extends Specification {
 
     def "offers plugin management via plugin id"() {
         when:
-        def p = container.apply(plugin1Class)
+        def plugin = container.apply(plugin1Class)
 
         then:
-        p.is(container.apply("plugin"))
-        p.is(container.apply(plugin1Class))
+        plugin.is(container.apply("plugin"))
+        plugin.is(container.apply(plugin1Class))
 
-        p.is(container.findPlugin(plugin1Class))
-        p.is(container.findPlugin("plugin"))
+        plugin.is(container.findPlugin(plugin1Class))
+        plugin.is(container.findPlugin("plugin"))
 
         !container.findPlugin(UnknownPlugin)
         !container.findPlugin("unknown")
@@ -90,15 +93,41 @@ public class DefaultPluginContainerTest extends Specification {
 
     def "offers plugin management via plugin type"() {
         when:
-        def p = container.apply(plugin1Class)
+        def plugin = container.apply(plugin1Class)
 
         then:
-        p.is(container.apply(plugin1Class))
-        p.is(container.findPlugin(plugin1Class))
+        plugin.is(container.apply(plugin1Class))
+        plugin.is(container.findPlugin(plugin1Class))
         container.hasPlugin(plugin1Class)
 
-        !p.is(container.findPlugin(plugin2Class))
+        !plugin.is(container.findPlugin(plugin2Class))
         !container.hasPlugin(plugin2Class)
+    }
+
+    def "offers plugin management via injectable plugin type "() {
+        when:
+        def plugin = container.apply(CustomPluginWithInjection)
+
+        then:
+        container.hasPlugin(CustomPluginWithInjection)
+        container.getPlugin(CustomPluginWithInjection) == plugin
+        container.findPlugin(CustomPluginWithInjection) == plugin
+    }
+
+    def "id-based injectable plugins can be found by their id"() {
+        when:
+        def plugin = container.apply("custom-plugin-with-injection")
+        def executed = false
+
+        then:
+
+        container.withId("custom-plugin-with-injection", {
+            assert it == plugin
+            executed = true
+        })
+        executed
+        container.getPlugin("custom-plugin-with-injection") == plugin
+        container.hasPlugin("custom-plugin-with-injection")
     }
 
     def "does not find plugin by unknown id"() {
@@ -271,6 +300,74 @@ public class DefaultPluginContainerTest extends Specification {
         then:
         IllegalArgumentException e = thrown()
         e.message == "'$TestRuleSource.name' does not implement the Plugin interface."
+    }
+
+    def "cannot add plugins directly to container"() {
+        def plugin = Mock(Plugin)
+
+        when:
+        container.add(plugin)
+
+        then:
+        thrown UnsupportedOperationException
+
+        when:
+        container.withType(plugin.class).add(plugin)
+
+        then:
+        thrown UnsupportedOperationException
+
+        when:
+        container.addAll([plugin])
+
+        then:
+        thrown UnsupportedOperationException
+
+        when:
+        container.withType(plugin.class).addAll([plugin])
+
+        then:
+        thrown UnsupportedOperationException
+    }
+
+    def "cannot remove plugins from container"() {
+        def plugin = Mock(Plugin)
+
+        when:
+        container.remove(plugin)
+
+        then:
+        thrown UnsupportedOperationException
+
+        when:
+        container.withType(plugin.class).remove(plugin)
+
+        then:
+        thrown UnsupportedOperationException
+
+        when:
+        container.removeAll([plugin])
+
+        then:
+        thrown UnsupportedOperationException
+
+        when:
+        container.withType(plugin.class).removeAll([plugin])
+
+        then:
+        thrown UnsupportedOperationException
+
+        when:
+        container.clear()
+
+        then:
+        thrown UnsupportedOperationException
+
+        when:
+        container.withType(plugin.class).clear()
+
+        then:
+        thrown UnsupportedOperationException
     }
 
     def scope(ClassLoader classLoader) {

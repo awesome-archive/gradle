@@ -15,10 +15,12 @@
  */
 package org.gradle.api.internal.artifacts.ivyservice.projectmodule
 
-import org.gradle.api.artifacts.ModuleIdentifier
+
 import org.gradle.api.artifacts.component.ComponentIdentifier
 import org.gradle.api.internal.artifacts.component.ComponentIdentifierFactory
-import org.gradle.api.internal.artifacts.ivyservice.resolveengine.result.ComponentSelectionDescriptorInternal
+import org.gradle.api.internal.project.ProjectInternal
+import org.gradle.api.internal.project.ProjectState
+import org.gradle.api.internal.project.ProjectStateRegistry
 import org.gradle.internal.component.local.model.LocalComponentMetadata
 import org.gradle.internal.component.local.model.TestComponentIdentifiers
 import org.gradle.internal.component.model.ComponentOverrideMetadata
@@ -29,12 +31,23 @@ import org.gradle.internal.resolve.result.BuildableComponentIdResolveResult
 import org.gradle.internal.resolve.result.BuildableComponentResolveResult
 import spock.lang.Specification
 
+import java.util.function.Consumer
+
 import static org.gradle.internal.component.local.model.TestComponentIdentifiers.newProjectId
 
 class ProjectDependencyResolverTest extends Specification {
     final LocalComponentRegistry registry = Mock()
     final ComponentIdentifierFactory componentIdentifierFactory = Mock()
-    final ProjectDependencyResolver resolver = new ProjectDependencyResolver(registry, componentIdentifierFactory)
+    final ProjectStateRegistry projectRegistry = Stub()
+    final ProjectArtifactResolver projectArtifactResolver = Stub()
+    final ProjectArtifactSetResolver projectArtifactSetResolver = Stub()
+    final ProjectDependencyResolver resolver = new ProjectDependencyResolver(registry, componentIdentifierFactory, projectArtifactSetResolver, projectArtifactResolver)
+
+    def setup() {
+        def projectState = Stub(ProjectState)
+        _ * projectRegistry.stateFor(_) >> projectState
+        _ * projectState.applyToMutableState(_) >> { Consumer consumer -> consumer.accept(Stub(ProjectInternal)) }
+    }
 
     def "resolves project dependency"() {
         setup:
@@ -47,14 +60,12 @@ class ProjectDependencyResolverTest extends Specification {
         def id = newProjectId(":project")
 
         when:
-        resolver.resolve(dependencyMetaData, result)
+        resolver.resolve(dependencyMetaData, null, null, result)
 
         then:
         1 * componentIdentifierFactory.createProjectComponentIdentifier(selector) >> id
         1 * registry.getComponent(id) >> componentMetaData
         1 * result.resolved(componentMetaData)
-        1 * result.getSelectionDescription() >> Mock(ComponentSelectionDescriptorInternal)
-        1 * result.setSelectionDescription(_)
         0 * result._
     }
 
@@ -65,7 +76,7 @@ class ProjectDependencyResolverTest extends Specification {
         def projectComponentId = newProjectId(":projectPath")
 
         when:
-        resolver.resolve(projectComponentId, new DefaultComponentOverrideMetadata(), result)
+        resolver.resolve(projectComponentId, DefaultComponentOverrideMetadata.EMPTY, result)
 
         then:
         1 * registry.getComponent(projectComponentId) >> componentMetaData
@@ -76,10 +87,9 @@ class ProjectDependencyResolverTest extends Specification {
     def "doesn't try to resolve non-project dependency"() {
         def result = Mock(BuildableComponentIdResolveResult)
         def dependencyMetaData = Stub(DependencyMetadata)
-        def targetModuleId = Stub(ModuleIdentifier)
 
         when:
-        resolver.resolve(dependencyMetaData, result)
+        resolver.resolve(dependencyMetaData, null, null, result)
 
         then:
         0 * registry.getComponent(_)

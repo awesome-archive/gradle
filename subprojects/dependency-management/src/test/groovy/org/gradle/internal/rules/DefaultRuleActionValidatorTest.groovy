@@ -20,21 +20,9 @@ import spock.lang.Specification
 
 class DefaultRuleActionValidatorTest extends Specification {
 
-    def "rejects invalid types" () {
+    def "rejects invalid type when type configured" () {
         when:
-        def ruleValidator = new DefaultRuleActionValidator<Object>([String, Integer])
-        ruleValidator.validate(Stub(RuleAction) {
-            getInputTypes() >> { [ String, Long ] }
-        })
-
-        then:
-        def failure = thrown(RuleActionValidationException)
-        failure.message == "Rule may not have an input parameter of type: java.lang.Long. Valid types (for the second and subsequent parameters) are: [java.lang.String, java.lang.Integer]."
-    }
-
-    def "rejects invalid type" () {
-        when:
-        def ruleValidator = new DefaultRuleActionValidator<Object>([Integer])
+        def ruleValidator = new DefaultRuleActionValidator(Integer)
         ruleValidator.validate(Stub(RuleAction) {
             getInputTypes() >> { [ Long ] }
         })
@@ -44,13 +32,50 @@ class DefaultRuleActionValidatorTest extends Specification {
         failure.message == "Rule may not have an input parameter of type: java.lang.Long. Second parameter must be of type: java.lang.Integer."
     }
 
-    def "accepts valid types" () {
-        def ruleValidator = new DefaultRuleActionValidator<Object>([String, Integer])
+    def "rejects invalid type when no type configured" () {
+        when:
+        def ruleValidator = new DefaultRuleActionValidator()
+        ruleValidator.validate(Stub(RuleAction) {
+            getInputTypes() >> { [Long] }
+        })
+
+        then:
+        def failure = thrown(RuleActionValidationException)
+        failure.message == "Rule may not have an input parameter of type: java.lang.Long."
+    }
+
+    def "rejects invalid type when multiple types are configured"() {
+        when:
+        def ruleValidator = new DefaultRuleActionValidator(Integer, Short)
+        ruleValidator.validate(Stub(RuleAction) {
+            getInputTypes() >> { [Long] }
+        })
+
+        then:
+        def failure = thrown(RuleActionValidationException)
+        failure.message == "Rule may not have an input parameter of type: java.lang.Long. Second parameter must be of type: java.lang.Integer or java.lang.Short."
+    }
+
+    def "accepts valid type"() {
+        def ruleValidator = new DefaultRuleActionValidator(String)
         def ruleAction = Stub(RuleAction) {
-            getInputTypes() >> { [ String, Integer ] }
+            getInputTypes() >> { [String] }
         }
 
         expect:
         ruleValidator.validate(ruleAction) == ruleAction
+    }
+
+    def "accepts valid type with multiple valid types"() {
+        def ruleValidator = new DefaultRuleActionValidator(String, Long)
+        def ruleAction = Stub(RuleAction) {
+            getInputTypes() >> { [parameterType] }
+        }
+
+        expect:
+        ruleValidator.validate(ruleAction) == ruleAction
+
+        where:
+        parameterType << [String, Long]
     }
 }

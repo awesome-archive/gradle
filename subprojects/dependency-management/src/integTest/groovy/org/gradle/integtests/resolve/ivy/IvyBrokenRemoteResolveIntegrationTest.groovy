@@ -16,9 +16,11 @@
 package org.gradle.integtests.resolve.ivy
 
 import org.gradle.integtests.fixtures.AbstractHttpDependencyResolutionTest
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 
 class IvyBrokenRemoteResolveIntegrationTest extends AbstractHttpDependencyResolutionTest {
-    public void "reports and recovers from missing module"() {
+    @ToBeFixedForConfigurationCache
+    void "reports and recovers from missing module"() {
         given:
         def repo = ivyHttpRepo("repo1")
         def module = repo.module("group", "projectA", "1.2").publish()
@@ -36,31 +38,29 @@ task showMissing { doLast { println configurations.missing.files } }
 
         when:
         module.ivy.expectGetMissing()
-        module.jar.expectHeadMissing()
 
         then:
         fails("showMissing")
         failure.assertHasDescription('Execution failed for task \':showMissing\'.')
-                .assertResolutionFailure(':missing')
-                .assertHasCause("""Could not find group:projectA:1.2.
+            .assertResolutionFailure(':missing')
+            .assertHasCause("""Could not find group:projectA:1.2.
 Searched in the following locations:
-    ${module.ivy.uri}
-    ${module.jar.uri}
+  - ${module.ivy.uri}
+If the artifact you are trying to retrieve can be found in the repository but without metadata in 'ivy.xml' format, you need to adjust the 'metadataSources { ... }' of the repository declaration.
 Required by:
     project :""")
 
         when:
         module.ivy.expectGetMissing()
-        module.jar.expectHeadMissing()
 
         then:
         fails("showMissing")
         failure.assertHasDescription('Execution failed for task \':showMissing\'.')
-                .assertResolutionFailure(':missing')
-                .assertHasCause("""Could not find group:projectA:1.2.
+            .assertResolutionFailure(':missing')
+            .assertHasCause("""Could not find group:projectA:1.2.
 Searched in the following locations:
-    ${module.ivy.uri}
-    ${module.jar.uri}
+  - ${module.ivy.uri}
+If the artifact you are trying to retrieve can be found in the repository but without metadata in 'ivy.xml' format, you need to adjust the 'metadataSources { ... }' of the repository declaration.
 Required by:
     project :""")
 
@@ -79,7 +79,8 @@ Required by:
         succeeds('showMissing')
     }
 
-    public void "reports and recovers from multiple missing modules"() {
+    @ToBeFixedForConfigurationCache
+    void "reports and recovers from multiple missing modules"() {
         given:
         def repo = ivyHttpRepo("repo1")
         def moduleA = repo.module("group", "projectA", "1.2").publish()
@@ -99,24 +100,22 @@ task showMissing { doLast { println configurations.missing.files } }
 
         when:
         moduleA.ivy.expectGetMissing()
-        moduleA.jar.expectHeadMissing()
         moduleB.ivy.expectGetMissing()
-        moduleB.jar.expectHeadMissing()
 
         then:
         fails("showMissing")
         failure.assertHasDescription('Execution failed for task \':showMissing\'.')
-                .assertResolutionFailure(':missing')
-                .assertHasCause("""Could not find group:projectA:1.2.
+            .assertResolutionFailure(':missing')
+            .assertHasCause("""Could not find group:projectA:1.2.
 Searched in the following locations:
-    ${moduleA.ivy.uri}
-    ${moduleA.jar.uri}
+  - ${moduleA.ivy.uri}
+If the artifact you are trying to retrieve can be found in the repository but without metadata in 'ivy.xml' format, you need to adjust the 'metadataSources { ... }' of the repository declaration.
 Required by:
     project :""")
-                .assertHasCause("""Could not find group:projectB:1.0-milestone-9.
+            .assertHasCause("""Could not find group:projectB:1.0-milestone-9.
 Searched in the following locations:
-    ${moduleB.ivy.uri}
-    ${moduleB.jar.uri}
+  - ${moduleB.ivy.uri}
+If the artifact you are trying to retrieve can be found in the repository but without metadata in 'ivy.xml' format, you need to adjust the 'metadataSources { ... }' of the repository declaration.
 Required by:
     project :""")
 
@@ -137,7 +136,8 @@ Required by:
         succeeds('showMissing')
     }
 
-    public void "reports and recovers from multiple missing transitive modules"() {
+    @ToBeFixedForConfigurationCache
+    void "reports and recovers from multiple missing transitive modules"() {
         settingsFile << "include 'child1'"
 
         given:
@@ -178,27 +178,25 @@ task showMissing { doLast { println configurations.compile.files } }
 
         when:
         moduleA.ivy.expectGetMissing()
-        moduleA.jar.expectHeadMissing()
         moduleB.ivy.expectGetMissing()
-        moduleB.jar.expectHeadMissing()
         moduleC.ivy.expectGet()
         moduleD.ivy.expectGet()
 
         then:
         fails("showMissing")
         failure.assertHasDescription('Execution failed for task \':showMissing\'.')
-                .assertResolutionFailure(':compile')
-                .assertHasCause("""Could not find group:projectA:1.2.
+            .assertResolutionFailure(':compile')
+            .assertHasCause("""Could not find group:projectA:1.2.
 Searched in the following locations:
-    ${moduleA.ivy.uri}
-    ${moduleA.jar.uri}
+  - ${moduleA.ivy.uri}
+If the artifact you are trying to retrieve can be found in the repository but without metadata in 'ivy.xml' format, you need to adjust the 'metadataSources { ... }' of the repository declaration.
 Required by:
     project : > group:projectC:0.99
     project : > project :child1 > group:projectD:1.0GA""")
-                .assertHasCause("""Could not find group:projectB:1.0-milestone-9.
+            .assertHasCause("""Could not find group:projectB:1.0-milestone-9.
 Searched in the following locations:
-    ${moduleB.ivy.uri}
-    ${moduleB.jar.uri}
+  - ${moduleB.ivy.uri}
+If the artifact you are trying to retrieve can be found in the repository but without metadata in 'ivy.xml' format, you need to adjust the 'metadataSources { ... }' of the repository declaration.
 Required by:
     project : > project :child1 > group:projectD:1.0GA""")
 
@@ -221,7 +219,8 @@ Required by:
         succeeds('showMissing')
     }
 
-    public void "reports and recovers from missing module when dependency declaration references an artifact"() {
+    @ToBeFixedForConfigurationCache
+    void "reports and recovers from missing module when dependency declaration references an artifact"() {
         given:
         def repo = ivyHttpRepo("repo1")
         def module = repo.module("group", "projectA", "1.2").artifact(classifier: 'thing').publish()
@@ -240,16 +239,15 @@ task showMissing { doLast { println configurations.missing.files } }
         when:
         module.ivy.expectGetMissing()
         def artifact = module.getArtifact(classifier: 'thing')
-        artifact.expectHeadMissing()
 
         then:
         fails("showMissing")
         failure.assertHasDescription('Execution failed for task \':showMissing\'.')
-                .assertHasCause('Could not resolve all files for configuration \':missing\'.')
-                .assertHasCause("""Could not find group:projectA:1.2.
+            .assertHasCause('Could not resolve all files for configuration \':missing\'.')
+            .assertHasCause("""Could not find group:projectA:1.2.
 Searched in the following locations:
-    ${module.ivy.uri}
-    ${artifact.uri}
+  - ${module.ivy.uri}
+If the artifact you are trying to retrieve can be found in the repository but without metadata in 'ivy.xml' format, you need to adjust the 'metadataSources { ... }' of the repository declaration.
 Required by:
 """)
 
@@ -268,7 +266,8 @@ Required by:
         succeeds('showMissing')
     }
 
-    public void "reports and recovers from module missing from multiple repositories"() {
+    @ToBeFixedForConfigurationCache
+    void "reports and recovers from module missing from multiple repositories"() {
         given:
         def repo1 = ivyHttpRepo("repo1")
         def repo2 = ivyHttpRepo("repo2")
@@ -289,20 +288,16 @@ task showMissing { doLast { println configurations.missing.files } }
 
         when:
         moduleInRepo1.ivy.expectGetMissing()
-        moduleInRepo1.jar.expectHeadMissing()
         moduleInRepo2.ivy.expectGetMissing()
-        moduleInRepo2.jar.expectHeadMissing()
 
         then:
         fails("showMissing")
         failure.assertHasDescription('Execution failed for task \':showMissing\'.')
-                .assertHasCause('Could not resolve all files for configuration \':missing\'.')
-                .assertHasCause("""Could not find group:projectA:1.2.
+            .assertHasCause('Could not resolve all files for configuration \':missing\'.')
+            .assertHasCause("""Could not find group:projectA:1.2.
 Searched in the following locations:
-    ${moduleInRepo1.ivy.uri}
-    ${moduleInRepo1.jar.uri}
-    ${moduleInRepo2.ivy.uri}
-    ${moduleInRepo2.jar.uri}
+  - ${moduleInRepo1.ivy.uri}
+  - ${moduleInRepo2.ivy.uri}
 Required by:
 """)
 
@@ -321,7 +316,8 @@ Required by:
         succeeds('showMissing')
     }
 
-    public void "reports and recovers from missing module when no repositories defined"() {
+    @ToBeFixedForConfigurationCache
+    void "reports and recovers from missing module when no repositories defined"() {
         given:
         buildFile << """
 configurations { missing }
@@ -334,8 +330,8 @@ task showMissing { doLast { println configurations.missing.files } }
         expect:
         fails("showMissing")
         failure.assertHasDescription('Execution failed for task \':showMissing\'.')
-                .assertResolutionFailure(':missing')
-                .assertHasCause("Cannot resolve external dependency group:projectA:1.2 because no repositories are defined.")
+            .assertResolutionFailure(':missing')
+            .assertHasCause("Cannot resolve external dependency group:projectA:1.2 because no repositories are defined.")
 
         when:
         def module = ivyHttpRepo.module("group", "projectA", "1.2").publish()
@@ -356,7 +352,8 @@ task showMissing { doLast { println configurations.missing.files } }
         succeeds('showMissing')
     }
 
-    public void "reports and recovers from failed Ivy descriptor download"() {
+    @ToBeFixedForConfigurationCache
+    void "reports and recovers from failed Ivy descriptor download"() {
         given:
         def module = ivyHttpRepo.module('group', 'projectA', '1.3').publish()
 
@@ -379,10 +376,10 @@ task showBroken { doLast { println configurations.broken.files } }
 
         then:
         failure
-                .assertHasDescription('Execution failed for task \':showBroken\'.')
-                .assertResolutionFailure(':broken')
-                .assertHasCause('Could not resolve group:projectA:1.3.')
-                .assertHasCause("Could not GET '${module.ivy.uri}'. Received status code 500 from server: broken")
+            .assertHasDescription('Execution failed for task \':showBroken\'.')
+            .assertResolutionFailure(':broken')
+            .assertHasCause('Could not resolve group:projectA:1.3.')
+            .assertHasCause("Could not GET '${module.ivy.uri}'. Received status code 500 from server: broken")
 
         when:
         server.resetExpectations()
@@ -399,7 +396,8 @@ task showBroken { doLast { println configurations.broken.files } }
         succeeds("showBroken")
     }
 
-    public void "reports and caches missing artifact"() {
+    @ToBeFixedForConfigurationCache
+    void "reports and caches missing artifact"() {
         given:
         buildFile << """
 repositories {
@@ -427,7 +425,7 @@ task retrieve(type: Sync) {
         then:
         fails "retrieve"
 
-        failure.assertHasCause("""Could not find projectA.jar (group:projectA:1.2).
+        failure.assertHasCause("""Could not find projectA-1.2.jar (group:projectA:1.2).
 Searched in the following locations:
     ${module.jar.uri}""")
 
@@ -437,12 +435,13 @@ Searched in the following locations:
         then:
         fails "retrieve"
 
-        failure.assertHasCause("""Could not find projectA.jar (group:projectA:1.2).
+        failure.assertHasCause("""Could not find projectA-1.2.jar (group:projectA:1.2).
 Searched in the following locations:
     ${module.jar.uri}""")
     }
 
-    public void "reports and recovers from failed artifact download"() {
+    @ToBeFixedForConfigurationCache
+    void "reports and recovers from failed artifact download"() {
         given:
         buildFile << """
 repositories {
@@ -469,7 +468,7 @@ task retrieve(type: Sync) {
 
         then:
         fails "retrieve"
-        failure.assertHasCause("Could not download projectA.jar (group:projectA:1.2)")
+        failure.assertHasCause("Could not download projectA-1.2.jar (group:projectA:1.2)")
         failure.assertHasCause("Could not GET '${module.jar.uri}'. Received status code 500 from server: broken")
 
         when:

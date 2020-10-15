@@ -21,8 +21,9 @@ import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
 import org.gradle.test.fixtures.ConcurrentTestUtil
 import org.gradle.test.fixtures.archive.ZipTestFixture
 import spock.lang.IgnoreIf
+import spock.lang.Issue
 
-@IgnoreIf({GradleContextualExecuter.parallel})
+@IgnoreIf({ GradleContextualExecuter.parallel })
 class JavadocWorkAvoidanceIntegrationTest extends AbstractIntegrationSpec {
     def setup() {
         settingsFile << "include 'a', 'b'"
@@ -34,7 +35,7 @@ class JavadocWorkAvoidanceIntegrationTest extends AbstractIntegrationSpec {
 
         file('a/build.gradle') << '''
             dependencies {
-                compile project(':b')
+                implementation project(':b')
             }
         '''
 
@@ -73,7 +74,7 @@ class JavadocWorkAvoidanceIntegrationTest extends AbstractIntegrationSpec {
         }
 
         then:
-        result.assertTasksNotSkipped(":b:compileJava", ":b:processResources", ":b:classes", ":b:jar", ":b:javadoc")
+        result.assertTasksNotSkipped(":b:compileJava", ":b:processResources", ":b:classes", ":b:jar")
         result.assertTasksSkipped(":a:compileJava", ":a:processResources", ":a:classes", ":a:javadoc")
     }
 
@@ -81,7 +82,7 @@ class JavadocWorkAvoidanceIntegrationTest extends AbstractIntegrationSpec {
         given:
         file("a/build.gradle") << '''
             dependencies {
-                compile rootProject.files("build/libs/external.jar")
+                implementation rootProject.files("build/libs/external.jar")
             }
         '''
         buildFile << """
@@ -90,16 +91,16 @@ class JavadocWorkAvoidanceIntegrationTest extends AbstractIntegrationSpec {
                 from("external/b")
                 from("external/c")
                 from("external/d")
-                
-                archiveName = "external.jar"
+
+                archiveFileName = "external.jar"
             }
             task reverseAlphabetic(type: Jar) {
                 from("external/d")
                 from("external/c")
                 from("external/b")
                 from("external/a")
-                
-                archiveName = "external.jar"
+
+                archiveFileName = "external.jar"
             }
         """
         ['a', 'b', 'c', 'd'].each {
@@ -119,14 +120,14 @@ class JavadocWorkAvoidanceIntegrationTest extends AbstractIntegrationSpec {
         // javadoc should still be up-to-date even though the upstream external.jar changed
         new ZipTestFixture(externalJar).hasDescendantsInOrder('META-INF/MANIFEST.MF', 'd', 'c', 'b', 'a')
         result.assertTasksSkipped(":b:compileJava", ":b:processResources", ":b:classes", ":b:jar",
-            ":a:compileJava", ":a:processResources", ":a:classes", ":b:javadoc", ":a:javadoc")
+            ":a:compileJava", ":a:processResources", ":a:classes", ":a:javadoc")
     }
 
     def "timestamp of upstream jar entries does not matter"() {
         given:
         file("a/build.gradle") << '''
             dependencies {
-                compile rootProject.files("build/libs/external.jar")
+                implementation rootProject.files("build/libs/external.jar")
             }
         '''
         buildFile << """
@@ -135,16 +136,16 @@ class JavadocWorkAvoidanceIntegrationTest extends AbstractIntegrationSpec {
                 from("external/b")
                 from("external/c")
                 from("external/d")
-                
-                archiveName = "external.jar"
+
+                archiveFileName = "external.jar"
             }
             task oldTime(type: Jar) {
                 from("external/a")
                 from("external/b")
                 from("external/c")
                 from("external/d")
-                
-                archiveName = "external.jar"
+
+                archiveFileName = "external.jar"
                 preserveFileTimestamps = false
             }
         """
@@ -164,24 +165,25 @@ class JavadocWorkAvoidanceIntegrationTest extends AbstractIntegrationSpec {
         // check that the upstream jar definitely changed
         oldHash != externalJar.md5Hash
         result.assertTasksSkipped(":b:compileJava", ":b:processResources", ":b:classes", ":b:jar",
-            ":a:compileJava", ":a:processResources", ":a:classes", ":b:javadoc", ":a:javadoc")
+            ":a:compileJava", ":a:processResources", ":a:classes", ":a:javadoc")
     }
 
     def "duplicates in an upstream jar are not ignored"() {
         given:
         file("a/build.gradle") << '''
             dependencies {
-                compile rootProject.files("build/libs/external.jar")
+                implementation rootProject.files("build/libs/external.jar")
             }
         '''
         buildFile << """
             task duplicate(type: Jar) {
+                duplicatesStrategy = DuplicatesStrategy.INCLUDE
                 from("external/a")
                 from("external/b")
                 from("external/c")
                 from("external/d")
                 from("duplicate/a")
-                archiveName = "external.jar"
+                archiveFileName = "external.jar"
             }
         """
         def externalJar = file("build/libs/external.jar")
@@ -209,7 +211,7 @@ class JavadocWorkAvoidanceIntegrationTest extends AbstractIntegrationSpec {
         then:
         result.assertTasksNotSkipped(":a:javadoc")
         result.assertTasksSkipped(":b:compileJava", ":b:processResources", ":b:classes", ":b:jar",
-            ":a:compileJava", ":a:processResources", ":a:classes", ":b:javadoc")
+            ":a:compileJava", ":a:processResources", ":a:classes")
         when:
         // change the first duplicate
         original.text = "changed to something else"
@@ -223,6 +225,31 @@ class JavadocWorkAvoidanceIntegrationTest extends AbstractIntegrationSpec {
         then:
         result.assertTasksNotSkipped(":a:javadoc")
         result.assertTasksSkipped(":b:compileJava", ":b:processResources", ":b:classes", ":b:jar",
-            ":a:compileJava", ":a:processResources", ":a:classes", ":b:javadoc")
+            ":a:compileJava", ":a:processResources", ":a:classes")
+    }
+
+    @Issue("https://github.com/gradle/gradle/issues/6168")
+    def "removes stale outputs from last execution"() {
+        def aaJava = file('a/src/main/java/AA.java')
+        aaJava << '''
+            public class AA {
+                public void foo() {
+                }
+            }
+        '''
+
+        when:
+        succeeds(":a:javadoc")
+        then:
+        file("a/build/docs/javadoc/A.html").isFile()
+        file("a/build/docs/javadoc/AA.html").isFile()
+
+        when:
+        assert aaJava.delete()
+        succeeds(":a:javadoc")
+        then:
+        executedAndNotSkipped(":a:javadoc")
+        file("a/build/docs/javadoc/A.html").isFile()
+        !file("a/build/docs/javadoc/AA.html").isFile()
     }
 }

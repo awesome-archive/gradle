@@ -17,7 +17,9 @@
 package org.gradle.language.base
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
 
+@UnsupportedWithConfigurationCache(because = "software model")
 class CustomManagedBinaryIntegrationTest extends AbstractIntegrationSpec {
     def "setup"() {
         buildFile << """
@@ -100,7 +102,7 @@ model {
         when:
         succeeds "components"
         then:
-        output.contains """:components
+        output.contains """> Task :components
 
 ------------------------------------------------------------
 Root project

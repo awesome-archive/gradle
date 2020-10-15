@@ -62,23 +62,26 @@ public class ComponentModuleMetadataContainer implements ModuleReplacementsData 
                 targets.add(target);
             }
 
+            @Override
             public ModuleIdentifier getId() {
                 return source;
             }
 
+            @Override
             public ModuleIdentifier getReplacedBy() {
                 return unwrap(replacements.get(source));
             }
         };
     }
 
+    @Override
     public Replacement getReplacementFor(ModuleIdentifier sourceModule) {
         return replacements.get(sourceModule);
     }
 
     @Override
     public boolean participatesInReplacements(ModuleIdentifier moduleId) {
-        return targets.contains(moduleId) || replacements.keySet().contains(moduleId);
+        return targets.contains(moduleId) || replacements.containsKey(moduleId);
     }
 
     private static void detectCycles(Map<ModuleIdentifier, Replacement> replacements, ModuleIdentifier source, ModuleIdentifier target) {
@@ -91,7 +94,7 @@ public class ComponentModuleMetadataContainer implements ModuleReplacementsData 
             //target does not exist in the map, there's no cycle for sure
             return;
         }
-        Set<ModuleIdentifier> visited = new LinkedHashSet<ModuleIdentifier>();
+        Set<ModuleIdentifier> visited = new LinkedHashSet<>();
         visited.add(source);
         visited.add(target);
 
@@ -113,7 +116,7 @@ public class ComponentModuleMetadataContainer implements ModuleReplacementsData 
     private static NotationParser<Object, ModuleIdentifier> parser(ImmutableModuleIdentifierFactory moduleIdentifierFactory) {
         return NotationParserBuilder
                 .toType(ModuleIdentifier.class)
-                .converter(new ModuleIdentifierNotationConverter(moduleIdentifierFactory))
+                .fromCharSequence(new ModuleIdentifierNotationConverter(moduleIdentifierFactory))
                 .toComposite();
     }
 }

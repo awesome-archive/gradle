@@ -22,7 +22,7 @@ import org.junit.Rule
 import spock.lang.Specification
 
 class MavenFileModuleTest extends Specification {
-    @Rule TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider()
+    @Rule TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider(getClass())
     TestFile testFile
     MavenModule mavenFileModule
     MavenModule snapshotMavenFileModule
@@ -170,7 +170,7 @@ class MavenFileModuleTest extends Specification {
 
     def "Publish artifacts for non-snapshot"() {
         when:
-        MavenModule mavenModule = mavenFileModule.publish()
+        MavenModule mavenModule = mavenFileModule.withoutExtraChecksums().publish()
         def publishedFiles = Arrays.asList(testFile.listFiles())
 
         then:
@@ -182,7 +182,7 @@ class MavenFileModuleTest extends Specification {
 
     def "Publish artifacts for unique snapshot"() {
         when:
-        MavenModule mavenModule = snapshotMavenFileModule.publish()
+        MavenModule mavenModule = snapshotMavenFileModule.withoutExtraChecksums().publish()
         def publishedFiles = Arrays.asList(testFile.listFiles())
 
         then:
@@ -199,7 +199,7 @@ class MavenFileModuleTest extends Specification {
         snapshotMavenFileModule.withNonUniqueSnapshots()
 
         when:
-        MavenModule mavenModule = snapshotMavenFileModule.publish()
+        MavenModule mavenModule = snapshotMavenFileModule.withoutExtraChecksums().publish()
         def publishedFiles = Arrays.asList(testFile.listFiles())
 
         then:

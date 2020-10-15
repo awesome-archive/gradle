@@ -17,8 +17,8 @@
 package org.gradle.cache.internal;
 
 import org.gradle.cache.CacheRepository;
-import org.gradle.internal.classloader.ClassLoaderHierarchyHasher;
 import org.gradle.internal.classloader.ClasspathHasher;
+import org.gradle.internal.hash.ClassLoaderHierarchyHasher;
 import org.gradle.internal.hash.FileHasher;
 import org.gradle.internal.hash.Hashing;
 import org.gradle.util.GradleVersion;
@@ -35,7 +35,8 @@ public class CacheRepositoryServices {
         this.projectCacheDir = projectCacheDir;
     }
 
-    protected CacheScopeMapping createCacheScopeMapping() {
+    // We need to return `DefaultCacheScopeMapping` instead of `CacheScopeMapping` so the `GlobalCache` interface is picked up.
+    protected DefaultCacheScopeMapping createCacheScopeMapping() {
         return new DefaultCacheScopeMapping(gradleUserHomeDir, projectCacheDir, GradleVersion.current());
     }
 
@@ -46,6 +47,6 @@ public class CacheRepositoryServices {
     }
 
     protected CacheKeyBuilder createCacheKeyBuilder(FileHasher fileHasher, ClasspathHasher classpathHasher, ClassLoaderHierarchyHasher classLoaderHierarchyHasher) {
-        return new DefaultCacheKeyBuilder(Hashing.md5(), fileHasher, classpathHasher, classLoaderHierarchyHasher);
+        return new DefaultCacheKeyBuilder(Hashing.defaultFunction(), fileHasher, classpathHasher, classLoaderHierarchyHasher);
     }
 }

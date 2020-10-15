@@ -29,7 +29,7 @@ import spock.lang.Specification
 
 class SwiftApplicationPluginTest extends Specification {
     @Rule
-    TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider()
+    TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider(getClass())
     def projectDir = tmpDir.createDir("project")
     def project = ProjectBuilder.builder().withProjectDir(projectDir).withName("testApp").build()
 
@@ -75,7 +75,7 @@ class SwiftApplicationPluginTest extends Specification {
         project.evaluate()
 
         then:
-        project.tasks.withType(SwiftCompile).name == ['compileDebugSwift', 'compileReleaseSwift']
+        project.tasks.withType(SwiftCompile)*.name == ['compileDebugSwift', 'compileReleaseSwift']
 
         and:
         def compileDebug = project.tasks.compileDebugSwift

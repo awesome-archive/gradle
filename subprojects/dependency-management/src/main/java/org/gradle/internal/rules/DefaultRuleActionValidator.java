@@ -16,50 +16,51 @@
 
 package org.gradle.internal.rules;
 
-import org.gradle.api.Transformer;
 import org.gradle.model.internal.type.ModelType;
-import org.gradle.util.CollectionUtils;
 
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
+import java.util.stream.Collectors;
 
-public class DefaultRuleActionValidator<T> implements RuleActionValidator<T> {
-    private static final String VALID_SINGLE_TYPES = "Rule may not have an input parameter of type: %s. Second parameter must be of type: %s.";
-    private static final String VALID_MULTIPLE_TYPES = "Rule may not have an input parameter of type: %s. Valid types (for the second and subsequent parameters) are: %s.";
+public class DefaultRuleActionValidator implements RuleActionValidator {
+    private static final String VALID_NO_TYPES = "Rule may not have an input parameter of type: %s.";
+    private static final String VALID_MULTIPLE_TYPES = "Rule may not have an input parameter of type: %s. Second parameter must be of type: %s.";
 
-    private final List<Class<?>> validInputTypes;
+    private final List<Class<?>> validInputType;
 
-    public DefaultRuleActionValidator(List<Class<?>> validInputTypes) {
-        this.validInputTypes = validInputTypes;
+    public DefaultRuleActionValidator() {
+        this.validInputType = Collections.emptyList();
     }
 
-    public RuleAction<? super T> validate(RuleAction<? super T> ruleAction) {
+    public DefaultRuleActionValidator(Class<?>... validInputTypes) {
+        this.validInputType = Arrays.asList(validInputTypes);
+    }
+
+    @Override
+    public <T> RuleAction<? super T> validate(RuleAction<? super T> ruleAction) {
         validateInputTypes(ruleAction);
         return ruleAction;
     }
 
-    private void validateInputTypes(RuleAction<? super T> ruleAction) {
+    private void validateInputTypes(RuleAction<?> ruleAction) {
         for (Class<?> inputType : ruleAction.getInputTypes()) {
-            if (!validInputTypes.contains(inputType)) {
+            if (!validInputType.contains(inputType)) {
                 throw new RuleActionValidationException(invalidParameterMessage(inputType));
             }
         }
     }
 
     private String invalidParameterMessage(Class<?> inputType) {
-        if (validInputTypes.size() == 1) {
-            return String.format(VALID_SINGLE_TYPES, inputType.getName(), className(validInputTypes.get(0)));
-        }
-        return String.format(VALID_MULTIPLE_TYPES, inputType.getName(),
-                             CollectionUtils.collect(validInputTypes, new ClassNameTransformer()));
-    }
-
-    private static String className(Class<?> aClass) {
-        return ModelType.of(aClass).toString();
-    }
-
-    private static class ClassNameTransformer implements Transformer<String, Class<?>> {
-        public String transform(Class<?> aClass) {
-            return className(aClass);
+        if (validInputType.isEmpty()) {
+            return String.format(VALID_NO_TYPES, inputType.getName());
+        } else {
+            return String.format(VALID_MULTIPLE_TYPES, inputType.getName(), validTypeNames());
         }
     }
+
+    private String validTypeNames() {
+        return validInputType.stream().map(ModelType::of).map(ModelType::toString).collect(Collectors.joining(" or "));
+    }
+
 }

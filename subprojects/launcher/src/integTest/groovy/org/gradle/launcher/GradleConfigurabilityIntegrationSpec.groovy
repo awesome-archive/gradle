@@ -32,12 +32,12 @@ class GradleConfigurabilityIntegrationSpec extends AbstractIntegrationSpec {
 
     def "honours jvm args specified in gradle.properties"() {
         given:
-        file("gradle.properties") << "org.gradle.jvmargs=-Dsome-prop=some-value -Xmx32m"
+        file("gradle.properties") << "org.gradle.jvmargs=-Dsome-prop=some-value -Xmx64m"
 
         expect:
         buildSucceeds """
-assert System.getProperty('some-prop') == 'some-value'
-assert java.lang.management.ManagementFactory.runtimeMXBean.inputArguments.contains('-Xmx32m')
+assert providers.systemProperty('some-prop').forUseAtConfigurationTime().get() == 'some-value'
+assert java.lang.management.ManagementFactory.runtimeMXBean.inputArguments.contains('-Xmx64m')
         """
     }
 
@@ -67,7 +67,7 @@ assert java.lang.management.ManagementFactory.runtimeMXBean.inputArguments.conta
         file("gradle.properties") << "org.gradle.java.home=$linkPath"
 
         when:
-        buildSucceeds "println 'java home =' + System.getProperty('java.home')"
+        buildSucceeds "println 'java home =' + providers.systemProperty('java.home').forUseAtConfigurationTime().get()"
 
         then:
         javaLink != javaHome
@@ -83,7 +83,7 @@ assert java.lang.management.ManagementFactory.runtimeMXBean.inputArguments.conta
 
         expect:
         buildSucceeds """
-assert System.getProperty('some-prop').toString() == 'i have space'
+assert providers.systemProperty('some-prop').forUseAtConfigurationTime().get() == 'i have space'
         """
     }
 

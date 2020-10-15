@@ -18,23 +18,27 @@ package org.gradle.launcher
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.AvailableJavaHomes
+import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
 import org.gradle.util.GradleVersion
 import org.gradle.util.Requires
+import spock.lang.IgnoreIf
 import spock.lang.Unroll
 
-@Requires(adhoc = { AvailableJavaHomes.getJdks("1.5", "1.6") })
+@Requires(adhoc = { AvailableJavaHomes.getJdks("1.6", "1.7") })
 class SupportedBuildJvmIntegrationTest extends AbstractIntegrationSpec {
+
     @Unroll
+    @IgnoreIf({ GradleContextualExecuter.embedded }) // This test requires to start Gradle from scratch with the wrong Java version
     def "provides reasonable failure message when attempting to run under java #jdk.javaVersion"() {
         given:
         executer.withJavaHome(jdk.javaHome)
 
         expect:
         fails("help")
-        failure.assertHasDescription("Gradle ${GradleVersion.current().version} requires Java 7 or later to run. You are currently using Java ${jdk.javaVersion.majorVersion}.")
+        failure.assertHasErrorOutput("Gradle ${GradleVersion.current().version} requires Java 8 or later to run. You are currently using Java ${jdk.javaVersion.majorVersion}.")
 
         where:
-        jdk << AvailableJavaHomes.getJdks("1.5", "1.6")
+        jdk << AvailableJavaHomes.getJdks("1.6", "1.7")
     }
 
     @Unroll
@@ -44,9 +48,9 @@ class SupportedBuildJvmIntegrationTest extends AbstractIntegrationSpec {
 
         expect:
         fails("help")
-        failure.assertHasDescription("Gradle ${GradleVersion.current().version} requires Java 7 or later to run. Your build is currently configured to use Java ${jdk.javaVersion.majorVersion}.")
+        failure.assertHasDescription("Gradle ${GradleVersion.current().version} requires Java 8 or later to run. Your build is currently configured to use Java ${jdk.javaVersion.majorVersion}.")
 
         where:
-        jdk << AvailableJavaHomes.getJdks("1.5", "1.6")
+        jdk << AvailableJavaHomes.getJdks("1.6", "1.7")
     }
 }

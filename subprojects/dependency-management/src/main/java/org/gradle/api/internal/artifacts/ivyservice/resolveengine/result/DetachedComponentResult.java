@@ -19,28 +19,30 @@ package org.gradle.api.internal.artifacts.ivyservice.resolveengine.result;
 import org.gradle.api.artifacts.ModuleVersionIdentifier;
 import org.gradle.api.artifacts.component.ComponentIdentifier;
 import org.gradle.api.artifacts.result.ComponentSelectionReason;
-import org.gradle.api.attributes.AttributeContainer;
-import org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.ComponentResult;
+import org.gradle.api.artifacts.result.ResolvedVariantResult;
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.ResolvedGraphComponent;
+
+import java.util.List;
 
 /**
- * A {@link ComponentResult} implementation that is detached from the original resolution process.
+ * A {@link ResolvedGraphComponent} implementation that is detached from the original resolution process.
  * Instances are created when de-serializing the resolution result.
  */
-public class DetachedComponentResult implements ComponentResult {
+public class DetachedComponentResult implements ResolvedGraphComponent {
     private final Long resultId;
     private final ModuleVersionIdentifier id;
     private final ComponentSelectionReason reason;
     private final ComponentIdentifier componentIdentifier;
-    private final String variantName;
-    private final AttributeContainer variantAttributes;
+    private final List<ResolvedVariantResult> resolvedVariants;
+    private final String repositoryName;
 
-    public DetachedComponentResult(Long resultId, ModuleVersionIdentifier id, ComponentSelectionReason reason, ComponentIdentifier componentIdentifier, String variantName, AttributeContainer variantAttributes) {
+    public DetachedComponentResult(Long resultId, ModuleVersionIdentifier id, ComponentSelectionReason reason, ComponentIdentifier componentIdentifier, List<ResolvedVariantResult> resolvedVariants, String repositoryName) {
         this.resultId = resultId;
         this.id = id;
         this.reason = reason;
         this.componentIdentifier = componentIdentifier;
-        this.variantName = variantName;
-        this.variantAttributes = variantAttributes;
+        this.resolvedVariants = resolvedVariants;
+        this.repositoryName = repositoryName;
     }
 
     @Override
@@ -48,25 +50,28 @@ public class DetachedComponentResult implements ComponentResult {
         return resultId;
     }
 
+    @Override
     public ModuleVersionIdentifier getModuleVersion() {
         return id;
     }
 
+    @Override
     public ComponentSelectionReason getSelectionReason() {
         return reason;
     }
 
+    @Override
     public ComponentIdentifier getComponentId() {
         return componentIdentifier;
     }
 
     @Override
-    public String getVariantName() {
-        return variantName;
+    public String getRepositoryName() {
+        return repositoryName;
     }
 
     @Override
-    public AttributeContainer getVariantAttributes() {
-        return variantAttributes;
+    public List<ResolvedVariantResult> getResolvedVariants() {
+        return resolvedVariants;
     }
 }

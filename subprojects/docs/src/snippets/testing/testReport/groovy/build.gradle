@@ -1,0 +1,23 @@
+// tag::test-report[]
+plugins {
+    id 'java'
+}
+
+// A resolvable configuration to collect test report data
+jvm.createResolvableConfiguration('testReportData') {
+    requiresAttributes {
+        documentation('test-report-data')
+    }
+}
+
+dependencies {
+    testReportData project(':core')
+    testReportData project(':util')
+}
+
+tasks.register('testReport', TestReport) {
+    destinationDir = file("$buildDir/reports/allTests")
+    // Use test results from testReportData configuration
+    testResultDirs.from(configurations.testReportData)
+}
+// end::test-report[]

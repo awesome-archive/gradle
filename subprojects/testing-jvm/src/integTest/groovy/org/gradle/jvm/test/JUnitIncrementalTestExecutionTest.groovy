@@ -16,6 +16,9 @@
 
 package org.gradle.jvm.test
 
+import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
+
+@UnsupportedWithConfigurationCache(because = "software model")
 class JUnitIncrementalTestExecutionTest extends AbstractJUnitTestExecutionIntegrationSpec {
 
     def setup() {
@@ -33,6 +36,7 @@ class JUnitIncrementalTestExecutionTest extends AbstractJUnitTestExecutionIntegr
         executedAndNotSkipped ':compileMyTestBinaryMyTestJava', ':myTestBinaryTest'
 
         and:
+        expectDeprecationWarnings()
         succeeds ':myTestBinaryTest'
 
         and:
@@ -50,6 +54,7 @@ class JUnitIncrementalTestExecutionTest extends AbstractJUnitTestExecutionIntegr
         changeTestSource()
 
         then:
+        expectDeprecationWarnings()
         succeeds ':myTestBinaryTest'
 
         and:
@@ -67,6 +72,7 @@ class JUnitIncrementalTestExecutionTest extends AbstractJUnitTestExecutionIntegr
         changeTestResource()
 
         then:
+        expectDeprecationWarnings()
         succeeds ':myTestBinaryTest'
 
         and:
@@ -85,6 +91,7 @@ class JUnitIncrementalTestExecutionTest extends AbstractJUnitTestExecutionIntegr
         executedAndNotSkipped ':myUtilsApiJar', ':myTestBinaryTest'
 
         when:
+        expectDeprecationWarnings()
         succeeds ':myTestBinaryTest'
 
         then:
@@ -94,6 +101,7 @@ class JUnitIncrementalTestExecutionTest extends AbstractJUnitTestExecutionIntegr
         updateUtilsLibrary()
 
         then:
+        expectDeprecationWarnings()
         succeeds ':myTestBinaryTest'
         executedAndNotSkipped ':myUtilsApiJar', ':myTestBinaryTest'
     }

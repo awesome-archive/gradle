@@ -17,74 +17,39 @@
 package org.gradle.api.internal.tasks.compile.processing
 
 import org.gradle.api.internal.tasks.compile.incremental.processing.AnnotationProcessingResult
+import org.gradle.api.internal.tasks.compile.incremental.processing.AnnotationProcessorResult
+import org.gradle.api.internal.tasks.compile.incremental.processing.GeneratedResource
 import spock.lang.Specification
 
 import javax.annotation.processing.Filer
-import javax.annotation.processing.Messager
 import javax.lang.model.element.ExecutableElement
 import javax.lang.model.element.Name
 import javax.lang.model.element.PackageElement
 import javax.lang.model.element.TypeElement
-import javax.tools.Diagnostic
-import javax.tools.StandardLocation
 
 abstract class IncrementalFilerTest extends Specification {
     Filer delegate = Stub(Filer)
     AnnotationProcessingResult result = new AnnotationProcessingResult()
-    Messager messager = Mock(Messager)
     Filer filer
 
     def setup() {
-        filer = createFiler(delegate, result, messager)
+        filer = new IncrementalFiler(delegate, getStrategy(new AnnotationProcessorResult(result, "TestProcessor")))
     }
 
-    abstract Filer createFiler(Filer filer, AnnotationProcessingResult result, Messager messager)
-
-    def "fails when a package element is given as an originating element"() {
-        when:
-        filer.createSourceFile("Foo", pkg("fizz"))
-
-        then:
-        1 * messager.printMessage(Diagnostic.Kind.ERROR, "Incremental annotation processors must use types (or elements contained in types) as originating elements.")
-    }
-
-    def "fails when trying to read resources"() {
-        when:
-        filer.getResource(StandardLocation.SOURCE_OUTPUT, "", "foo.txt")
-
-        then:
-        1 * messager.printMessage(Diagnostic.Kind.ERROR, "Incremental annotation processors are not allowed to read resources.")
-    }
-
-    def "fails when trying to write resources"() {
-        when:
-        filer.createResource(StandardLocation.SOURCE_OUTPUT, "", "foo.txt")
-
-        then:
-        1 * messager.printMessage(Diagnostic.Kind.ERROR, "Incremental annotation processors are not allowed to create resources.")
-    }
-
-    def "adds originating types to the processing result"() {
-        when:
-        filer.createSourceFile("Foo", pkg("pkg"), type("A"), methodInside("B"))
-        filer.createSourceFile("Bar", type("B"))
-
-        then:
-        result.generatedTypesByOrigin.size() == 2
-        result.generatedTypesByOrigin["A"] == ["Foo"] as Set
-        result.generatedTypesByOrigin["B"] == ["Foo", "Bar"] as Set
-
-    }
+    abstract IncrementalProcessingStrategy getStrategy(AnnotationProcessorResult result)
 
     PackageElement pkg(String packageName) {
         Stub(PackageElement) {
+            getQualifiedName() >> Stub(Name) {
+                toString() >> packageName
+            }
             getEnclosingElement() >> null
         }
     }
 
     TypeElement type(String typeName) {
         Stub(TypeElement) {
-            getEnclosingElement() >> pkg("")
+            getEnclosingElement() >> null
             getQualifiedName() >> Stub(Name) {
                 toString() >> typeName
             }
@@ -95,5 +60,9 @@ abstract class IncrementalFilerTest extends Specification {
         Stub(ExecutableElement) {
             getEnclosingElement() >> type(typeName)
         }
+    }
+
+    GeneratedResource sourceResource(String path) {
+        new GeneratedResource(GeneratedResource.Location.SOURCE_OUTPUT, path)
     }
 }

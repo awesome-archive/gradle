@@ -17,35 +17,159 @@
 package org.gradle.api.internal;
 
 import org.gradle.StartParameter;
-import org.gradle.internal.deprecation.Deprecatable;
-import org.gradle.internal.deprecation.LoggingDeprecatable;
+import org.gradle.initialization.StartParameterBuildOptions.ConfigurationCacheProblemsOption;
 
+import java.io.File;
+import java.util.Collection;
 import java.util.Set;
 
-public class StartParameterInternal extends StartParameter implements Deprecatable {
-    private final Deprecatable deprecationHandler = new LoggingDeprecatable();
+import static com.google.common.collect.Lists.newArrayList;
+import static com.google.common.collect.Sets.newLinkedHashSet;
+import static org.gradle.internal.Cast.uncheckedCast;
+
+public class StartParameterInternal extends StartParameter {
+    private boolean watchFileSystem;
+    private boolean watchFileSystemDebugLogging;
+    private boolean watchFileSystemUsingDeprecatedOption;
+    private boolean vfsVerboseLogging;
+
+    private boolean configurationCache;
+    private ConfigurationCacheProblemsOption.Value configurationCacheProblems = ConfigurationCacheProblemsOption.Value.FAIL;
+    private int configurationCacheMaxProblems = 512;
+    private boolean configurationCacheRecreateCache;
+    private boolean configurationCacheQuiet;
 
     @Override
     public StartParameter newInstance() {
         return prepareNewInstance(new StartParameterInternal());
     }
 
+    @Override
     public StartParameter newBuild() {
         return prepareNewBuild(new StartParameterInternal());
     }
 
     @Override
-    public void addDeprecation(String deprecation) {
-        deprecationHandler.addDeprecation(deprecation);
+    protected StartParameter prepareNewBuild(StartParameter startParameter) {
+        StartParameterInternal p = (StartParameterInternal) super.prepareNewBuild(startParameter);
+        p.watchFileSystem = watchFileSystem;
+        p.watchFileSystemDebugLogging = watchFileSystemDebugLogging;
+        p.watchFileSystemUsingDeprecatedOption = watchFileSystemUsingDeprecatedOption;
+        p.vfsVerboseLogging = vfsVerboseLogging;
+        p.configurationCache = configurationCache;
+        p.configurationCacheProblems = configurationCacheProblems;
+        p.configurationCacheMaxProblems = configurationCacheMaxProblems;
+        p.configurationCacheRecreateCache = configurationCacheRecreateCache;
+        p.configurationCacheQuiet = configurationCacheQuiet;
+        return p;
     }
 
-    @Override
-    public Set<String> getDeprecations() {
-        return deprecationHandler.getDeprecations();
+    public File getGradleHomeDir() {
+        return gradleHomeDir;
     }
 
-    @Override
-    public void checkDeprecation() {
-        deprecationHandler.checkDeprecation();
+    public void setGradleHomeDir(File gradleHomeDir) {
+        this.gradleHomeDir = gradleHomeDir;
+    }
+
+    public void useEmptySettingsWithoutDeprecationWarning() {
+        doUseEmptySettings();
+    }
+
+    public boolean isUseEmptySettingsWithoutDeprecationWarning() {
+        return super.useEmptySettings;
+    }
+
+    public boolean isSearchUpwardsWithoutDeprecationWarning() {
+        return super.searchUpwards;
+    }
+
+    public void setSearchUpwardsWithoutDeprecationWarning(boolean searchUpwards) {
+        super.searchUpwards = searchUpwards;
+    }
+
+    public boolean isWatchFileSystem() {
+        return watchFileSystem;
+    }
+
+    public void setWatchFileSystem(boolean watchFileSystem) {
+        this.watchFileSystem = watchFileSystem;
+    }
+
+    public boolean isWatchFileSystemDebugLogging() {
+        return watchFileSystemDebugLogging;
+    }
+
+    public void setWatchFileSystemDebugLogging(boolean watchFileSystemDebugLogging) {
+        this.watchFileSystemDebugLogging = watchFileSystemDebugLogging;
+    }
+
+    public boolean isWatchFileSystemUsingDeprecatedOption() {
+        return watchFileSystemUsingDeprecatedOption;
+    }
+
+    public void setWatchFileSystemUsingDeprecatedOption(boolean watchFileSystemUsingDeprecatedOption) {
+        this.watchFileSystemUsingDeprecatedOption = watchFileSystemUsingDeprecatedOption;
+    }
+
+    public boolean isVfsVerboseLogging() {
+        return vfsVerboseLogging;
+    }
+
+    public void setVfsVerboseLogging(boolean vfsVerboseLogging) {
+        this.vfsVerboseLogging = vfsVerboseLogging;
+    }
+
+    public boolean isConfigurationCache() {
+        return configurationCache;
+    }
+
+    public void setConfigurationCache(boolean configurationCache) {
+        this.configurationCache = configurationCache;
+    }
+
+    public ConfigurationCacheProblemsOption.Value getConfigurationCacheProblems() {
+        return configurationCacheProblems;
+    }
+
+    public void setConfigurationCacheProblems(ConfigurationCacheProblemsOption.Value configurationCacheProblems) {
+        this.configurationCacheProblems = configurationCacheProblems;
+    }
+
+    public int getConfigurationCacheMaxProblems() {
+        return configurationCacheMaxProblems;
+    }
+
+    public void setConfigurationCacheMaxProblems(int configurationCacheMaxProblems) {
+        this.configurationCacheMaxProblems = configurationCacheMaxProblems;
+    }
+
+    public boolean isConfigurationCacheRecreateCache() {
+        return configurationCacheRecreateCache;
+    }
+
+    public void setConfigurationCacheRecreateCache(boolean configurationCacheRecreateCache) {
+        this.configurationCacheRecreateCache = configurationCacheRecreateCache;
+    }
+
+    public boolean isConfigurationCacheQuiet() {
+        return configurationCacheQuiet;
+    }
+
+    public void setConfigurationCacheQuiet(boolean configurationCacheQuiet) {
+        this.configurationCacheQuiet = configurationCacheQuiet;
+    }
+
+    public boolean addTaskNames(Iterable<String> taskPaths) {
+        Set<String> allTasks = newLinkedHashSet(getTaskNames());
+        boolean added = allTasks.addAll(
+            taskPaths instanceof Collection
+                ? uncheckedCast(taskPaths)
+                : newArrayList(taskPaths)
+        );
+        if (added) {
+            setTaskNames(allTasks);
+        }
+        return added;
     }
 }

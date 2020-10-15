@@ -16,14 +16,14 @@
 
 package org.gradle.jvm.tasks;
 
+import com.google.common.collect.ImmutableList;
 import groovy.lang.Closure;
 import org.gradle.api.Action;
-import org.gradle.api.Incubating;
 import org.gradle.api.InvalidUserDataException;
 import org.gradle.api.file.CopySpec;
 import org.gradle.api.file.FileCopyDetails;
-import org.gradle.api.internal.file.collections.FileTreeAdapter;
-import org.gradle.api.internal.file.collections.MapFileTree;
+import org.gradle.api.internal.file.FileCollectionFactory;
+import org.gradle.api.internal.file.FileTreeInternal;
 import org.gradle.api.internal.file.copy.CopySpecInternal;
 import org.gradle.api.internal.project.ProjectInternal;
 import org.gradle.api.java.archives.Manifest;
@@ -33,16 +33,17 @@ import org.gradle.api.java.archives.internal.ManifestInternal;
 import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.Internal;
 import org.gradle.api.tasks.bundling.Zip;
+import org.gradle.internal.execution.OutputChangeListener;
+import org.gradle.internal.serialization.Cached;
 import org.gradle.util.ConfigureUtil;
 
-import java.io.OutputStream;
 import java.nio.charset.Charset;
-import java.util.concurrent.Callable;
+
+import static org.gradle.api.internal.lambdas.SerializableLambdas.action;
 
 /**
  * Assembles a JAR archive.
  */
-@Incubating
 public class Jar extends Zip {
 
     public static final String DEFAULT_EXTENSION = "jar";
@@ -51,41 +52,48 @@ public class Jar extends Zip {
     private final CopySpecInternal metaInf;
 
     public Jar() {
-        setExtension(DEFAULT_EXTENSION);
+        getArchiveExtension().set(DEFAULT_EXTENSION);
         setMetadataCharset("UTF-8");
 
         manifest = new DefaultManifest(getFileResolver());
         // Add these as separate specs, so they are not affected by the changes to the main spec
         metaInf = (CopySpecInternal) getRootSpec().addFirst().into("META-INF");
-        metaInf.addChild().from(new Callable<FileTreeAdapter>() {
-            public FileTreeAdapter call() throws Exception {
-                MapFileTree manifestSource = new MapFileTree(getTemporaryDirFactory(), getFileSystem(), getDirectoryFileTreeFactory());
-                manifestSource.add("MANIFEST.MF", new Action<OutputStream>() {
-                    public void execute(OutputStream outputStream) {
-                        Manifest manifest = getManifest();
-                        if (manifest == null) {
-                            manifest = new DefaultManifest(null);
-                        }
-                        ManifestInternal manifestInternal;
-                        if (manifest instanceof ManifestInternal) {
-                            manifestInternal = (ManifestInternal) manifest;
-                        } else {
-                            manifestInternal = new CustomManifestInternalWrapper(manifest);
-                        }
-                        manifestInternal.setContentCharset(manifestContentCharset);
-                        manifestInternal.writeTo(outputStream);
-                    }
-                });
-                return new FileTreeAdapter(manifestSource);
-            }
-        });
-        getMainSpec().appendCachingSafeCopyAction(new Action<FileCopyDetails>() {
-            public void execute(FileCopyDetails details) {
-                if (details.getPath().equalsIgnoreCase("META-INF/MANIFEST.MF")) {
-                    details.exclude();
-                }
-            }
-        });
+        metaInf.addChild().from(manifestFileTree());
+        getMainSpec().appendCachingSafeCopyAction(new ExcludeManifestAction());
+    }
+
+    private FileTreeInternal manifestFileTree() {
+        final Cached<ManifestInternal> manifest = Cached.of(this::computeManifest);
+        final OutputChangeListener outputChangeListener = outputChangeListener();
+        return fileCollectionFactory().generated(
+            getTemporaryDirFactory(),
+            "MANIFEST.MF",
+            action(file -> outputChangeListener.beforeOutputChange(ImmutableList.of(file.getAbsolutePath()))),
+            action(outputStream -> manifest.get().writeTo(outputStream))
+        );
+    }
+
+    private ManifestInternal computeManifest() {
+        Manifest manifest = getManifest();
+        if (manifest == null) {
+            manifest = new DefaultManifest(null);
+        }
+        ManifestInternal manifestInternal;
+        if (manifest instanceof ManifestInternal) {
+            manifestInternal = (ManifestInternal) manifest;
+        } else {
+            manifestInternal = new CustomManifestInternalWrapper(manifest);
+        }
+        manifestInternal.setContentCharset(manifestContentCharset);
+        return manifestInternal;
+    }
+
+    private FileCollectionFactory fileCollectionFactory() {
+        return getServices().get(FileCollectionFactory.class);
+    }
+
+    private OutputChangeListener outputChangeListener() {
+        return getServices().get(OutputChangeListener.class);
     }
 
     /**
@@ -123,7 +131,6 @@ public class Jar extends Zip {
      * @since 2.14
      */
     @Input
-    @Incubating
     public String getManifestContentCharset() {
         return manifestContentCharset;
     }
@@ -135,7 +142,6 @@ public class Jar extends Zip {
      * @see #getManifestContentCharset()
      * @since 2.14
      */
-    @Incubating
     public void setManifestContentCharset(String manifestContentCharset) {
         if (manifestContentCharset == null) {
             throw new InvalidUserDataException("manifestContentCharset must not be null");
@@ -229,5 +235,14 @@ public class Jar extends Zip {
         CopySpec metaInf = getMetaInf();
         configureAction.execute(metaInf);
         return metaInf;
+    }
+
+    private static class ExcludeManifestAction implements Action<FileCopyDetails> {
+        @Override
+        public void execute(FileCopyDetails details) {
+            if (details.getPath().equalsIgnoreCase("META-INF/MANIFEST.MF")) {
+                details.exclude();
+            }
+        }
     }
 }

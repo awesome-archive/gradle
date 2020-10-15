@@ -133,11 +133,7 @@ public final class BuildOperationRecord {
 
     public boolean hasDetailsOfType(Class<?> clazz) throws ClassNotFoundException {
         Class<?> detailsType = getDetailsType();
-        if (detailsType == null) {
-            return false;
-        } else {
-            return clazz.isAssignableFrom(detailsType);
-        }
+        return detailsType != null && clazz.isAssignableFrom(detailsType);
     }
 
     public Class<?> getDetailsType() throws ClassNotFoundException {
@@ -150,7 +146,7 @@ public final class BuildOperationRecord {
 
     @Override
     public String toString() {
-        return "BuildOperationRecord{" + displayName + '}';
+        return "BuildOperationRecord{" + id + "->" + displayName + '}';
     }
 
     public static class Progress {
@@ -178,6 +174,20 @@ public final class BuildOperationRecord {
             }
 
             return map;
+        }
+
+        public Class<?> getDetailsType() throws ClassNotFoundException {
+            return detailsClassName == null ? null : getClass().getClassLoader().loadClass(detailsClassName);
+        }
+
+        public boolean hasDetailsOfType(Class<?> clazz) throws ClassNotFoundException {
+            Class<?> detailsType = getDetailsType();
+            return detailsType != null && clazz.isAssignableFrom(detailsType);
+        }
+
+        @Override
+        public String toString() {
+            return "Progress{details=" + details + ", detailsClassName='" + detailsClassName + '\'' + '}';
         }
     }
 }

@@ -15,7 +15,7 @@
  */
 package org.gradle.internal.resource.transport.http.ntlm
 
-import org.gradle.api.artifacts.repositories.PasswordCredentials
+import org.gradle.api.credentials.PasswordCredentials
 import org.gradle.util.SetSystemProperties
 import org.junit.Rule
 import spock.lang.Specification
@@ -92,5 +92,15 @@ public class NTLMCredentialsTest extends Specification {
 
         then:
         ntlmCredentials.workstation == 'HOSTNAME'
+    }
+
+    def "null username passed"() {
+        credentials.username >> null
+        credentials.password >> "password"
+        when:
+        def ntlmCredentials = new NTLMCredentials(credentials)
+        then:
+        def ex = thrown(NullPointerException)
+        ex.message == 'Username must not be null!'
     }
 }

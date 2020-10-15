@@ -19,13 +19,14 @@ import com.google.common.base.Predicate;
 import com.google.common.collect.Iterables;
 import org.gradle.api.Action;
 import org.gradle.api.Plugin;
+import org.gradle.api.internal.CollectionCallbackActionDecorator;
+import org.gradle.api.internal.GeneratedSubclasses;
 import org.gradle.api.plugins.PluginCollection;
 import org.gradle.api.plugins.PluginContainer;
 import org.gradle.api.plugins.UnknownPluginException;
 import org.gradle.api.specs.Spec;
+import org.gradle.internal.Cast;
 import org.gradle.plugin.use.internal.DefaultPluginId;
-
-import java.util.Collection;
 
 /**
  * This plugin collection is optimized based on the knowledge we have about how plugins
@@ -39,44 +40,26 @@ public class DefaultPluginContainer extends DefaultPluginCollection<Plugin> impl
     private final PluginRegistry pluginRegistry;
     private final PluginManagerInternal pluginManager;
 
-    public DefaultPluginContainer(PluginRegistry pluginRegistry, final PluginManagerInternal pluginManager, Collection<Plugin> values) {
-        super(Plugin.class, values);
+    public DefaultPluginContainer(PluginRegistry pluginRegistry, final PluginManagerInternal pluginManager, CollectionCallbackActionDecorator callbackActionDecorator) {
+        super(Plugin.class, callbackActionDecorator);
         this.pluginRegistry = pluginRegistry;
         this.pluginManager = pluginManager;
     }
 
-    void pluginAddded(Plugin plugin) {
-        didAdd(plugin);
-        getEventRegister().getAddAction().execute(plugin);
+    void pluginAdded(Plugin plugin) {
+        super.add(plugin);
     }
 
     @Override
+    @Deprecated
     public boolean add(Plugin toAdd) {
         throw new UnsupportedOperationException();
     }
 
     @Override
-    public boolean addAll(Collection<? extends Plugin> c) {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public boolean remove(Object o) {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public boolean removeAll(Collection<?> c) {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public void clear() {
-        throw new UnsupportedOperationException();
-    }
-
+    @SuppressWarnings("rawtypes")
     public Plugin apply(String id) {
-        PluginImplementation plugin = pluginRegistry.lookup(DefaultPluginId.unvalidated(id));
+        PluginImplementation<?> plugin = pluginRegistry.lookup(DefaultPluginId.unvalidated(id));
         if (plugin == null) {
             throw new UnknownPluginException("Plugin with id '" + id + "' not found.");
         }
@@ -84,27 +67,33 @@ public class DefaultPluginContainer extends DefaultPluginCollection<Plugin> impl
         if (!Plugin.class.isAssignableFrom(plugin.asClass())) {
             throw new IllegalArgumentException("Plugin implementation '" + plugin.asClass().getName() + "' does not implement the Plugin interface. This plugin cannot be applied directly via the PluginContainer.");
         } else {
-            return pluginManager.addImperativePlugin(plugin);
+            return pluginManager.addImperativePlugin(Cast.<PluginImplementation<Plugin<?>>>uncheckedNonnullCast(plugin));
         }
     }
 
+    @Override
+    @SuppressWarnings("rawtypes")
     public <P extends Plugin> P apply(Class<P> type) {
         return pluginManager.addImperativePlugin(type);
     }
 
+    @Override
     public boolean hasPlugin(String id) {
         return findPlugin(id) != null;
     }
 
+    @Override
     public boolean hasPlugin(Class<? extends Plugin> type) {
         return findPlugin(type) != null;
     }
 
-    private Plugin doFindPlugin(String id) {
+    private Plugin<?> doFindPlugin(String id) {
         for (final PluginManagerInternal.PluginWithId pluginWithId : pluginManager.pluginsForId(id)) {
-            Plugin plugin = Iterables.tryFind(DefaultPluginContainer.this, new Predicate<Plugin>() {
+            Plugin<?> plugin = Iterables.tryFind(DefaultPluginContainer.this, new Predicate<Plugin>() {
+                @Override
                 public boolean apply(Plugin plugin) {
-                    return pluginWithId.clazz.equals(plugin.getClass());
+                    Class<?> pluginType = GeneratedSubclasses.unpackType(plugin);
+                    return pluginWithId.clazz.equals(pluginType);
                 }
             }).orNull();
 
@@ -116,35 +105,42 @@ public class DefaultPluginContainer extends DefaultPluginCollection<Plugin> impl
         return null;
     }
 
+    @Override
     public Plugin findPlugin(String id) {
         return doFindPlugin(id);
     }
 
+    @Override
     public <P extends Plugin> P findPlugin(Class<P> type) {
         for (Plugin plugin : this) {
-            if (plugin.getClass().equals(type)) {
+            Class<?> pluginType = GeneratedSubclasses.unpackType(plugin);
+            if (pluginType.equals(type)) {
                 return type.cast(plugin);
             }
         }
         return null;
     }
 
+    @Override
     public Plugin getPlugin(String id) {
-        Plugin plugin = findPlugin(id);
+        Plugin<?> plugin = findPlugin(id);
         if (plugin == null) {
             throw new UnknownPluginException("Plugin with id " + id + " has not been used.");
         }
         return plugin;
     }
 
+    @Override
     public Plugin getAt(String id) throws UnknownPluginException {
         return getPlugin(id);
     }
 
+    @Override
     public <P extends Plugin> P getAt(Class<P> type) throws UnknownPluginException {
         return getPlugin(type);
     }
 
+    @Override
     public <P extends Plugin> P getPlugin(Class<P> type) throws UnknownPluginException {
         P plugin = findPlugin(type);
         if (plugin == null) {
@@ -153,12 +149,16 @@ public class DefaultPluginContainer extends DefaultPluginCollection<Plugin> impl
         return type.cast(plugin);
     }
 
+    @Override
     public void withId(final String pluginId, final Action<? super Plugin> action) {
         Action<DefaultPluginManager.PluginWithId> wrappedAction = new Action<DefaultPluginManager.PluginWithId>() {
+            @Override
             public void execute(final DefaultPluginManager.PluginWithId pluginWithId) {
                 matching(new Spec<Plugin>() {
-                    public boolean isSatisfiedBy(Plugin element) {
-                        return pluginWithId.clazz.equals(element.getClass());
+                    @Override
+                    public boolean isSatisfiedBy(Plugin plugin) {
+                        Class<?> pluginType = GeneratedSubclasses.unpackType(plugin);
+                        return pluginWithId.clazz.equals(pluginType);
                     }
                 }).all(action);
             }

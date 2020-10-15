@@ -22,10 +22,10 @@ import org.junit.Test;
 
 import java.io.File;
 
-import static org.hamcrest.Matchers.nullValue;
-import static org.hamcrest.Matchers.sameInstance;
+import static org.hamcrest.CoreMatchers.nullValue;
+import static org.hamcrest.CoreMatchers.sameInstance;
 import static org.junit.Assert.assertSame;
-import static org.junit.Assert.assertThat;
+import static org.hamcrest.MatcherAssert.assertThat;
 
 public class DefaultProjectDescriptorRegistryTest {
     private static final File TEST_DIR = new File("testDir");

@@ -16,11 +16,13 @@
 
 package org.gradle.language.scala
 
+import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
 import org.gradle.integtests.fixtures.jvm.TestJvmComponent
 import org.gradle.integtests.language.AbstractJvmLanguageIntegrationTest
 import org.gradle.language.scala.fixtures.BadScalaLibrary
 import org.gradle.language.scala.fixtures.TestScalaComponent
 
+@UnsupportedWithConfigurationCache(because = "software model")
 class ScalaLanguageIntegrationTest extends AbstractJvmLanguageIntegrationTest {
     TestJvmComponent app = new TestScalaComponent()
 
@@ -41,11 +43,10 @@ class ScalaLanguageIntegrationTest extends AbstractJvmLanguageIntegrationTest {
         fails "assemble"
 
         and:
-        errorOutput.contains("Execution failed for task ':compileMyLibJarMyLibScala'.")
-        errorOutput.contains("> Compilation failed")
+        failure.assertHasDescription("Execution failed for task ':compileMyLibJarMyLibScala'.")
+        failure.assertHasCause("Compilation failed")
         badApp.compilerErrors.each {
-            // Output might arrive to late for the test to check. See: gradle/gradle#1303
-            // assert errorOutput.contains(it)
+            failure.assertHasErrorOutput(it)
         }
     }
 }

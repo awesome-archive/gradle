@@ -16,6 +16,7 @@
 package org.gradle.launcher.daemon.context
 
 import org.gradle.internal.nativeintegration.ProcessEnvironment
+import org.gradle.launcher.daemon.configuration.DaemonParameters
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
 import org.gradle.util.ConfigureUtil
 import org.gradle.util.Requires
@@ -26,7 +27,7 @@ import spock.lang.Specification
 class DaemonCompatibilitySpecSpec extends Specification {
 
     @Rule
-    TestNameTestDirectoryProvider tmp = new TestNameTestDirectoryProvider()
+    TestNameTestDirectoryProvider tmp = new TestNameTestDirectoryProvider(getClass())
 
     def clientConfigure = {}
     def serverConfigure = {}
@@ -129,5 +130,14 @@ class DaemonCompatibilitySpecSpec extends Specification {
 
         expect:
         !compatible
+    }
+
+    def "contexts with different priority"() {
+        client { priority = DaemonParameters.Priority.LOW }
+        server { priority = DaemonParameters.Priority.NORMAL }
+
+        expect:
+        !compatible
+        unsatisfiedReason.contains "Process priority is different"
     }
 }

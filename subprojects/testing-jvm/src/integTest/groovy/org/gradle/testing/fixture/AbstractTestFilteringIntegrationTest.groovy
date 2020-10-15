@@ -17,27 +17,20 @@ package org.gradle.testing.fixture
 
 import org.gradle.integtests.fixtures.DefaultTestExecutionResult
 import org.gradle.integtests.fixtures.MultiVersionIntegrationSpec
-import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
-import spock.lang.IgnoreIf
 import spock.lang.Issue
 import spock.lang.Unroll
 
-import static org.gradle.testing.fixture.JUnitMultiVersionIntegrationSpec.*
-
 abstract class AbstractTestFilteringIntegrationTest extends MultiVersionIntegrationSpec {
 
-    protected String framework
-    protected String dependency
-    protected String imports
+    abstract String getImports()
+    abstract String getFramework()
+    abstract String getDependencies()
 
-    abstract void configureFramework()
-
-    void setup() {
-        configureFramework()
+    def setup() {
         buildFile << """
             apply plugin: 'java'
             ${mavenCentralRepository()}
-            dependencies { testCompile '$dependency:${dependencyVersion}' }
+            dependencies { ${dependencies} }
             test { use${framework}() }
         """
     }
@@ -46,17 +39,21 @@ abstract class AbstractTestFilteringIntegrationTest extends MultiVersionIntegrat
         buildFile << """
             test {
               filter {
-                includeTestsMatching "FooTest.pass"
+                includeTestsMatching "${pattern}"
               }
             }
         """
-        file("src/test/java/FooTest.java") << """import $imports;
+        file("src/test/java/org/gradle/FooTest.java") << """
+            package org.gradle;
+            import $imports;
             public class FooTest {
                 @Test public void pass() {}
                 @Test public void fail() { throw new RuntimeException("Boo!"); }
             }
         """
-        file("src/test/java/OtherTest.java") << """import $imports;
+        file("src/test/java/org/gradle/OtherTest.java") << """
+            package org.gradle;
+            import $imports;
             public class OtherTest {
                 @Test public void pass() {}
                 @Test public void fail() { throw new RuntimeException("Boo!"); }
@@ -68,8 +65,11 @@ abstract class AbstractTestFilteringIntegrationTest extends MultiVersionIntegrat
 
         then:
         def result = new DefaultTestExecutionResult(testDirectory)
-        result.assertTestClassesExecuted("FooTest")
-        result.testClass("FooTest").assertTestsExecuted("pass")
+        result.assertTestClassesExecuted("org.gradle.FooTest")
+        result.testClass("org.gradle.FooTest").assertTestsExecuted("pass")
+
+        where:
+        pattern << ['FooTest.pass', 'org.gradle.FooTest.pass']
     }
 
     def "executes multiple methods from a test class"() {
@@ -146,22 +146,28 @@ abstract class AbstractTestFilteringIntegrationTest extends MultiVersionIntegrat
         result.testClass("Foo2Test").assertTestsExecuted("pass2")
     }
 
+    @Unroll
     def "reports when no matching methods found"() {
-        file("src/test/java/FooTest.java") << """import $imports;
+        file("src/test/java/org/gradle/FooTest.java") << """
+            package org.gradle;
+            import $imports;
             public class FooTest {
                 @Test public void pass() {}
             }
         """
 
         //by command line
-        when: fails("test", "--tests", 'FooTest.missingMethod')
-        then: failure.assertHasCause("No tests found for given includes: [FooTest.missingMethod](--tests filter)")
+        when: fails("test", "--tests", pattern)
+        then: failure.assertHasCause("No tests found for given includes: [${pattern}](--tests filter)")
 
         //by build script
         when:
-        buildFile << "test.filter.includeTestsMatching 'FooTest.missingMethod'"
+        buildFile << "test.filter.includeTestsMatching '${pattern}'"
         fails("test")
-        then: failure.assertHasCause("No tests found for given includes: [FooTest.missingMethod](filter.includeTestsMatching)")
+        then: failure.assertHasCause("No tests found for given includes: [${pattern}](filter.includeTestsMatching)")
+
+        where:
+        pattern << ['FooTest.missingMethod', 'org.gradle.FooTest.missingMethod']
     }
 
     def "adds import/export rules to report about no matching methods found"() {
@@ -195,7 +201,6 @@ abstract class AbstractTestFilteringIntegrationTest extends MultiVersionIntegrat
         succeeds("test", "--tests", 'FooTest.missingMethod')
     }
 
-    @IgnoreIf({GradleContextualExecuter.parallel})
     def "task is out of date when --tests argument changes"() {
         file("src/test/java/FooTest.java") << """import $imports;
             public class FooTest {
@@ -208,13 +213,13 @@ abstract class AbstractTestFilteringIntegrationTest extends MultiVersionIntegrat
         then: new DefaultTestExecutionResult(testDirectory).testClass("FooTest").assertTestsExecuted("pass")
 
         when: run("test", "--tests", "FooTest.pass")
-        then: result.skippedTasks.contains(":test") //up-to-date
+        then: skipped(":test") //up-to-date
 
         when:
         run("test", "--tests", "FooTest.pass*")
 
         then:
-        !result.skippedTasks.contains(":test")
+        executedAndNotSkipped(":test")
         new DefaultTestExecutionResult(testDirectory).testClass("FooTest").assertTestsExecuted("pass", "pass2")
     }
 
@@ -337,6 +342,34 @@ abstract class AbstractTestFilteringIntegrationTest extends MultiVersionIntegrat
         !output.contains('ATest!')
         output.contains('BTest!')
         !output.contains('CTest!')
+    }
+
+    def "can exclude tests"() {
+        given:
+        buildFile << """
+        test {
+            filter.excludeTestsMatching("*BTest.test*")
+        }
+        """
+
+        createTestABC()
+
+        when:
+        succeeds('test', '--info')
+
+        then:
+        executedAndNotSkipped(":test")
+
+        and:
+        def executionResult = new DefaultTestExecutionResult(testDirectory)
+        executionResult.testClass("ATest").assertTestsExecuted("test")
+        !executionResult.testClassExists("BTest")
+        executionResult.testClass("CTest").assertTestsExecuted("test")
+
+        and:
+        output.contains('ATest!')
+        !output.contains('BTest!')
+        output.contains('CTest!')
     }
 
     private createTestABC(){

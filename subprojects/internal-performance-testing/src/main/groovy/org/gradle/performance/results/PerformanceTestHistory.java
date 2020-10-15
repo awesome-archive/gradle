@@ -25,12 +25,22 @@ public interface PerformanceTestHistory {
     /**
      * A unique id for this performance test, must be stable over time.
      */
-    String getId();
+    default String getId() {
+        return convertToId(getDisplayName());
+    }
+
+    static String convertToId(String displayName) {
+        return displayName.replaceAll("[^a-zA-Z0-9]", "-");
+    }
 
     /**
      * A human consumable display name for this performance test.
      */
-    String getDisplayName();
+    default String getDisplayName() {
+        return getExperiment().getDisplayName();
+    }
+
+    PerformanceExperiment getExperiment();
 
     /**
      * The results of all executions of this performance test, ordered from most recent to least recent.

@@ -16,17 +16,17 @@
 
 package org.gradle.internal.deployment
 
-import org.gradle.launcher.continuous.Java7RequiringContinuousIntegrationTest
+import org.gradle.integtests.fixtures.AbstractContinuousIntegrationTest
 import org.gradle.test.fixtures.ConcurrentTestUtil
 import org.gradle.test.fixtures.file.TestFile
 
-class JavaApplicationDeploymentIntegrationTest extends Java7RequiringContinuousIntegrationTest {
+class JavaApplicationDeploymentIntegrationTest extends AbstractContinuousIntegrationTest {
     TestFile messageSrc
 
     def setup() {
         buildFile << """
             apply plugin: 'java'
-            
+
             task run(type: ${RunApplication.canonicalName}) {
                 classpath = sourceSets.main.runtimeClasspath
                 mainClassName = "org.gradle.deployment.Main"
@@ -36,11 +36,13 @@ class JavaApplicationDeploymentIntegrationTest extends Java7RequiringContinuousI
 
         file("src/main/java/org/gradle/deployment/Main.java") << """
             package org.gradle.deployment;
-            
+
             import java.io.File;
             import java.io.FileOutputStream;
             import java.io.PrintWriter;
-            
+            import java.util.concurrent.CountDownLatch;
+            import java.util.concurrent.TimeUnit;
+
             public class Main {
                 public static void main(String... args) throws Exception {
                     PrintWriter writer = new PrintWriter(new FileOutputStream(args[0], true));
@@ -48,15 +50,10 @@ class JavaApplicationDeploymentIntegrationTest extends Java7RequiringContinuousI
                         writer.println(Message.message + " > " + arg);
                     }
                     writer.close();
-                    
+
                     // wait forever
                     new File(args[1]).createNewFile();
-                    Object lock = new Object();
-                    synchronized(lock) {
-                        while (true) {
-                            lock.wait();
-                        }
-                    }
+                    new CountDownLatch(1).await(10, TimeUnit.MINUTES);
                 }
             }
         """

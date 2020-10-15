@@ -26,11 +26,15 @@ import java.util.Map;
 public interface DependencyFactory {
     //for gradle distribution specific dependencies
     enum ClassPathNotation {
-        GRADLE_API("Gradle API"), GRADLE_TEST_KIT("Gradle TestKit"), LOCAL_GROOVY("Local Groovy");
+        GRADLE_API("Gradle API"),
+        GRADLE_KOTLIN_DSL("Gradle Kotlin DSL"),
+        GRADLE_TEST_KIT("Gradle TestKit"),
+        LOCAL_GROOVY("Local Groovy");
 
         public final String displayName;
 
         ClassPathNotation(String displayName) {
+            assert displayName != null : "display name cannot be null";
             this.displayName = displayName;
         }
     }

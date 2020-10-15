@@ -17,71 +17,128 @@
 package org.gradle.api.tasks.compile;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Multimap;
 import org.gradle.api.Incubating;
 import org.gradle.api.JavaVersion;
+import org.gradle.api.Project;
 import org.gradle.api.file.FileCollection;
 import org.gradle.api.file.FileTree;
-import org.gradle.api.internal.changedetection.changes.IncrementalTaskInputsInternal;
+import org.gradle.api.file.ProjectLayout;
+import org.gradle.api.internal.file.FileOperations;
+import org.gradle.api.internal.file.FileTreeInternal;
+import org.gradle.api.internal.file.TemporaryFileProvider;
 import org.gradle.api.internal.tasks.JavaToolChainFactory;
 import org.gradle.api.internal.tasks.compile.CleaningJavaCompiler;
+import org.gradle.api.internal.tasks.compile.CommandLineJavaCompileSpec;
+import org.gradle.api.internal.tasks.compile.CompilationSourceDirs;
+import org.gradle.api.internal.tasks.compile.CompileJavaBuildOperationReportingCompiler;
 import org.gradle.api.internal.tasks.compile.CompilerForkUtils;
 import org.gradle.api.internal.tasks.compile.DefaultJavaCompileSpec;
 import org.gradle.api.internal.tasks.compile.DefaultJavaCompileSpecFactory;
+import org.gradle.api.internal.tasks.compile.HasCompileOptions;
 import org.gradle.api.internal.tasks.compile.JavaCompileSpec;
 import org.gradle.api.internal.tasks.compile.incremental.IncrementalCompilerFactory;
-import org.gradle.api.internal.tasks.compile.processing.AnnotationProcessorPathFactory;
+import org.gradle.api.internal.tasks.compile.incremental.recomp.DefaultSourceFileClassNameConverter;
+import org.gradle.api.internal.tasks.compile.incremental.recomp.FileNameDerivingClassNameConverter;
+import org.gradle.api.internal.tasks.compile.incremental.recomp.IncrementalCompilationResult;
+import org.gradle.api.internal.tasks.compile.incremental.recomp.JavaRecompilationSpecProvider;
+import org.gradle.api.internal.tasks.compile.incremental.recomp.SourceFileClassNameConverter;
+import org.gradle.api.jvm.ModularitySpec;
 import org.gradle.api.model.ObjectFactory;
+import org.gradle.api.model.ReplacedBy;
+import org.gradle.api.provider.Property;
 import org.gradle.api.tasks.CacheableTask;
-import org.gradle.api.tasks.Classpath;
 import org.gradle.api.tasks.CompileClasspath;
+import org.gradle.api.tasks.InputFiles;
+import org.gradle.api.tasks.Internal;
+import org.gradle.api.tasks.LocalState;
 import org.gradle.api.tasks.Nested;
+import org.gradle.api.tasks.Optional;
 import org.gradle.api.tasks.PathSensitive;
 import org.gradle.api.tasks.PathSensitivity;
+import org.gradle.api.tasks.SkipWhenEmpty;
 import org.gradle.api.tasks.TaskAction;
 import org.gradle.api.tasks.WorkResult;
-import org.gradle.api.tasks.incremental.IncrementalTaskInputs;
+import org.gradle.internal.deprecation.DeprecationLogger;
+import org.gradle.internal.file.Deleter;
+import org.gradle.internal.jvm.DefaultModularitySpec;
+import org.gradle.internal.jvm.JavaModuleDetector;
+import org.gradle.internal.operations.BuildOperationExecutor;
 import org.gradle.jvm.internal.toolchain.JavaToolChainInternal;
 import org.gradle.jvm.platform.JavaPlatform;
 import org.gradle.jvm.platform.internal.DefaultJavaPlatform;
+import org.gradle.jvm.toolchain.JavaCompiler;
+import org.gradle.jvm.toolchain.JavaInstallationMetadata;
 import org.gradle.jvm.toolchain.JavaToolChain;
+import org.gradle.jvm.toolchain.internal.DefaultToolchainJavaCompiler;
 import org.gradle.language.base.internal.compile.Compiler;
 import org.gradle.language.base.internal.compile.CompilerUtil;
+import org.gradle.work.Incremental;
+import org.gradle.work.InputChanges;
 
+import javax.annotation.Nullable;
 import javax.inject.Inject;
+import java.io.File;
+import java.util.List;
+import java.util.concurrent.Callable;
+
+import static com.google.common.base.Preconditions.checkState;
+import static org.gradle.api.internal.tasks.compile.SourceClassesMappingFileAccessor.mergeIncrementalMappingsIntoOldMappings;
+import static org.gradle.api.internal.tasks.compile.SourceClassesMappingFileAccessor.readSourceClassesMappingFile;
 
 /**
  * Compiles Java source files.
  *
  * <pre class='autoTested'>
- *     apply plugin: 'java'
+ *     plugins {
+ *         id 'java'
+ *     }
  *
  *     tasks.withType(JavaCompile) {
  *         //enable compilation in a separate daemon process
  *         options.fork = true
- *
- *         //enable incremental compilation
- *         options.incremental = true
  *     }
  * </pre>
  */
 @CacheableTask
-public class JavaCompile extends AbstractCompile {
+public class JavaCompile extends AbstractCompile implements HasCompileOptions {
     private final CompileOptions compileOptions;
     private JavaToolChain toolChain;
+    private final FileCollection stableSources = getProject().files((Callable<Object[]>) () -> new Object[]{getSource(), getSources()});
+    private final ModularitySpec modularity;
+    private File sourceClassesMappingFile;
+    private final Property<JavaCompiler> javaCompiler;
 
     public JavaCompile() {
-        CompileOptions compileOptions = getServices().get(ObjectFactory.class).newInstance(CompileOptions.class);
-        this.compileOptions = compileOptions;
+        Project project = getProject();
+        ObjectFactory objectFactory = project.getObjects();
+        compileOptions = objectFactory.newInstance(CompileOptions.class);
         CompilerForkUtils.doNotCacheIfForkingViaExecutable(compileOptions, getOutputs());
+        modularity = objectFactory.newInstance(DefaultModularitySpec.class);
+        javaCompiler = objectFactory.property(JavaCompiler.class);
+        javaCompiler.finalizeValueOnRead();
     }
 
     /**
      * {@inheritDoc}
      */
     @Override
-    @PathSensitive(PathSensitivity.NAME_ONLY)
+    @ReplacedBy("stableSources")
     public FileTree getSource() {
         return super.getSource();
+    }
+
+    /**
+     * This method is overwritten by the Android plugin &lt; 3.6.
+     * We add it here as hack so we can add the source from that method to stableSources.
+     * DO NOT USE!
+     *
+     * @since 6.0
+     */
+    @Deprecated
+    @Internal
+    protected FileTree getSources() {
+        return getProjectLayout().files().getAsFileTree();
     }
 
     /**
@@ -90,7 +147,7 @@ public class JavaCompile extends AbstractCompile {
      * @return The tool chain.
      */
     @Nested
-    @Incubating
+    @Deprecated
     public JavaToolChain getToolChain() {
         if (toolChain != null) {
             return toolChain;
@@ -103,27 +160,116 @@ public class JavaCompile extends AbstractCompile {
      *
      * @param toolChain The tool chain.
      */
-    @Incubating
+    @Deprecated
     public void setToolChain(JavaToolChain toolChain) {
         this.toolChain = toolChain;
     }
 
-    @TaskAction
-    protected void compile(IncrementalTaskInputs inputs) {
-        if (!compileOptions.isIncremental()) {
-            compile();
-            return;
-        }
+    /**
+     * Configures the java compiler to be used to compile the Java source.
+     *
+     * @see org.gradle.jvm.toolchain.JavaToolchainSpec
+     * @since 6.7
+     */
+    @Incubating
+    @Nested
+    @Optional
+    public Property<JavaCompiler> getJavaCompiler() {
+        return javaCompiler;
+    }
 
+    /**
+     * Compile the sources, taking into account the changes reported by inputs.
+     *
+     * @deprecated Left for backwards compatibility.
+     */
+    @Deprecated
+    @TaskAction
+    protected void compile(@SuppressWarnings("deprecation") org.gradle.api.tasks.incremental.IncrementalTaskInputs inputs) {
+        DeprecationLogger.deprecate("Extending the JavaCompile task")
+            .withAdvice("Configure the task instead.")
+            .willBeRemovedInGradle7()
+            .undocumented()
+            .nagUser();
+        compile((InputChanges) inputs);
+    }
+
+    /**
+     * Compile the sources, taking into account the changes reported by inputs.
+     *
+     * @since 6.0
+     */
+    @Incubating
+    @TaskAction
+    protected void compile(InputChanges inputs) {
         DefaultJavaCompileSpec spec = createSpec();
-        Compiler<JavaCompileSpec> incrementalCompiler = getIncrementalCompilerFactory().makeIncremental(
-            createCompiler(spec),
+        if (!compileOptions.isIncremental()) {
+            performFullCompilation(spec);
+        } else {
+            performIncrementalCompilation(inputs, spec);
+        }
+    }
+
+    private void validateConfiguration() {
+        if (javaCompiler.isPresent()) {
+            checkState(toolChain == null, "Must not use `javaCompiler` property together with (deprecated) `toolchain`");
+            checkState(getOptions().getForkOptions().getJavaHome() == null, "Must not use `javaHome` property on `ForkOptions` together with `javaCompiler` property");
+            checkState(getOptions().getForkOptions().getExecutable() == null, "Must not use `exectuable` property on `ForkOptions` together with `javaCompiler` property");
+        }
+    }
+
+    private void performIncrementalCompilation(InputChanges inputs, DefaultJavaCompileSpec spec) {
+        boolean isUsingCliCompiler = isUsingCliCompiler(spec);
+        File sourceClassesMappingFile = getSourceClassesMappingFile();
+        Multimap<String, String> oldMappings;
+        SourceFileClassNameConverter sourceFileClassNameConverter;
+        if (isUsingCliCompiler) {
+            oldMappings = null;
+            sourceFileClassNameConverter = new FileNameDerivingClassNameConverter();
+        } else {
+            oldMappings = readSourceClassesMappingFile(sourceClassesMappingFile);
+            sourceFileClassNameConverter = new DefaultSourceFileClassNameConverter(oldMappings);
+        }
+        sourceClassesMappingFile.delete();
+        spec.getCompileOptions().setIncrementalCompilationMappingFile(sourceClassesMappingFile);
+        Compiler<JavaCompileSpec> compiler = createCompiler(spec);
+        compiler = makeIncremental(inputs, sourceFileClassNameConverter, (CleaningJavaCompiler<JavaCompileSpec>) compiler, getStableSources().getAsFileTree());
+        WorkResult workResult = performCompilation(spec, compiler);
+        if (workResult instanceof IncrementalCompilationResult && !isUsingCliCompiler) {
+            // The compilation will generate the new mapping file
+            // Only merge old mappings into new mapping on incremental recompilation
+            mergeIncrementalMappingsIntoOldMappings(sourceClassesMappingFile, getStableSources(), inputs, oldMappings);
+        }
+    }
+
+    private Compiler<JavaCompileSpec> makeIncremental(InputChanges inputs, SourceFileClassNameConverter sourceFileClassNameConverter, CleaningJavaCompiler<JavaCompileSpec> compiler, FileTree sources) {
+        return getIncrementalCompilerFactory().makeIncremental(
+            compiler,
             getPath(),
-            (IncrementalTaskInputsInternal) inputs,
-            source,
-            getEffectiveAnnotationProcessorPath()
+            sources,
+            createRecompilationSpec(inputs, sourceFileClassNameConverter, sources)
         );
-        performCompilation(spec, incrementalCompiler);
+    }
+
+    private JavaRecompilationSpecProvider createRecompilationSpec(InputChanges inputs, SourceFileClassNameConverter sourceFileClassNameConverter, FileTree sources) {
+        return new JavaRecompilationSpecProvider(
+            getDeleter(),
+            getServices().get(FileOperations.class),
+            sources,
+            inputs.isIncremental(),
+            () -> inputs.getFileChanges(getStableSources()).iterator(),
+            sourceFileClassNameConverter);
+    }
+
+    private boolean isUsingCliCompiler(DefaultJavaCompileSpec spec) {
+        return CommandLineJavaCompileSpec.class.isAssignableFrom(spec.getClass());
+    }
+
+    private void performFullCompilation(DefaultJavaCompileSpec spec) {
+        Compiler<JavaCompileSpec> compiler;
+        spec.setSourceFiles(getStableSources());
+        compiler = createCompiler(spec);
+        performCompilation(spec, compiler);
     }
 
     @Inject
@@ -132,43 +278,154 @@ public class JavaCompile extends AbstractCompile {
     }
 
     @Inject
+    protected JavaModuleDetector getJavaModuleDetector() {
+        throw new UnsupportedOperationException();
+    }
+
+    @Inject
     protected JavaToolChainFactory getJavaToolChainFactory() {
         throw new UnsupportedOperationException();
     }
 
-    protected void compile() {
-        DefaultJavaCompileSpec spec = createSpec();
-        performCompilation(spec, createCompiler(spec));
+    @Inject
+    protected Deleter getDeleter() {
+        throw new UnsupportedOperationException("Decorator takes care of injection");
     }
 
+    @Inject
+    protected ProjectLayout getProjectLayout() {
+        throw new UnsupportedOperationException();
+    }
 
-    private CleaningJavaCompiler createCompiler(JavaCompileSpec spec) {
-        Compiler<JavaCompileSpec> javaCompiler = CompilerUtil.castCompiler(((JavaToolChainInternal) getToolChain()).select(getPlatform()).newCompiler(spec.getClass()));
-        return new CleaningJavaCompiler(javaCompiler, getOutputs());
+    CleaningJavaCompiler<JavaCompileSpec> createCompiler(JavaCompileSpec spec) {
+        Compiler<JavaCompileSpec> javaCompiler = createToolchainCompiler(spec);
+        return new CleaningJavaCompiler<>(javaCompiler, getOutputs(), getDeleter());
+    }
+
+    private Compiler<JavaCompileSpec> createToolchainCompiler(JavaCompileSpec spec) {
+        if (javaCompiler.isPresent()) {
+            return useNewToolchainCompiler();
+        }
+        return legacyCompiler(spec);
+    }
+
+    private Compiler<JavaCompileSpec> useNewToolchainCompiler() {
+        return spec -> ((DefaultToolchainJavaCompiler) javaCompiler.get()).execute(spec);
+    }
+
+    private Compiler<JavaCompileSpec> legacyCompiler(JavaCompileSpec spec) {
+        return CompilerUtil.castCompiler(((JavaToolChainInternal) getToolChain()).select(getPlatform()).newCompiler(spec.getClass()));
     }
 
     @Nested
+    @Deprecated
     protected JavaPlatform getPlatform() {
         return new DefaultJavaPlatform(JavaVersion.toVersion(getTargetCompatibility()));
     }
 
-    private void performCompilation(JavaCompileSpec spec, Compiler<JavaCompileSpec> compiler) {
-        WorkResult result = compiler.execute(spec);
-        setDidWork(result.getDidWork());
+    /**
+     * The Groovy source-classes mapping file. Internal use only.
+     *
+     * @since 6.5
+     */
+    @LocalState
+    @Incubating
+    protected File getSourceClassesMappingFile() {
+        if (sourceClassesMappingFile == null) {
+            File tmpDir = getServices().get(TemporaryFileProvider.class).newTemporaryFile(getName());
+            sourceClassesMappingFile = new File(tmpDir, "source-classes-mapping.txt");
+        }
+        return sourceClassesMappingFile;
     }
 
-    private DefaultJavaCompileSpec createSpec() {
-        final DefaultJavaCompileSpec spec = new DefaultJavaCompileSpecFactory(compileOptions).create();
-        spec.setSource(getSource());
-        spec.setDestinationDir(getDestinationDir());
-        spec.setWorkingDir(getProject().getProjectDir());
+
+    private WorkResult performCompilation(JavaCompileSpec spec, Compiler<JavaCompileSpec> compiler) {
+        WorkResult result = new CompileJavaBuildOperationReportingCompiler(this, compiler, getServices().get(BuildOperationExecutor.class)).execute(spec);
+        setDidWork(result.getDidWork());
+        return result;
+    }
+
+    DefaultJavaCompileSpec createSpec() {
+        validateConfiguration();
+        List<File> sourcesRoots = CompilationSourceDirs.inferSourceRoots((FileTreeInternal) getStableSources().getAsFileTree());
+        JavaModuleDetector javaModuleDetector = getJavaModuleDetector();
+        boolean isModule = JavaModuleDetector.isModuleSource(modularity.getInferModulePath().get(), sourcesRoots);
+
+        final DefaultJavaCompileSpec spec = createBaseSpec();
+
+        spec.setDestinationDir(getDestinationDirectory().getAsFile().get());
+        spec.setWorkingDir(getProjectLayout().getProjectDirectory().getAsFile());
         spec.setTempDir(getTemporaryDir());
-        spec.setCompileClasspath(ImmutableList.copyOf(getClasspath()));
-        spec.setAnnotationProcessorPath(ImmutableList.copyOf(getEffectiveAnnotationProcessorPath()));
-        spec.setTargetCompatibility(getTargetCompatibility());
-        spec.setSourceCompatibility(getSourceCompatibility());
-        spec.setCompileOptions(compileOptions);
+        spec.setCompileClasspath(ImmutableList.copyOf(javaModuleDetector.inferClasspath(isModule, getClasspath())));
+        spec.setModulePath(ImmutableList.copyOf(javaModuleDetector.inferModulePath(isModule, getClasspath())));
+        if (isModule) {
+            compileOptions.setSourcepath(getProjectLayout().files(sourcesRoots));
+        }
+        spec.setAnnotationProcessorPath(compileOptions.getAnnotationProcessorPath() == null ? ImmutableList.of() : ImmutableList.copyOf(compileOptions.getAnnotationProcessorPath()));
+        configureCompatibilityOptions(spec);
+        spec.setSourcesRoots(sourcesRoots);
+        if (!isToolchainCompatibleWithJava8()) {
+            spec.getCompileOptions().setHeaderOutputDirectory(null);
+        }
         return spec;
+    }
+
+    private boolean isToolchainCompatibleWithJava8() {
+        if (javaCompiler.isPresent()) {
+            return getToolchain().getLanguageVersion().canCompileOrRun(8);
+        }
+        return ((JavaToolChainInternal) getToolChain()).getJavaVersion().isJava8Compatible();
+    }
+
+    private DefaultJavaCompileSpec createBaseSpec() {
+        final ForkOptions forkOptions = compileOptions.getForkOptions();
+        if (javaCompiler.isPresent()) {
+            applyToolchain(forkOptions);
+        }
+        return new DefaultJavaCompileSpecFactory(compileOptions, getToolchain()).create();
+    }
+
+    private void applyToolchain(ForkOptions forkOptions) {
+        final JavaInstallationMetadata metadata = getToolchain();
+        forkOptions.setJavaHome(metadata.getInstallationPath().getAsFile());
+    }
+
+    @Nullable
+    private JavaInstallationMetadata getToolchain() {
+        return javaCompiler.map(JavaCompiler::getMetadata).getOrNull();
+    }
+
+    private void configureCompatibilityOptions(DefaultJavaCompileSpec spec) {
+        final JavaInstallationMetadata toolchain = getToolchain();
+        if (toolchain != null) {
+            if (compileOptions.getRelease().isPresent()) {
+                spec.setRelease(compileOptions.getRelease().get());
+            } else {
+                if (super.getSourceCompatibility() != null) {
+                    spec.setSourceCompatibility(getSourceCompatibility());
+                }
+                if (super.getTargetCompatibility() != null) {
+                    spec.setTargetCompatibility(getTargetCompatibility());
+                }
+            }
+        } else if (compileOptions.getRelease().isPresent()) {
+            spec.setRelease(compileOptions.getRelease().get());
+        } else {
+            spec.setTargetCompatibility(getTargetCompatibility());
+            spec.setSourceCompatibility(getSourceCompatibility());
+        }
+        spec.setCompileOptions(compileOptions);
+    }
+
+    /**
+     * Returns the module path handling of this compile task.
+     *
+     * @since 6.4
+     */
+    @Incubating
+    @Nested
+    public ModularitySpec getModularity() {
+        return modularity;
     }
 
     /**
@@ -183,23 +440,21 @@ public class JavaCompile extends AbstractCompile {
 
     @Override
     @CompileClasspath
+    @Incremental
     public FileCollection getClasspath() {
         return super.getClasspath();
     }
 
     /**
-     * Returns the path to use for annotation processor discovery. Returns an empty collection when no processing should be performed, for example when no annotation processors are present in the compile classpath or annotation processing has been disabled.
+     * The sources for incremental change detection.
      *
-     * <p>You can specify this path using {@link CompileOptions#setAnnotationProcessorPath(FileCollection)} or {@link CompileOptions#setCompilerArgs(java.util.List)}. When not explicitly set using one of the methods on {@link CompileOptions}, the compile classpath will be used when there are annotation processors present in the compile classpath. Otherwise this path will be empty.
-     *
-     * <p>This path is always empty when annotation processing is disabled.</p>
-     *
-     * @since 3.4
+     * @since 6.0
      */
     @Incubating
-    @Classpath
-    public FileCollection getEffectiveAnnotationProcessorPath() {
-        AnnotationProcessorPathFactory annotationProcessorPathFactory = getServices().get(AnnotationProcessorPathFactory.class);
-        return annotationProcessorPathFactory.getEffectiveAnnotationProcessorClasspath(compileOptions, getClasspath());
+    @SkipWhenEmpty
+    @PathSensitive(PathSensitivity.RELATIVE)
+    @InputFiles
+    protected FileCollection getStableSources() {
+        return stableSources;
     }
 }

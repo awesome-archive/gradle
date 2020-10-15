@@ -20,10 +20,11 @@ import org.gradle.api.DomainObjectSet
 import org.gradle.api.Task
 import org.gradle.api.file.FileCollection
 import org.gradle.api.file.SourceDirectorySet
+import org.gradle.api.internal.CollectionCallbackActionDecorator
 import org.gradle.api.internal.DefaultDomainObjectSet
 import org.gradle.api.internal.file.FileCollectionInternal
+import org.gradle.api.internal.file.FileCollectionStructureVisitor
 import org.gradle.api.plugins.ExtensionAware
-import org.gradle.internal.reflect.DirectInstantiator
 import org.gradle.language.base.LanguageSourceSet
 import org.gradle.language.nativeplatform.HeaderExportingSourceSet
 import org.gradle.language.rc.WindowsResourceSet
@@ -43,15 +44,19 @@ import org.gradle.nativeplatform.platform.NativePlatform
 import org.gradle.nativeplatform.tasks.InstallExecutable
 import org.gradle.nativeplatform.test.internal.NativeTestSuiteBinarySpecInternal
 import org.gradle.platform.base.internal.BinaryNamingScheme
+import org.gradle.util.TestUtil
 import org.gradle.util.UsesNativeServices
 import spock.lang.Specification
 
-import static org.gradle.ide.visualstudio.internal.VisualStudioTargetBinary.ProjectType.*
+import static org.gradle.ide.visualstudio.internal.VisualStudioTargetBinary.ProjectType.DLL
+import static org.gradle.ide.visualstudio.internal.VisualStudioTargetBinary.ProjectType.EXE
+import static org.gradle.ide.visualstudio.internal.VisualStudioTargetBinary.ProjectType.LIB
+import static org.gradle.ide.visualstudio.internal.VisualStudioTargetBinary.ProjectType.NONE
 
 @UsesNativeServices
 class NativeSpecVisualStudioTargetBinaryTest extends Specification {
     final flavor = new DefaultFlavor("flavor1")
-    def flavors = new DefaultFlavorContainer(DirectInstantiator.INSTANCE)
+    def flavors = new DefaultFlavorContainer(TestUtil.instantiatorFactory().decorateLenient(), CollectionCallbackActionDecorator.NOOP)
     def exe = Mock(NativeExecutableSpec) {
         getFlavors() >> flavors
     }
@@ -155,7 +160,7 @@ class NativeSpecVisualStudioTargetBinaryTest extends Specification {
     }
 
     def "include paths include component headers"() {
-        final inputs = new DefaultDomainObjectSet(LanguageSourceSet)
+        final inputs = new DefaultDomainObjectSet(LanguageSourceSet, CollectionCallbackActionDecorator.NOOP)
 
         when:
         exeBinary.inputs >> inputs
@@ -190,7 +195,7 @@ class NativeSpecVisualStudioTargetBinaryTest extends Specification {
         def deps1 = dependencySet(file1, file2)
         def deps2 = dependencySet(file3)
 
-        exeBinary.inputs >> new DefaultDomainObjectSet<LanguageSourceSet>(LanguageSourceSet)
+        exeBinary.inputs >> new DefaultDomainObjectSet<LanguageSourceSet>(LanguageSourceSet, CollectionCallbackActionDecorator.NOOP)
         exeBinary.libs >> [deps1, deps2]
 
         then:
@@ -198,7 +203,7 @@ class NativeSpecVisualStudioTargetBinaryTest extends Specification {
     }
 
     def "reflects source files of binary"() {
-        def sourceSets = new DefaultDomainObjectSet<LanguageSourceSet>(LanguageSourceSet)
+        def sourceSets = new DefaultDomainObjectSet<LanguageSourceSet>(LanguageSourceSet, CollectionCallbackActionDecorator.NOOP)
         def sourcefile1 = new File('file1')
         def sourcefile2 = new File('file2')
         def sourcefile3 = new File('file3')
@@ -305,7 +310,7 @@ class NativeSpecVisualStudioTargetBinaryTest extends Specification {
         def sourceSet = Mock(LanguageSourceSet)
         def sourceDirs = Mock(TestSourceDirectorySet)
         1 * sourceSet.source >> sourceDirs
-        1 * sourceDirs.files >> allFiles
+        1 * sourceDirs.visitStructure(_) >> { FileCollectionStructureVisitor visitor -> visitor.visitCollection(null, allFiles) }
         return sourceSet
     }
 
@@ -314,7 +319,7 @@ class NativeSpecVisualStudioTargetBinaryTest extends Specification {
         def sourceSet = Mock(WindowsResourceSet)
         def sourceDirs = Mock(TestSourceDirectorySet)
         1 * sourceSet.source >> sourceDirs
-        1 * sourceDirs.files >> allFiles
+        1 * sourceDirs.visitStructure(_) >> { FileCollectionStructureVisitor visitor -> visitor.visitCollection(null, allFiles) }
         return sourceSet
     }
 
@@ -333,8 +338,12 @@ class NativeSpecVisualStudioTargetBinaryTest extends Specification {
     }
 
     interface TestExecutableBinary extends NativeExecutableBinarySpecInternal, ExtensionAware {}
+
     interface TestLibraryBinary extends SharedLibraryBinarySpecInternal, ExtensionAware {}
+
     interface TestStaticLibraryBinary extends StaticLibraryBinarySpecInternal, ExtensionAware {}
+
     interface TestFooBinary extends NativeBinarySpecInternal {}
+
     interface TestSourceDirectorySet extends SourceDirectorySet, FileCollectionInternal {}
 }

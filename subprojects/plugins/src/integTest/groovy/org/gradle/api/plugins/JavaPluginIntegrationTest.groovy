@@ -21,19 +21,22 @@ import org.gradle.api.internal.component.ComponentRegistry
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 
 class JavaPluginIntegrationTest extends AbstractIntegrationSpec {
+
     def appliesBasePluginsAndAddsConventionObject() {
         given:
         buildFile << """
             apply plugin: 'java'
-            
+
             task expect {
+
+                def component = project.services.get(${ComponentRegistry.canonicalName}).mainComponent
+                assert component instanceof ${BuildableJavaComponent.canonicalName}
+                assert component.runtimeClasspath != null
+                assert component.compileDependencies == project.configurations.compileClasspath
+
+                def buildTasks = component.buildTasks as List
                 doLast {
-                    def component = project.services.get(${ComponentRegistry.canonicalName}).mainComponent
-                    
-                    assert component instanceof ${BuildableJavaComponent.canonicalName}
-                    assert component.buildTasks as List == [ JavaBasePlugin.BUILD_TASK_NAME ]
-                    assert component.runtimeClasspath != null
-                    assert component.compileDependencies == project.configurations.compileClasspath
+                    assert buildTasks == [ JavaBasePlugin.BUILD_TASK_NAME ]
                 }
             }
         """
@@ -41,39 +44,25 @@ class JavaPluginIntegrationTest extends AbstractIntegrationSpec {
         succeeds "expect"
     }
 
-    def "settings classesDir restores old behavior"() {
+    def "jar task is created lazily"() {
         buildFile << """
             apply plugin: 'java'
-            
-            def oldPath = file("build/classes/main")
-            sourceSets.main.output.classesDir = oldPath
-            assert sourceSets.main.java.outputDir == oldPath
-            assert sourceSets.main.output.classesDir == oldPath
-            assert sourceSets.main.output.classesDirs.contains(oldPath) 
-        """
-        file("src/main/java/Main.java") << """
-            public class Main {}
-        """
-        when:
-        executer.expectDeprecationWarning()
-        succeeds("assemble")
-        then:
-        file("build/classes/java/main").assertDoesNotExist()
-        file("build/classes/main/Main.class").assertExists()
-        result.assertOutputContains("Gradle now uses separate output directories for each JVM language, but this build assumes a single directory for all classes from a source set.")
-    }
 
-    def "emits deprecation message if something uses classesDir"() {
-        buildFile << """
-            apply plugin: 'java'
-            
-            def newPath = file("build/classes/java/main")
-            assert sourceSets.main.output.classesDir == newPath
+            tasks.named('jar').configure {
+                println "jar task created"
+            }
+
+            task printArtifacts {
+                doLast {
+                    configurations.runtime.artifacts.files.each { println it }
+                }
+            }
         """
+
         when:
-        executer.expectDeprecationWarning()
-        succeeds("help")
+        succeeds("printArtifacts")
+
         then:
-        result.assertOutputContains("Gradle now uses separate output directories for each JVM language, but this build assumes a single directory for all classes from a source set.")
+        result.groupedOutput.task(':printArtifacts').output.contains("jar task created")
     }
 }

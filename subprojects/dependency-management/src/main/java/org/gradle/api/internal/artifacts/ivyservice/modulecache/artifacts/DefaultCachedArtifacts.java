@@ -16,29 +16,32 @@
 package org.gradle.api.internal.artifacts.ivyservice.modulecache.artifacts;
 
 import org.gradle.internal.component.model.ComponentArtifactMetadata;
+import org.gradle.internal.hash.HashCode;
 
-import java.math.BigInteger;
 import java.util.Set;
 
 class DefaultCachedArtifacts implements CachedArtifacts {
     private final Set<ComponentArtifactMetadata> artifacts;
-    private final BigInteger descriptorHash;
+    private final HashCode descriptorHash;
     private final long ageMillis;
 
-    DefaultCachedArtifacts(Set<ComponentArtifactMetadata> artifacts, BigInteger descriptorHash, long ageMillis) {
+    DefaultCachedArtifacts(Set<ComponentArtifactMetadata> artifacts, HashCode descriptorHash, long ageMillis) {
         this.ageMillis = ageMillis;
         this.artifacts = artifacts;
         this.descriptorHash = descriptorHash;
     }
 
+    @Override
     public Set<ComponentArtifactMetadata> getArtifacts() {
         return artifacts;
     }
 
-    public BigInteger getDescriptorHash() {
+    @Override
+    public HashCode getDescriptorHash() {
         return descriptorHash;
     }
 
+    @Override
     public long getAgeMillis() {
         return ageMillis;
     }

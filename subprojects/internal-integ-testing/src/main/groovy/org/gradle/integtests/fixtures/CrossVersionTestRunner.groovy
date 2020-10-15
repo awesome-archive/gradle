@@ -26,6 +26,8 @@ import org.gradle.util.GradleVersion
  *
  * <p>A test class can be annotated with {@link TargetVersions} to specify the set of versions the test is compatible with, and {@link IgnoreVersions} to specify the set of versions the
  * test should not be run for.
+ * <p>
+ * See {@link AbstractContextualMultiVersionSpecRunner} for information on running these tests.
  */
 class CrossVersionTestRunner extends AbstractCompatibilityTestRunner {
     CrossVersionTestRunner(Class<? extends CrossVersionIntegrationSpec> target) {
@@ -36,14 +38,13 @@ class CrossVersionTestRunner extends AbstractCompatibilityTestRunner {
      * Cross version tests will run against any _supported_ Gradle version: currently >= 1.0
      */
     protected List<GradleDistribution> choosePreviousVersionsToTest(ReleasedVersionDistributions previousVersions) {
-        return previousVersions.getSupported();
+        return previousVersions.getSupported()
     }
 
     @Override
-    protected void createExecutions() {
-        for (GradleDistribution version : previous) {
-            add(new PreviousVersionExecution(version, isEnabled(version)))
-        }
+    protected Collection<Execution> createDistributionExecutionsFor(GradleDistributionTool versionedTool) {
+        GradleDistribution distribution = versionedTool.getDistribution()
+        return [new PreviousVersionExecution(distribution, isEnabled(distribution))]
     }
 
     protected boolean isEnabled(GradleDistribution previousVersion) {

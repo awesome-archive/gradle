@@ -18,6 +18,7 @@ package org.gradle.testing.junit
 
 import org.gradle.integtests.fixtures.DefaultTestExecutionResult
 import org.gradle.integtests.fixtures.TargetCoverage
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.testing.fixture.JUnitMultiVersionIntegrationSpec
 import spock.lang.Issue
 
@@ -35,12 +36,12 @@ repositories {
 }
 
 dependencies {
-    compile gradleApi()
-    compile localGroovy()
+    implementation gradleApi()
+    implementation localGroovy()
 
-    testCompile '$dependencyNotation',
+    testImplementation '$dependencyNotation',
         'org.spockframework:spock-core:1.0-groovy-2.4@jar',
-        'cglib:cglib-nodep:2.2',
+        'cglib:cglib:3.2.6',
         'org.objenesis:objenesis:1.2'
 }
 """
@@ -92,12 +93,13 @@ repositories {
 }
 
 dependencies {
-    testCompile localGroovy()
-    testCompile '$dependencyNotation', 'org.spockframework:spock-core:1.0-groovy-2.4@jar'
+    testImplementation localGroovy()
+    testImplementation '$dependencyNotation', 'org.spockframework:spock-core:1.0-groovy-2.4@jar'
 }
 """
     }
 
+    @ToBeFixedForConfigurationCache(because = "gradle/configuration-cache#270")
     def 'can run spock with @Unroll'() {
         given:
         writeSpockDependencies()
@@ -126,6 +128,7 @@ class UnrollTest extends Specification {
     }
 
     @Issue('https://github.com/gradle/gradle/issues/4358')
+    @ToBeFixedForConfigurationCache(because = "gradle/configuration-cache#270")
     def 'can run spock test with same method name in super class and base class'() {
         given:
         writeSpockDependencies()

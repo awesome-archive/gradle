@@ -27,15 +27,8 @@ public abstract class AbstractDependency implements ResolvableDependency, Depend
         target.reason = reason;
     }
 
-    public void resolve(DependencyResolveContext context) {
-    }
-
     @Override
-    public int hashCode() {
-        int result = getGroup() != null ? getGroup().hashCode() : 0;
-        result = 31 * result + getName().hashCode();
-        result = 31 * result + (getVersion() != null ? getVersion().hashCode() : 0);
-        return result;
+    public void resolve(DependencyResolveContext context) {
     }
 
     @Override

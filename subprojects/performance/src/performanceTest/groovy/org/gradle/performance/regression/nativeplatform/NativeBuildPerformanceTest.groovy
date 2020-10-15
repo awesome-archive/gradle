@@ -17,56 +17,19 @@
 package org.gradle.performance.regression.nativeplatform
 
 import org.gradle.performance.AbstractCrossVersionPerformanceTest
-import org.gradle.performance.mutator.ApplyChangeToNativeSourceFileMutator
-import spock.lang.Ignore
+import org.gradle.profiler.mutations.ApplyChangeToNativeSourceFileMutator
 import spock.lang.Unroll
 
-@Ignore("Ignore to unblock CI for now - SLG 2018/03/07")
 class NativeBuildPerformanceTest extends AbstractCrossVersionPerformanceTest {
-
     def setup() {
-        runner.minimumVersion = '4.0'
-        runner.targetVersions = ["4.7-20180308002700+0000"]
+        runner.minimumBaseVersion = '4.1' // minimum version that contains new C++ plugins
+        runner.targetVersions = ["6.7-20200824220048+0000"]
     }
 
-    @Unroll
-    def "clean assemble on #testProject"() {
+    def "up-to-date assemble (native)"() {
         given:
-        runner.testProject = testProject
         runner.tasksToRun = ["assemble"]
-        runner.cleanTasks = ["clean"]
-        runner.gradleOpts = ["-Xms$maxMemory", "-Xmx$maxMemory"]
-        runner.runs = iterations
-        runner.warmUpRuns = iterations
-
-        when:
-        def result = runner.run()
-
-        then:
-        result.assertCurrentVersionHasNotRegressed()
-
-        where:
-        testProject                       | maxMemory | iterations
-        "smallNative"                     | '256m'    | 40
-        "mediumNative"                    | '256m'    | null
-        "bigNative"                       | '1g'      | null
-        "multiNative"                     | '256m'    | null
-        "smallCppApp"                     | '256m'    | 40
-        "mediumCppApp"                    | '256m'    | null
-        "mediumCppAppWithMacroIncludes"   | '256m'    | null
-        "bigCppApp"                       | '256m'    | null
-        "smallCppMulti"                   | '256m'    | 40
-        "mediumCppMulti"                  | '256m'    | null
-        "mediumCppMultiWithMacroIncludes" | '256m'    | null
-        "bigCppMulti"                     | '1g'      | null
-    }
-
-    def "clean assemble on manyProjectsNative"() {
-        given:
-        runner.testProject = "manyProjectsNative"
-        runner.tasksToRun = ["assemble"]
-        runner.cleanTasks = ["clean"]
-        runner.args = ["--parallel", "--max-workers=12"]
+        runner.gradleOpts = runner.projectMemoryOptions
 
         when:
         def result = runner.run()
@@ -76,11 +39,13 @@ class NativeBuildPerformanceTest extends AbstractCrossVersionPerformanceTest {
     }
 
     @Unroll
-    def "up-to-date assemble on #testProject"() {
+    def "assemble with #changeType file change"() {
         given:
-        runner.testProject = testProject
         runner.tasksToRun = ["assemble"]
-        runner.gradleOpts = ["-Xms$maxMemory", "-Xmx$maxMemory"]
+        runner.gradleOpts = runner.projectMemoryOptions
+        runner.addBuildMutator { settings ->
+            new ApplyChangeToNativeSourceFileMutator(new File(settings.getProjectDir(), determineFileToChange(changeType, runner.testProject)))
+        }
 
         when:
         def result = runner.run()
@@ -89,32 +54,28 @@ class NativeBuildPerformanceTest extends AbstractCrossVersionPerformanceTest {
         result.assertCurrentVersionHasNotRegressed()
 
         where:
-        testProject        | maxMemory
-        "bigCppApp"        | '256m'
-        "bigCppMulti"      | '1g'
+        changeType << ['header', 'source']
     }
 
-    @Unroll
-    def "assemble with #changeType file change on #testProject"() {
-        given:
-        runner.testProject = testProject
-        runner.tasksToRun = ["assemble"]
-        runner.gradleOpts = ["-Xms$maxMemory", "-Xmx$maxMemory"]
-        runner.addBuildExperimentListener(new ApplyChangeToNativeSourceFileMutator(fileToChange))
-
-        when:
-        def result = runner.run()
-
-        then:
-        result.assertCurrentVersionHasNotRegressed()
-
-        where:
-        testProject   | maxMemory | fileToChange
-        "bigCppApp"   | '256m'    | 'src/main/cpp/lib250.cpp'
-        "bigCppApp"   | '256m'    | 'src/main/headers/lib250.h'
-        "bigCppMulti" | '1g'      | 'project101/src/main/cpp/project101lib4.cpp'
-        "bigCppMulti" | '1g'      | 'project101/src/main/public/project101lib4.h'
-        changeType = fileToChange.endsWith('.h') ? 'header' : 'source'
+    static String determineFileToChange(String changeType, String testProject) {
+        if (changeType == 'header') {
+            switch (testProject) {
+                case 'bigCppApp':
+                    return 'src/main/headers/lib250.h'
+                case 'bigCppMulti':
+                    return 'project101/src/main/public/project101lib4.h'
+                default:
+                    throw new IllegalArgumentException("Unknown test project " + testProject)
+            }
+        } else {
+            switch (testProject) {
+                case 'bigCppApp':
+                    return 'src/main/cpp/lib250.cpp'
+                case 'bigCppMulti':
+                    return 'project101/src/main/cpp/project101lib4.cpp'
+                default:
+                    throw new IllegalArgumentException("Unknown test project " + testProject)
+            }
+        }
     }
-
 }

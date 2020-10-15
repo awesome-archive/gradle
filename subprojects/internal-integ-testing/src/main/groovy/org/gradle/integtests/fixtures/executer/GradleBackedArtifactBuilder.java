@@ -16,46 +16,68 @@
 
 package org.gradle.integtests.fixtures.executer;
 
-import org.apache.commons.io.FilenameUtils;
+import org.gradle.internal.UncheckedException;
 import org.gradle.test.fixtures.file.TestFile;
+import org.gradle.util.GradleVersion;
 
 import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.PrintWriter;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 public class GradleBackedArtifactBuilder implements ArtifactBuilder {
     private final GradleExecuter executer;
     private final TestFile rootDir;
+    private final Map<String, String> manifestAttributes = new LinkedHashMap<>();
 
     public GradleBackedArtifactBuilder(GradleExecuter executer, File rootDir) {
         this.executer = executer;
         this.rootDir = new TestFile(rootDir);
     }
 
+    @Override
     public TestFile sourceFile(String path) {
         return rootDir.file("src/main/java", path);
     }
 
+    @Override
     public TestFile resourceFile(String path) {
         return rootDir.file("src/main/resources", path);
     }
 
-    public void buildJar(File jarFile) {
-        buildJar(jarFile, false);
+    @Override
+    public void manifestAttributes(Map<String, String> attributes) {
+        manifestAttributes.putAll(attributes);
     }
 
-    public void buildJar(File jarFile, boolean deleteIfExists) {
-        if (deleteIfExists && jarFile.exists()) {
-            if(!jarFile.delete()) {
-                throw new IllegalStateException("Couldn't delete file " + jarFile);
+    @Override
+    public void buildJar(File jarFile) {
+        String conf = executer.getDistribution().getVersion().compareTo(GradleVersion.version("3.4")) < 0 ? "compile" : "implementation";
+        String destinationDir = executer.getDistribution().getVersion().compareTo(GradleVersion.version("5.1")) < 0 ? "destinationDir" : "destinationDirectory";
+        String archiveName = executer.getDistribution().getVersion().compareTo(GradleVersion.version("5.0")) < 0 ? "archiveName" : "archiveFileName";
+
+        rootDir.mkdirs();
+        rootDir.file("settings.gradle").touch();
+        try {
+            try (PrintWriter writer = new PrintWriter(rootDir.file("build.gradle"))) {
+                writer.println("apply plugin: 'java'");
+                writer.println(String.format("dependencies { %s gradleApi() }", conf));
+                writer.println("jar {");
+                writer.println(String.format("%s = file('%s')", destinationDir, jarFile.getParentFile().toURI()));
+                writer.println(String.format("%s = '%s'", archiveName, jarFile.getName()));
+                if (!manifestAttributes.isEmpty()) {
+                    writer.println("def attrs = [:]");
+                    for (Map.Entry<String, String> entry : manifestAttributes.entrySet()) {
+                        writer.println(String.format("attrs.put(\"%s\", \"%s\")", entry.getKey(), entry.getValue()));
+                    }
+                    writer.println("manifest.attributes(attrs)");
+                }
+                writer.println("}");
             }
+        } catch (FileNotFoundException e) {
+            throw UncheckedException.throwAsUncheckedException(e);
         }
-        rootDir.file("build.gradle").writelns(
-                "apply plugin: 'java'",
-                "dependencies { compile gradleApi() }",
-                String.format("jar.destinationDir = file('%s')", FilenameUtils.separatorsToUnix(jarFile.getParent())),
-                String.format("jar.archiveName = '%s'", jarFile.getName()),
-                // disable jar file caching to prevent file locking
-                "new URL(\"jar:file://valid_jar_url_syntax.jar!/\").openConnection().setDefaultUseCaches(false)"
-        );
         executer.inDirectory(rootDir).withTasks("clean", "jar").run();
     }
 }

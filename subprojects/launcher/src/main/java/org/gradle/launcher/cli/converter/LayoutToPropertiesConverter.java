@@ -25,42 +25,54 @@ import org.gradle.initialization.ParallelismBuildOptions;
 import org.gradle.initialization.StartParameterBuildOptions;
 import org.gradle.initialization.layout.BuildLayout;
 import org.gradle.initialization.layout.BuildLayoutFactory;
+import org.gradle.internal.Cast;
 import org.gradle.internal.buildoption.BuildOption;
 import org.gradle.internal.logging.LoggingConfigurationBuildOptions;
+import org.gradle.launcher.configuration.AllProperties;
+import org.gradle.launcher.configuration.BuildLayoutResult;
+import org.gradle.launcher.configuration.InitialProperties;
 import org.gradle.launcher.daemon.configuration.DaemonBuildOptions;
 import org.gradle.util.CollectionUtils;
 
+import javax.annotation.Nullable;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 
 public class LayoutToPropertiesConverter {
 
-    private final List<BuildOption<?>> allBuildOptions = new ArrayList<BuildOption<?>>();
+    private final List<BuildOption<?>> allBuildOptions = new ArrayList<>();
     private final BuildLayoutFactory buildLayoutFactory;
 
     public LayoutToPropertiesConverter(BuildLayoutFactory buildLayoutFactory) {
         this.buildLayoutFactory = buildLayoutFactory;
-        allBuildOptions.addAll(BuildLayoutParametersBuildOptions.get());
-        allBuildOptions.addAll(StartParameterBuildOptions.get());
-        allBuildOptions.addAll(LoggingConfigurationBuildOptions.get());
-        allBuildOptions.addAll(DaemonBuildOptions.get());
-        allBuildOptions.addAll(ParallelismBuildOptions.get());
+        allBuildOptions.addAll(new BuildLayoutParametersBuildOptions().getAllOptions());
+        allBuildOptions.addAll(new StartParameterBuildOptions().getAllOptions());
+        allBuildOptions.addAll(new LoggingConfigurationBuildOptions().getAllOptions());
+        allBuildOptions.addAll(new DaemonBuildOptions().getAllOptions());
+        allBuildOptions.addAll(new ParallelismBuildOptions().getAllOptions());
     }
 
-    public Map<String, String> convert(BuildLayoutParameters layout, Map<String, String> properties) {
-        configureFromBuildDir(layout.getSearchDir(), layout.getSearchUpwards(), properties);
-        configureFromGradleUserHome(layout.getGradleUserHomeDir(), properties);
-        configureFromSystemproperties(properties);
-        return properties;
+    public AllProperties convert(InitialProperties initialProperties, BuildLayoutResult layout) {
+        BuildLayoutParameters layoutParameters = new BuildLayoutParameters();
+        layout.applyTo(layoutParameters);
+        Map<String, String> properties = new HashMap<>();
+        configureFromHomeDir(layoutParameters.getGradleInstallationHomeDir(), properties);
+        configureFromBuildDir(layoutParameters.getSearchDir(), layoutParameters.getSearchUpwards(), properties);
+        configureFromHomeDir(layout.getGradleUserHomeDir(), properties);
+        configureFromSystemPropertiesOfThisJvm(Cast.uncheckedNonnullCast(properties));
+        properties.putAll(initialProperties.getRequestedSystemProperties());
+        return new Result(properties, initialProperties);
     }
 
-    private void configureFromSystemproperties(Map properties) {
+    private void configureFromSystemPropertiesOfThisJvm(Map<Object, Object> properties) {
         for (Map.Entry<Object, Object> entry : System.getProperties().entrySet()) {
             Object key = entry.getKey();
             Object value = entry.getValue();
@@ -70,7 +82,7 @@ public class LayoutToPropertiesConverter {
         }
     }
 
-    private void configureFromGradleUserHome(File gradleUserHomeDir, Map<String, String> result) {
+    private void configureFromHomeDir(File gradleUserHomeDir, Map<String, String> result) {
         maybeConfigureFrom(new File(gradleUserHomeDir, Project.GRADLE_PROPERTIES), result);
     }
 
@@ -79,18 +91,15 @@ public class LayoutToPropertiesConverter {
         maybeConfigureFrom(new File(layout.getRootDirectory(), Project.GRADLE_PROPERTIES), result);
     }
 
-    private void maybeConfigureFrom(File propertiesFile, Map<String, String> result) {
-        if (!propertiesFile.isFile()) {
+    private void maybeConfigureFrom(@Nullable File propertiesFile, Map<String, String> result) {
+        if (propertiesFile != null && !propertiesFile.isFile()) {
             return;
         }
 
         Properties properties = new Properties();
         try {
-            FileInputStream inputStream = new FileInputStream(propertiesFile);
-            try {
+            try (FileInputStream inputStream = new FileInputStream(propertiesFile)) {
                 properties.load(inputStream);
-            } finally {
-                inputStream.close();
             }
         } catch (IOException e) {
             throw new UncheckedIOException(e);
@@ -107,6 +116,34 @@ public class LayoutToPropertiesConverter {
             if (validOption != null) {
                 result.put(key.toString(), properties.get(key).toString());
             }
+        }
+    }
+
+    private static class Result implements AllProperties {
+        private final Map<String, String> properties;
+        private final InitialProperties initialProperties;
+
+        public Result(Map<String, String> properties, InitialProperties initialProperties) {
+            this.properties = properties;
+            this.initialProperties = initialProperties;
+        }
+
+        @Override
+        public Map<String, String> getRequestedSystemProperties() {
+            return initialProperties.getRequestedSystemProperties();
+        }
+
+        @Override
+        public Map<String, String> getProperties() {
+            return Collections.unmodifiableMap(properties);
+        }
+
+        @Override
+        public Result merge(Map<String, String> systemProperties) {
+            Map<String, String> properties = new HashMap<>(this.properties);
+            properties.putAll(systemProperties);
+            properties.putAll(initialProperties.getRequestedSystemProperties());
+            return new Result(properties, initialProperties);
         }
     }
 }

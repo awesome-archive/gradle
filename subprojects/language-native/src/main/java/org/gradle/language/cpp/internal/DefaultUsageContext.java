@@ -19,68 +19,51 @@ package org.gradle.language.cpp.internal;
 import org.gradle.api.Named;
 import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.artifacts.DependencyConstraint;
+import org.gradle.api.artifacts.ExcludeRule;
 import org.gradle.api.artifacts.ModuleDependency;
 import org.gradle.api.artifacts.PublishArtifact;
 import org.gradle.api.attributes.AttributeContainer;
-import org.gradle.api.attributes.Usage;
+import org.gradle.api.capabilities.Capability;
+import org.gradle.api.internal.artifacts.configurations.ConfigurationInternal;
+import org.gradle.api.internal.attributes.AttributeContainerInternal;
 import org.gradle.api.internal.component.UsageContext;
+import org.gradle.api.plugins.internal.AbstractUsageContext;
+import org.gradle.internal.Cast;
 
+import java.util.Collections;
 import java.util.Set;
 
-public class DefaultUsageContext implements UsageContext, Named {
+public class DefaultUsageContext extends AbstractUsageContext implements Named {
     private final String name;
-    private final Usage usage;
-    private final AttributeContainer attributes;
-
-    private final Set<? extends PublishArtifact> artifacts;
     private final Set<? extends ModuleDependency> dependencies;
     private final Set<? extends DependencyConstraint> dependencyConstraints;
-
-    DefaultUsageContext(String name, Usage usage, Set<? extends PublishArtifact> artifacts, Configuration configuration) {
-        this(name, usage, configuration.getAttributes(), artifacts, configuration);
-    }
+    private final Set<ExcludeRule> globalExcludes;
 
     public DefaultUsageContext(UsageContext usageContext, Set<? extends PublishArtifact> artifacts, Configuration configuration) {
-        this(usageContext.getName(), usageContext.getUsage(), usageContext.getAttributes(), artifacts, configuration);
+        this(usageContext.getName(), usageContext.getAttributes(), artifacts, configuration);
     }
 
-    public DefaultUsageContext(String name, Usage usage, AttributeContainer attributes) {
-        this(name, usage, attributes, null, null);
+    public DefaultUsageContext(String name, AttributeContainer attributes) {
+        this(name, attributes, null, null);
     }
 
-    private DefaultUsageContext(String name, Usage usage, AttributeContainer attributes, Set<? extends PublishArtifact> artifacts, Configuration configuration) {
+    public DefaultUsageContext(String name, AttributeContainer attributes, Set<? extends PublishArtifact> artifacts, Configuration configuration) {
+        super(((AttributeContainerInternal)attributes).asImmutable(), Cast.uncheckedCast(artifacts));
         this.name = name;
-        this.usage = usage;
-        this.attributes = attributes;
-        this.artifacts = artifacts;
-        if (configuration!=null) {
+        if (configuration != null) {
             this.dependencies = configuration.getAllDependencies().withType(ModuleDependency.class);
             this.dependencyConstraints = configuration.getAllDependencyConstraints();
+            this.globalExcludes = ((ConfigurationInternal) configuration).getAllExcludeRules();
         } else {
             this.dependencies = null;
             this.dependencyConstraints = null;
+            this.globalExcludes = Collections.emptySet();
         }
     }
 
     @Override
     public String getName() {
         return name;
-    }
-
-    @Override
-    public Usage getUsage() {
-        return usage;
-    }
-
-    @Override
-    public AttributeContainer getAttributes() {
-        return attributes;
-    }
-
-    @Override
-    public Set<? extends PublishArtifact> getArtifacts() {
-        assert artifacts != null;
-        return artifacts;
     }
 
     @Override
@@ -93,5 +76,15 @@ public class DefaultUsageContext implements UsageContext, Named {
     public Set<? extends DependencyConstraint> getDependencyConstraints() {
         assert dependencyConstraints != null;
         return dependencyConstraints;
+    }
+
+    @Override
+    public Set<? extends Capability> getCapabilities() {
+        return Collections.emptySet();
+    }
+
+    @Override
+    public Set<ExcludeRule> getGlobalExcludes() {
+        return globalExcludes;
     }
 }

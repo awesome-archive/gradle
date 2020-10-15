@@ -28,9 +28,15 @@ public class TaskPathProjectEvaluator implements ProjectConfigurer {
         this.cancellationToken = cancellationToken;
     }
 
+    @Override
     public void configure(ProjectInternal project) {
         if (cancellationToken.isCancellationRequested()) {
             throw new BuildCancelledException();
+        }
+        // Need to configure intermediate parent projects for configure-on-demand
+        ProjectInternal parentProject = project.getParent();
+        if (parentProject != null) {
+            configure(parentProject);
         }
         project.evaluate();
     }
@@ -56,6 +62,7 @@ public class TaskPathProjectEvaluator implements ProjectConfigurer {
         project.bindAllModelRules();
     }
 
+    @Override
     public void configureHierarchy(ProjectInternal project) {
         configure(project);
         for (Project sub : project.getSubprojects()) {

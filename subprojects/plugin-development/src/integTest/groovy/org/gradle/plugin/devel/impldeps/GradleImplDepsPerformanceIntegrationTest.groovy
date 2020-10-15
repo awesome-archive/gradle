@@ -16,12 +16,16 @@
 
 package org.gradle.plugin.devel.impldeps
 
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
+import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
 import org.gradle.testing.internal.util.RetryUtil
+import spock.lang.IgnoreIf
 
+@IgnoreIf({ GradleContextualExecuter.embedded }) // Gradle API and TestKit JARs are not generated when running embedded
 class GradleImplDepsPerformanceIntegrationTest extends BaseGradleImplDepsIntegrationTest {
 
+    @ToBeFixedForConfigurationCache(skip = ToBeFixedForConfigurationCache.Skip.FLAKY)
     def "Gradle API JAR is generated in an acceptable time frame"() {
-        requireOwnGradleUserHomeDir()
         buildFile << """
             configurations {
                 deps
@@ -40,8 +44,8 @@ class GradleImplDepsPerformanceIntegrationTest extends BaseGradleImplDepsIntegra
         }
     }
 
+    @ToBeFixedForConfigurationCache(skip = ToBeFixedForConfigurationCache.Skip.FLAKY)
     def "TestKit JAR is generated in an acceptable time frame"() {
-        requireOwnGradleUserHomeDir()
         buildFile << """
             configurations {
                 deps

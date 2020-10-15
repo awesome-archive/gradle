@@ -17,10 +17,10 @@
 package org.gradle.caching.http.internal
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.timeout.IntegrationTestTimeout
 import org.gradle.test.fixtures.keystore.TestKeyStore
-import spock.lang.Timeout
 
-@Timeout(120)
+@IntegrationTestTimeout(120)
 class HttpBuildCacheServiceIntegrationTest extends AbstractIntegrationSpec implements HttpBuildCacheFixture {
 
     static final String ORIGINAL_HELLO_WORLD = """
@@ -39,8 +39,7 @@ class HttpBuildCacheServiceIntegrationTest extends AbstractIntegrationSpec imple
         """
 
     def setup() {
-        httpBuildCacheServer.start()
-        settingsFile << useHttpBuildCache(httpBuildCacheServer.uri)
+        settingsFile << withHttpBuildCacheServer()
 
         buildFile << """
             apply plugin: "java"
@@ -56,7 +55,7 @@ class HttpBuildCacheServiceIntegrationTest extends AbstractIntegrationSpec imple
         when:
         withBuildCache().run "jar"
         then:
-        skippedTasks.empty
+        noneSkipped()
 
         expect:
         withBuildCache().run "clean"
@@ -64,13 +63,15 @@ class HttpBuildCacheServiceIntegrationTest extends AbstractIntegrationSpec imple
         when:
         withBuildCache().run "jar"
         then:
-        skippedTasks.containsAll ":compileJava"
+        skipped ":compileJava"
     }
 
     def "outputs are correctly loaded from cache"() {
         buildFile << """
             apply plugin: "application"
-            mainClassName = "Hello"
+            application {
+                mainClass = "Hello"
+            }
         """
         withBuildCache().run "run"
         withBuildCache().run "clean"
@@ -101,7 +102,7 @@ class HttpBuildCacheServiceIntegrationTest extends AbstractIntegrationSpec imple
         when:
         withBuildCache().run "clean"
         then:
-        nonSkippedTasks.contains ":clean"
+        executedAndNotSkipped ":clean"
     }
 
     def "cacheable task with cache disabled doesn't get cached"() {
@@ -116,7 +117,7 @@ class HttpBuildCacheServiceIntegrationTest extends AbstractIntegrationSpec imple
         withBuildCache().run "compileJava"
         then:
         // :compileJava is not cached, but :jar is still cached as its inputs haven't changed
-        nonSkippedTasks.contains ":compileJava"
+        executedAndNotSkipped ":compileJava"
     }
 
     def "non-cacheable task with cache enabled gets cached"() {
@@ -127,7 +128,7 @@ class HttpBuildCacheServiceIntegrationTest extends AbstractIntegrationSpec imple
                 @OutputFile outputFile
 
                 @TaskAction copy() {
-                    project.mkdir outputFile.parentFile
+                    outputFile.parentFile.mkdirs()
                     outputFile.text = inputFile.text
                 }
             }
@@ -142,13 +143,13 @@ class HttpBuildCacheServiceIntegrationTest extends AbstractIntegrationSpec imple
         when:
         withBuildCache().run "jar"
         then:
-        nonSkippedTasks.contains ":customTask"
+        executedAndNotSkipped ":customTask"
 
         when:
         withBuildCache().run "clean"
         withBuildCache().run "jar"
         then:
-        skippedTasks.contains ":customTask"
+        skipped ":customTask"
     }
 
     def "credentials can be specified via DSL"() {
@@ -165,7 +166,7 @@ class HttpBuildCacheServiceIntegrationTest extends AbstractIntegrationSpec imple
         when:
         withBuildCache().run "jar"
         then:
-        skippedTasks.empty
+        noneSkipped()
         httpBuildCacheServer.authenticationAttempts == ['Basic'] as Set
 
         expect:
@@ -174,7 +175,7 @@ class HttpBuildCacheServiceIntegrationTest extends AbstractIntegrationSpec imple
         when:
         withBuildCache().run "jar"
         then:
-        skippedTasks.containsAll ":compileJava"
+        skipped ":compileJava"
         httpBuildCacheServer.authenticationAttempts == ['Basic'] as Set
     }
 
@@ -185,7 +186,7 @@ class HttpBuildCacheServiceIntegrationTest extends AbstractIntegrationSpec imple
         when:
         withBuildCache().run "jar"
         then:
-        skippedTasks.empty
+        noneSkipped()
         httpBuildCacheServer.authenticationAttempts == ['Basic'] as Set
 
         expect:
@@ -196,7 +197,7 @@ class HttpBuildCacheServiceIntegrationTest extends AbstractIntegrationSpec imple
         httpBuildCacheServer.withBasicAuth("user", "pass%:-0]#")
         withBuildCache().run "jar"
         then:
-        skippedTasks.containsAll ":compileJava"
+        skipped ":compileJava"
         httpBuildCacheServer.authenticationAttempts == ['Basic'] as Set
     }
 
@@ -215,7 +216,7 @@ class HttpBuildCacheServiceIntegrationTest extends AbstractIntegrationSpec imple
         when:
         withBuildCache().run "jar"
         then:
-        skippedTasks.empty
+        noneSkipped()
         httpBuildCacheServer.authenticationAttempts == ['Basic'] as Set
     }
 
@@ -240,6 +241,23 @@ class HttpBuildCacheServiceIntegrationTest extends AbstractIntegrationSpec imple
         skipped(":compileJava")
     }
 
+    def "produces deprecation warning when using plain HTTP"() {
+        httpBuildCacheServer.useHostname()
+        settingsFile.text = useHttpBuildCache(httpBuildCacheServer.uri)
+
+        when:
+        executer.expectDeprecationWarning()
+        withBuildCache().run "jar"
+        succeeds "clean"
+        executer.expectDocumentedDeprecationWarning("Using insecure protocols with remote build cache, without explicit opt-in, has been deprecated. This is scheduled to be removed in Gradle 7.0. " +
+            "Switch remote build cache to a secure protocol (like HTTPS) or allow insecure protocols. " +
+            "See https://docs.gradle.org/current/dsl/org.gradle.caching.http.HttpBuildCache.html#org.gradle.caching.http.HttpBuildCache:allowInsecureProtocol for more details.")
+
+        then:
+        withBuildCache().run "jar"
+        skipped(":compileJava")
+    }
+
     def "ssl certificate is validated"() {
         def keyStore = TestKeyStore.init(file('ssl-keystore'))
         keyStore.enableSslWithServerCert(httpBuildCacheServer)
@@ -250,7 +268,7 @@ class HttpBuildCacheServiceIntegrationTest extends AbstractIntegrationSpec imple
         withBuildCache().run "jar"
 
         then:
-        skippedTasks.empty
+        noneSkipped()
         output.contains('PKIX path building failed: ')
     }
 
@@ -274,8 +292,8 @@ class HttpBuildCacheServiceIntegrationTest extends AbstractIntegrationSpec imple
         executer.withArgument("--info")
         withBuildCache().run "assemble"
         then:
-        !result.output.contains("correct-username")
-        !result.output.contains("correct-password")
+        outputDoesNotContain("correct-username")
+        outputDoesNotContain("correct-password")
     }
 
     def "incorrect credentials cause build to fail"() {
@@ -295,15 +313,14 @@ class HttpBuildCacheServiceIntegrationTest extends AbstractIntegrationSpec imple
         then:
         output.contains "response status 401: Unauthorized"
         // Make sure we don't log the password
-        !output.contains("incorrect-pass")
-        !errorOutput.contains("incorrect-pass")
+        result.assertNotOutput("incorrect-pass")
     }
 
     def "unknown host causes the build cache to be disabled"() {
-        settingsFile << """        
+        settingsFile << """
             buildCache {
                 remote {
-                    url = "http://invalid.invalid/"
+                    url = "https://invalid.invalid/"
                 }
             }
         """
@@ -313,7 +330,8 @@ class HttpBuildCacheServiceIntegrationTest extends AbstractIntegrationSpec imple
         withBuildCache().run "jar"
 
         then:
-        output.contains("java.net.UnknownHostException: invalid.invalid")
+        output.contains("java.net.UnknownHostException")
+        output.contains("invalid.invalid")
         output.contains("The remote build cache was disabled during the build due to errors.")
     }
 }

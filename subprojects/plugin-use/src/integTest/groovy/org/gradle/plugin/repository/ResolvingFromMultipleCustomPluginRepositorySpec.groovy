@@ -18,6 +18,7 @@ package org.gradle.plugin.repository
 
 import com.google.common.base.Splitter
 import org.gradle.integtests.fixtures.AbstractDependencyResolutionTest
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.test.fixtures.Repository
 import org.gradle.test.fixtures.file.LeaksFileHandles
 import org.gradle.test.fixtures.maven.MavenFileRepository
@@ -76,12 +77,12 @@ class ResolvingFromMultipleCustomPluginRepositorySpec extends AbstractDependency
             pluginManagement {
                 repositories {
                     ${repositories.collect {
-                        if (it instanceof MavenFileRepository) {
-                            "maven { url '${it.uri}' }"
-                        } else {
-                            "ivy { url '${it.uri}' }"
-                        }
-                      }.join('\n')}
+            if (it instanceof MavenFileRepository) {
+                "maven { url '${it.uri}' }"
+            } else {
+                "ivy { url '${it.uri}' }"
+            }
+        }.join('\n')}
                 }
             }
         """
@@ -170,7 +171,7 @@ class ResolvingFromMultipleCustomPluginRepositorySpec extends AbstractDependency
         then:
         failure.assertHasDescription("""
             Plugin [id: 'org.example.foo', version: '1.1'] was not found in any of the following sources:
-            
+
             - Gradle Core Plugins (plugin is not in 'org.gradle' namespace)
             - Plugin Repositories (could not resolve plugin artifact 'org.example.foo:org.example.foo.gradle.plugin:1.1')
               Searched in the following repositories:
@@ -233,8 +234,8 @@ class ResolvingFromMultipleCustomPluginRepositorySpec extends AbstractDependency
         succeeds("helloWorld")
     }
 
-    @Requires(TestPrecondition.ONLINE)
     @Issue("GRADLE-3502")
+    @Requires(TestPrecondition.ONLINE)
     def "Plugin Portal provides transitive dependencies for other plugins"() {
         given:
         publishPlugins(MAVEN)
@@ -267,6 +268,7 @@ class ResolvingFromMultipleCustomPluginRepositorySpec extends AbstractDependency
     }
 
     @Issue("gradle/gradle#3210")
+    @ToBeFixedForConfigurationCache(because = ":buildEnvironment")
     def "all plugin repositories are considered when resolving plugins transitive dependencies"() {
         given:
         requireOwnGradleUserHomeDir()

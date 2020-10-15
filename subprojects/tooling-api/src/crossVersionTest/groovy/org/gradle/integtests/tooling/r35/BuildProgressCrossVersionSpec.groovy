@@ -27,32 +27,32 @@ import org.gradle.tooling.ProjectConnection
 import org.junit.Rule
 import spock.lang.Issue
 
-@ToolingApiVersion(">=2.5")
 @TargetGradleVersion(">=3.5")
 class BuildProgressCrossVersionSpec extends ToolingApiSpecification {
 
-    @Rule public final RepositoryHttpServer server = new RepositoryHttpServer(temporaryFolder, targetDist.version.version)
+    @Rule
+    public final RepositoryHttpServer server = new RepositoryHttpServer(temporaryFolder, targetDist.version.version)
 
     @TargetGradleVersion(">=3.5 <4.0")
     def "generates events for interleaved project configuration and dependency resolution"() {
         given:
         settingsFile << """
-            
+
             rootProject.name = 'multi'
             include 'a', 'b'
         """
         buildFile << """
-            allprojects { apply plugin: 'java' }
+            allprojects { apply plugin: 'java-library' }
             dependencies {
-                compile project(':a')
+                api project(':a')
             }
-            configurations.compile.each { println it }
+            configurations.runtimeClasspath.each { println it }
 """
         file("a/build.gradle") << """
             dependencies {
-                compile project(':b')
+                api project(':b')
             }
-            configurations.compile.each { println it }
+            configurations.runtimeClasspath.each { println it }
 """
 
         when:
@@ -73,7 +73,7 @@ class BuildProgressCrossVersionSpec extends ToolingApiSpecification {
         configureRoot.parent == configureBuild
         configureBuild.children.contains(configureRoot)
 
-        def resolveCompile = events.operation("Resolve dependencies :compile", "Resolve dependencies of :compile")
+        def resolveCompile = events.operation("Resolve dependencies :runtimeClasspath", "Resolve dependencies of :runtimeClasspath")
         def resolveArtifactAinRoot = events.operation(configureRoot, "Resolve artifact a.jar (project :a)")
         def resolveArtifactBinRoot = events.operation(configureRoot, "Resolve artifact b.jar (project :b)")
         resolveCompile.parent == configureRoot
@@ -83,7 +83,7 @@ class BuildProgressCrossVersionSpec extends ToolingApiSpecification {
         configureA.parent == resolveCompile
         resolveCompile.children == [configureA]
 
-        def resolveCompileA = events.operation("Resolve dependencies :a:compile", "Resolve dependencies of :a:compile")
+        def resolveCompileA = events.operation("Resolve dependencies :a:runtimeClasspath", "Resolve dependencies of :a:runtimeClasspath")
         def resolveArtifactBinA = events.operation(configureA, "Resolve artifact b.jar (project :b)")
 
         resolveCompileA.parent == configureA
@@ -109,19 +109,19 @@ class BuildProgressCrossVersionSpec extends ToolingApiSpecification {
         """
         buildFile << """
             allprojects {
-                apply plugin:'java'
+                apply plugin:'java-library'
             }
             repositories {
                maven { url '${mavenHttpRepo.uri}' }
             }
-            
+
             dependencies {
-                compile project(':a')
-                compile "group:projectB:1.0"
-                compile "group:projectC:1.+"
-                compile "group:projectD:2.0-SNAPSHOT"
+                implementation project(':a')
+                implementation "group:projectB:1.0"
+                implementation "group:projectC:1.+"
+                implementation "group:projectD:2.0-SNAPSHOT"
             }
-            configurations.compile.each { println it }
+            configurations.compileClasspath.each { println it }
 """
         when:
         projectB.pom.expectGet()
@@ -151,18 +151,18 @@ class BuildProgressCrossVersionSpec extends ToolingApiSpecification {
         configureRoot.parent == configureBuild
         configureBuild.children.contains(configureRoot)
 
-        def resolveCompile = events.operation("Resolve dependencies :compile", "Resolve dependencies of :compile")
-        def resolveArtifactA = events.operation("Resolve artifact a.jar (project :a)")
+        def resolveCompile = events.operation("Resolve dependencies :compileClasspath", "Resolve dependencies of :compileClasspath")
+        def resolveArtifactA = events.operation("Resolve artifact main (project :a)")
         def resolveArtifactB = events.operation("Resolve artifact projectB.jar (group:projectB:1.0)")
         def resolveArtifactC = events.operation("Resolve artifact projectC.jar (group:projectC:1.5)")
         def resolveArtifactD = events.operation("Resolve artifact projectD.jar (group:projectD:2.0-SNAPSHOT)")
-        def downloadBMetadata = events.operation("Download http://localhost:${server.port}${projectB.pomPath}")
-        def downloadBArtifact = events.operation("Download http://localhost:${server.port}${projectB.artifactPath}")
-        def downloadCRootMetadata = events.operation("Download http://localhost:${server.port}/repo/group/projectC/maven-metadata.xml")
-        def downloadCPom = events.operation("Download http://localhost:${server.port}${projectC.pomPath}")
-        def downloadCArtifact = events.operation("Download http://localhost:${server.port}${projectC.artifactPath}")
-        def downloadDPom = events.operation("Download http://localhost:${server.port}${projectD.pomPath}")
-        def downloadDMavenMetadata = events.operation("Download http://localhost:${server.port}${projectD.metaDataPath}")
+        def downloadBMetadata = events.operation("Download ${server.uri}${projectB.pomPath}")
+        def downloadBArtifact = events.operation("Download ${server.uri}${projectB.artifactPath}")
+        def downloadCRootMetadata = events.operation("Download ${server.uri}/repo/group/projectC/maven-metadata.xml")
+        def downloadCPom = events.operation("Download ${server.uri}${projectC.pomPath}")
+        def downloadCArtifact = events.operation("Download ${server.uri}${projectC.artifactPath}")
+        def downloadDPom = events.operation("Download ${server.uri}${projectD.pomPath}")
+        def downloadDMavenMetadata = events.operation("Download ${server.uri}${projectD.metaDataPath}")
         resolveCompile.parent == configureRoot
         configureRoot.children == [resolveCompile, resolveArtifactA, resolveArtifactB, resolveArtifactC, resolveArtifactD]
 
@@ -179,20 +179,24 @@ class BuildProgressCrossVersionSpec extends ToolingApiSpecification {
     def "generates download events during maven publish"() {
         given:
         toolingApi.requireIsolatedUserHome()
-        if (targetDist.version.version == "3.5-rc-1") { return }
+        if (targetDist.version.version == "3.5-rc-1") {
+            return
+        }
         def module = mavenHttpRepo.module('group', 'publish', '1')
+
+        module.withoutExtraChecksums()
 
         // module is published
         module.publish()
 
         // module will be published a second time via 'maven-publish'
-        module.artifact.expectPublish()
-        module.pom.expectPublish()
+        module.artifact.expectPublish(false)
+        module.pom.expectPublish(false)
         module.rootMetaData.expectGet()
         module.rootMetaData.sha1.expectGet()
         module.rootMetaData.expectGet()
         module.rootMetaData.sha1.expectGet()
-        module.rootMetaData.expectPublish()
+        module.rootMetaData.expectPublish(false)
 
         settingsFile << 'rootProject.name = "publish"'
         buildFile << """
@@ -256,11 +260,22 @@ class BuildProgressCrossVersionSpec extends ToolingApiSpecification {
         and:
         def compileJavaActions = events.operations.findAll { it.descriptor.displayName.matches('Execute .*( action [0-9]+/[0-9]+)? for :compileJava') }
         compileJavaActions.size() > 0
-        compileJavaActions[0].parent.descriptor.displayName == 'Task :compileJava'
+        compileJavaActions[0].hasAncestor { it.descriptor.displayName == 'Task :compileJava' }
     }
 
-    def "generates events for worker actions"() {
-        given:
+    @TargetGradleVersion('>=3.5 <5.1')
+    def "generates events for worker actions (pre 5.1)"() {
+        expect:
+        runBuildWithWorkerAction() != null
+    }
+
+    @ToolingApiVersion('>=5.1')
+    def "generates events for worker actions (post 5.1)"() {
+        expect:
+        runBuildWithWorkerAction() != null
+    }
+
+    private ProgressEvents.Operation runBuildWithWorkerAction() {
         settingsFile << "rootProject.name = 'single'"
         buildFile << """
             import org.gradle.workers.*
@@ -279,7 +294,6 @@ class BuildProgressCrossVersionSpec extends ToolingApiSpecification {
             }
         """.stripIndent()
 
-        when:
         def events = ProgressEvents.create()
         withConnection {
             ProjectConnection connection ->
@@ -289,10 +303,7 @@ class BuildProgressCrossVersionSpec extends ToolingApiSpecification {
                     .run()
         }
 
-        then:
         events.assertIsABuild()
-
-        and:
         events.operation('Task :runInWorker').descendant('My Worker Action')
     }
 

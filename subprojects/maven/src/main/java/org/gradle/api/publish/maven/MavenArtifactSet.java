@@ -17,7 +17,6 @@ package org.gradle.api.publish.maven;
 
 import org.gradle.api.Action;
 import org.gradle.api.DomainObjectSet;
-import org.gradle.api.Incubating;
 
 /**
  * A Collection of {@link MavenArtifact}s to be included in a {@link MavenPublication}.
@@ -25,7 +24,9 @@ import org.gradle.api.Incubating;
  * Being a {@link DomainObjectSet}, a {@code MavenArtifactSet} provides convenient methods for querying, filtering, and applying actions to the set of {@link MavenArtifact}s.
  *
  * <pre class='autoTested'>
- * apply plugin: 'maven-publish'
+ * plugins {
+ *     id 'maven-publish'
+ * }
  *
  * def publication = publishing.publications.create("name", MavenPublication)
  * def artifacts = publication.artifacts
@@ -39,7 +40,6 @@ import org.gradle.api.Incubating;
  *
  * @see DomainObjectSet
  */
-@Incubating
 public interface MavenArtifactSet extends DomainObjectSet<MavenArtifact> {
     /**
      * Creates and adds a {@link MavenArtifact} to the set.

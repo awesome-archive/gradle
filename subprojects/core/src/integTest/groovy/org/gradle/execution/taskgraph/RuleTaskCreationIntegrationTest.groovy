@@ -18,8 +18,10 @@ package org.gradle.execution.taskgraph
 
 import org.gradle.api.reporting.model.ModelReportOutput
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
 import org.gradle.model.internal.core.ModelPath
 
+@UnsupportedWithConfigurationCache(because = "software model")
 class RuleTaskCreationIntegrationTest extends AbstractIntegrationSpec implements WithRuleBasedTasks {
     def setup() {
         buildFile << ruleBasedTasks()
@@ -374,7 +376,7 @@ class RuleTaskCreationIntegrationTest extends AbstractIntegrationSpec implements
         succeeds "bar"
 
         then:
-        executedTasks == [":foo", ":bar"]
+        result.assertTasksExecuted(":foo", ":bar")
     }
 
     def "task instantiation and configuration is deferred until required"() {
@@ -562,9 +564,9 @@ foo configured
         fails "tasks"
 
         then:
-        failure.assertHasCause("Exception thrown while executing model rule: tasks.foo { ... } @ build.gradle line 40, column 17")
+        failure.assertHasCause("Exception thrown while executing model rule: tasks.foo { ... } @ build.gradle line 43, column 17")
         failure.assertHasCause("config failure")
-        failure.assertHasLineNumber(41)
+        failure.assertHasLineNumber(44)
     }
 
     def "can create task with invalid model space name"() {

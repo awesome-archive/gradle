@@ -18,40 +18,37 @@ package org.gradle.language.swift.plugins
 
 import org.gradle.api.internal.artifacts.configurations.ConfigurationInternal
 import org.gradle.api.internal.artifacts.ivyservice.projectmodule.ProjectPublicationRegistry
-import org.gradle.api.internal.provider.LockableProperty
+import org.gradle.api.internal.provider.PropertyInternal
 import org.gradle.api.internal.provider.Providers
 import org.gradle.api.provider.Property
 import org.gradle.internal.os.OperatingSystem
 import org.gradle.language.nativeplatform.internal.Names
 import org.gradle.language.swift.SwiftPlatform
+import org.gradle.language.swift.SwiftVersion
 import org.gradle.language.swift.internal.DefaultSwiftApplication
 import org.gradle.language.swift.internal.DefaultSwiftBinary
 import org.gradle.language.swift.internal.DefaultSwiftExecutable
 import org.gradle.language.swift.internal.DefaultSwiftSharedLibrary
 import org.gradle.language.swift.tasks.SwiftCompile
+import org.gradle.nativeplatform.TargetMachine
 import org.gradle.nativeplatform.platform.internal.DefaultOperatingSystem
-import org.gradle.nativeplatform.platform.internal.NativePlatformInternal
 import org.gradle.nativeplatform.tasks.InstallExecutable
 import org.gradle.nativeplatform.tasks.LinkExecutable
 import org.gradle.nativeplatform.tasks.LinkSharedLibrary
 import org.gradle.nativeplatform.toolchain.internal.AbstractPlatformToolProvider
 import org.gradle.nativeplatform.toolchain.internal.SystemLibraries
 import org.gradle.nativeplatform.toolchain.internal.ToolType
-import org.gradle.platform.base.internal.toolchain.ToolSearchResult
+import org.gradle.nativeplatform.toolchain.internal.tools.CommandLineToolSearchResult
+import org.gradle.swiftpm.internal.NativeProjectPublication
 import org.gradle.swiftpm.internal.SwiftPmTarget
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
 import org.gradle.testfixtures.ProjectBuilder
-import org.gradle.util.VersionNumber
 import org.junit.Rule
 import spock.lang.Specification
-import spock.lang.Unroll
-
-import static org.gradle.language.swift.SwiftVersion.SWIFT3
-import static org.gradle.language.swift.SwiftVersion.SWIFT4
 
 class SwiftBasePluginTest extends Specification {
     @Rule
-    TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider()
+    TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider(getClass())
     def projectDir = tmpDir.createDir("project")
     def project = ProjectBuilder.builder().withProjectDir(projectDir).withName("test").build()
 
@@ -60,8 +57,9 @@ class SwiftBasePluginTest extends Specification {
         binary.name >> name
         binary.names >> Names.of(name)
         binary.module >> project.objects.property(String)
-        binary.targetPlatform >> Stub(SwiftPlatformInternal)
-        binary.sourceCompatibility >> Stub(LockableProperty) { getType() >> null }
+        binary.targetMachine >> Stub(TargetMachine)
+        binary.targetPlatform >> Stub(SwiftPlatform)
+        binary.sourceCompatibility >> project.objects.property(SwiftVersion)
 
         when:
         project.pluginManager.apply(SwiftBasePlugin)
@@ -82,15 +80,16 @@ class SwiftBasePluginTest extends Specification {
 
     def "adds link and install task for executable"() {
         def executable = Stub(DefaultSwiftExecutable)
-        def executableFile = project.layout.fileProperty()
+        def executableFile = project.objects.fileProperty()
         executable.name >> name
         executable.names >> Names.of(name)
         executable.module >> Providers.of("TestApp")
         executable.baseName >> Providers.of("test_app")
         executable.executableFile >> executableFile
-        executable.targetPlatform >> Stub(SwiftPlatformInternal)
-        executable.sourceCompatibility >> Stub(LockableProperty) { getType() >> null }
+        executable.targetMachine >> Stub(SwiftPlatform)
+        executable.sourceCompatibility >> project.objects.property(SwiftVersion)
         executable.platformToolProvider >> new TestPlatformToolProvider()
+        executable.implementationDependencies >> Stub(ConfigurationInternal)
 
         when:
         project.pluginManager.apply(SwiftBasePlugin)
@@ -119,9 +118,10 @@ class SwiftBasePluginTest extends Specification {
         library.names >> Names.of(name)
         library.module >> Providers.of("TestLib")
         library.baseName >> Providers.of("test_lib")
-        library.targetPlatform >> Stub(SwiftPlatformInternal)
-        library.sourceCompatibility >> Stub(LockableProperty) { getType() >> null }
+        library.targetMachine >> Stub(SwiftPlatform)
+        library.sourceCompatibility >> Stub(PropertyInternal) { getType() >> null }
         library.platformToolProvider >> new TestPlatformToolProvider()
+        library.linkFile >> project.objects.fileProperty()
         library.implementationDependencies >> Stub(ConfigurationInternal)
 
         when:
@@ -141,33 +141,6 @@ class SwiftBasePluginTest extends Specification {
         "testDebug" | "linkTestDebug" | "test/debug/"
     }
 
-    @Unroll
-    def "can associate the compiler version #compilerVersion to #languageVersion language version"() {
-        expect:
-        SwiftBasePlugin.toSwiftVersion(VersionNumber.parse(compilerVersion)) == languageVersion
-
-        where:
-        // See https://swift.org/download
-        compilerVersion | languageVersion
-        '4.0.3'         | SWIFT4
-        '4.0.2'         | SWIFT4
-        '4.0'           | SWIFT4
-        '3.1.1'         | SWIFT3
-        '3.1'           | SWIFT3
-        '3.0.2'         | SWIFT3
-        '3.0.1'         | SWIFT3
-        '3.0'           | SWIFT3
-    }
-
-    def "throws exception when Swift language is unknown for specified compiler version"() {
-        when:
-        SwiftBasePlugin.toSwiftVersion(VersionNumber.parse("99.0.1"))
-
-        then:
-        def ex = thrown(IllegalArgumentException)
-        ex.message == 'Swift language version is unknown for the specified Swift compiler version (99.0.1)'
-    }
-
     def "registers a Swift PM publication for each production component"() {
         def component = Stub(DefaultSwiftApplication)
         def prop = Stub(Property)
@@ -180,12 +153,10 @@ class SwiftBasePluginTest extends Specification {
         project.evaluate()
 
         then:
-        def publications = project.services.get(ProjectPublicationRegistry).getPublications(project.path)
+        def publications = project.services.get(ProjectPublicationRegistry).getPublications(NativeProjectPublication, project.identityPath)
         publications.size() == 1
         publications.first().getCoordinates(SwiftPmTarget).targetName == "SomeApp"
     }
-
-    interface SwiftPlatformInternal extends SwiftPlatform, NativePlatformInternal {}
 
     class TestPlatformToolProvider extends AbstractPlatformToolProvider {
         TestPlatformToolProvider() {
@@ -198,7 +169,7 @@ class SwiftBasePluginTest extends Specification {
         }
 
         @Override
-        ToolSearchResult isToolAvailable(ToolType toolType) {
+        CommandLineToolSearchResult locateTool(ToolType compilerType) {
             throw new UnsupportedOperationException()
         }
     }

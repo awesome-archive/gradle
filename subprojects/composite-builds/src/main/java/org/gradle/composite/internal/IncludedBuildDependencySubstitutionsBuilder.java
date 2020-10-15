@@ -16,12 +16,17 @@
 
 package org.gradle.composite.internal;
 
-import org.gradle.api.Action;
-import org.gradle.api.artifacts.DependencySubstitutions;
-import org.gradle.api.internal.artifacts.ImmutableModuleIdentifierFactory;
+import org.gradle.api.artifacts.component.ComponentSelector;
+import org.gradle.api.capabilities.Capability;
 import org.gradle.api.internal.artifacts.ivyservice.dependencysubstitution.DefaultDependencySubstitutions;
 import org.gradle.api.internal.artifacts.ivyservice.dependencysubstitution.DependencySubstitutionsInternal;
+import org.gradle.api.internal.attributes.ImmutableAttributesFactory;
 import org.gradle.api.internal.composite.CompositeBuildContext;
+import org.gradle.api.model.ObjectFactory;
+import org.gradle.internal.build.IncludedBuildState;
+import org.gradle.internal.build.RootBuildState;
+import org.gradle.internal.reflect.Instantiator;
+import org.gradle.internal.typeconversion.NotationParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -29,18 +34,31 @@ public class IncludedBuildDependencySubstitutionsBuilder {
     private static final Logger LOGGER = LoggerFactory.getLogger(IncludedBuildDependencySubstitutionsBuilder.class);
 
     private final CompositeBuildContext context;
-    private final ImmutableModuleIdentifierFactory moduleIdentifierFactory;
+    private final Instantiator instantiator;
+    private final ObjectFactory objectFactory;
+    private final ImmutableAttributesFactory attributesFactory;
+    private final NotationParser<Object, ComponentSelector> moduleSelectorNotationParser;
+    private final NotationParser<Object, Capability> capabilitiesParser;
 
-    public IncludedBuildDependencySubstitutionsBuilder(CompositeBuildContext context, ImmutableModuleIdentifierFactory moduleIdentifierFactory) {
+    public IncludedBuildDependencySubstitutionsBuilder(CompositeBuildContext context,
+                                                       Instantiator instantiator,
+                                                       ObjectFactory objectFactory,
+                                                       ImmutableAttributesFactory attributesFactory,
+                                                       NotationParser<Object, ComponentSelector> moduleSelectorNotationParser,
+                                                       NotationParser<Object, Capability> capabilitiesParser) {
         this.context = context;
-        this.moduleIdentifierFactory = moduleIdentifierFactory;
+        this.instantiator = instantiator;
+        this.objectFactory = objectFactory;
+        this.attributesFactory = attributesFactory;
+        this.moduleSelectorNotationParser = moduleSelectorNotationParser;
+        this.capabilitiesParser = capabilitiesParser;
     }
 
-    public void build(IncludedBuildInternal build) {
+    public void build(IncludedBuildState build) {
         DependencySubstitutionsInternal substitutions = resolveDependencySubstitutions(build);
-        if (!substitutions.hasRules()) {
+        if (!substitutions.rulesMayAddProjectDependency()) {
             // Configure the included build to discover available modules
-            LOGGER.info("[composite-build] Configuring build: " + build.getModel().getProjectDir());
+            LOGGER.info("[composite-build] Configuring build: " + build.getRootDirectory());
             context.addAvailableModules(build.getAvailableModules());
         } else {
             // Register the defined substitutions for included build
@@ -48,12 +66,13 @@ public class IncludedBuildDependencySubstitutionsBuilder {
         }
     }
 
-    private DependencySubstitutionsInternal resolveDependencySubstitutions(IncludedBuildInternal build) {
-        DependencySubstitutionsInternal dependencySubstitutions = DefaultDependencySubstitutions.forIncludedBuild(build.getModel(), moduleIdentifierFactory);
-        for (Action<? super DependencySubstitutions> action : build.getRegisteredDependencySubstitutions()) {
-            action.execute(dependencySubstitutions);
-        }
-        return dependencySubstitutions;
+    public void build(RootBuildState rootBuildState) {
+        context.addAvailableModules(rootBuildState.getAvailableModules());
     }
 
+    private DependencySubstitutionsInternal resolveDependencySubstitutions(IncludedBuildState build) {
+        DependencySubstitutionsInternal dependencySubstitutions = DefaultDependencySubstitutions.forIncludedBuild(build, instantiator, objectFactory, attributesFactory, moduleSelectorNotationParser, capabilitiesParser);
+        build.getRegisteredDependencySubstitutions().execute(dependencySubstitutions);
+        return dependencySubstitutions;
+    }
 }

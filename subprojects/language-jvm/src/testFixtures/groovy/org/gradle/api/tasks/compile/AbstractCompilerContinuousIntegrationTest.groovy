@@ -16,9 +16,9 @@
 
 package org.gradle.api.tasks.compile
 
-import org.gradle.launcher.continuous.Java7RequiringContinuousIntegrationTest
+import org.gradle.integtests.fixtures.AbstractContinuousIntegrationTest
 
-abstract class AbstractCompilerContinuousIntegrationTest extends Java7RequiringContinuousIntegrationTest {
+abstract class AbstractCompilerContinuousIntegrationTest extends AbstractContinuousIntegrationTest {
 
     def setup() {
         executer.withWorkerDaemonsExpirationDisabled()
@@ -35,6 +35,16 @@ abstract class AbstractCompilerContinuousIntegrationTest extends Java7RequiringC
     abstract String getChangedSourceContent()
     abstract String getApplyAndConfigure()
 
+    String getVerifyDaemonsTask() {
+        """
+            task verifyDaemons {
+                doLast {
+                    assert services.get(WorkerDaemonClientsManager).allClients.size() == 0
+                }
+            }
+"""
+    }
+
     def "reuses compiler daemons across continuous build instances" () {
         def inputFileName = sourceFileName
         def inputFile = file(inputFileName).createFile()
@@ -48,17 +58,13 @@ abstract class AbstractCompilerContinuousIntegrationTest extends Java7RequiringC
             import org.gradle.workers.internal.DaemonForkOptions
 
             tasks.withType(${compileTaskType}) {
+                def compilerDaemonIdentityFile = file("$compilerDaemonIdentityFileName")
                 doLast { task ->
-                    def compilerDaemonIdentityFile = file("$compilerDaemonIdentityFileName")
                     compilerDaemonIdentityFile << services.get(WorkerDaemonClientsManager).allClients.collect { System.identityHashCode(it) }.sort().join(" ") + "\\n"
                 }
             }
-            
-            task verifyNoDaemons {
-                doLast {
-                    assert services.get(WorkerDaemonClientsManager).allClients.size() == 0
-                }
-            }
+
+            ${verifyDaemonsTask}
         """
 
         when:
@@ -86,6 +92,6 @@ abstract class AbstractCompilerContinuousIntegrationTest extends Java7RequiringC
         cancelsAndExits()
 
         and:
-        succeeds("verifyNoDaemons")
+        succeeds("verifyDaemons")
     }
 }

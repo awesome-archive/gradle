@@ -22,6 +22,9 @@ import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.artifacts.ConfigurationContainer;
 import org.gradle.api.artifacts.DependencyConstraint;
 import org.gradle.api.artifacts.dsl.DependencyConstraintHandler;
+import org.gradle.api.attributes.Category;
+import org.gradle.api.internal.artifacts.dependencies.DependencyConstraintInternal;
+import org.gradle.api.internal.model.NamedObjectInstantiator;
 import org.gradle.internal.metaobject.MethodAccess;
 import org.gradle.internal.metaobject.MethodMixIn;
 import org.gradle.util.ConfigureUtil;
@@ -32,12 +35,22 @@ public class DefaultDependencyConstraintHandler implements DependencyConstraintH
     private final ConfigurationContainer configurationContainer;
     private final DependencyFactory dependencyFactory;
     private final DynamicAddDependencyMethods dynamicMethods;
+    private final NamedObjectInstantiator namedObjectInstantiator;
+    private final PlatformSupport platformSupport;
+    private final Category platform;
+    private final Category enforcedPlatform;
 
     public DefaultDependencyConstraintHandler(ConfigurationContainer configurationContainer,
-                                              DependencyFactory dependencyFactory) {
+                                              DependencyFactory dependencyFactory,
+                                              NamedObjectInstantiator namedObjectInstantiator,
+                                              PlatformSupport platformSupport) {
         this.configurationContainer = configurationContainer;
         this.dependencyFactory = dependencyFactory;
         this.dynamicMethods = new DynamicAddDependencyMethods(configurationContainer, new DependencyConstraintAdder());
+        this.namedObjectInstantiator = namedObjectInstantiator;
+        this.platformSupport = platformSupport;
+        platform = toCategory(Category.REGULAR_PLATFORM);
+        enforcedPlatform = toCategory(Category.ENFORCED_PLATFORM);
     }
 
     @Override
@@ -60,6 +73,21 @@ public class DefaultDependencyConstraintHandler implements DependencyConstraintH
         return doCreate(dependencyNotation, configureAction);
     }
 
+    @Override
+    public DependencyConstraint enforcedPlatform(Object notation) {
+        DependencyConstraintInternal platformDependency = (DependencyConstraintInternal) create(notation);
+        platformDependency.setForce(true);
+        platformSupport.addPlatformAttribute(platformDependency, enforcedPlatform);
+        return platformDependency;
+    }
+
+    @Override
+    public DependencyConstraint enforcedPlatform(Object notation, Action<? super DependencyConstraint> configureAction) {
+        DependencyConstraint dep = enforcedPlatform(notation);
+        configureAction.execute(dep);
+        return dep;
+    }
+
     private DependencyConstraint doCreate(Object dependencyNotation, @Nullable Action<? super DependencyConstraint> configureAction) {
         DependencyConstraint dependencyConstraint = dependencyFactory.createDependencyConstraint(dependencyNotation);
         if (configureAction != null) {
@@ -79,8 +107,13 @@ public class DefaultDependencyConstraintHandler implements DependencyConstraintH
         return dynamicMethods;
     }
 
+    private Category toCategory(String category) {
+        return namedObjectInstantiator.named(Category.class, category);
+    }
+
     private class DependencyConstraintAdder implements DynamicAddDependencyMethods.DependencyAdder<DependencyConstraint> {
         @Override
+        @SuppressWarnings("rawtypes")
         public DependencyConstraint add(Configuration configuration, Object dependencyNotation, Closure configureClosure) {
             DependencyConstraint dependencyConstraint = ConfigureUtil.configure(configureClosure, dependencyFactory.createDependencyConstraint(dependencyNotation));
             configuration.getDependencyConstraints().add(dependencyConstraint);

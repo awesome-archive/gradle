@@ -31,14 +31,18 @@
  */
 package org.gradle.internal.component.external.model
 
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.ImmutableSet
 import org.gradle.api.artifacts.component.ComponentIdentifier
 import org.gradle.api.artifacts.component.ModuleComponentSelector
-import org.gradle.api.internal.artifacts.DefaultImmutableModuleIdentifierFactory
 import org.gradle.api.internal.artifacts.DefaultModuleIdentifier
-import org.gradle.api.internal.artifacts.ivyservice.resolveengine.excludes.ModuleExclusions
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.excludes.PatternMatchers
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.excludes.ModuleExclusions
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.excludes.specs.ExcludeSpec
 import org.gradle.internal.component.external.descriptor.DefaultExclude
 import org.gradle.internal.component.external.descriptor.MavenScope
+import org.gradle.internal.component.external.model.maven.MavenDependencyDescriptor
+import org.gradle.internal.component.external.model.maven.MavenDependencyType
 import org.gradle.internal.component.model.ComponentArtifactMetadata
 import org.gradle.internal.component.model.ComponentResolveMetadata
 import org.gradle.internal.component.model.ConfigurationMetadata
@@ -47,15 +51,16 @@ import org.gradle.internal.component.model.Exclude
 import org.gradle.internal.component.model.ExcludeMetadata
 
 class MavenDependencyDescriptorTest extends ExternalDependencyDescriptorTest {
-    final ModuleExclusions moduleExclusions = new ModuleExclusions(new DefaultImmutableModuleIdentifierFactory())
+    final ModuleExclusions moduleExclusions = new ModuleExclusions()
+    final ExcludeSpec nothing = moduleExclusions.nothing()
 
     @Override
     ExternalDependencyDescriptor create(ModuleComponentSelector selector) {
-        return mavenDependencyMetadata(MavenScope.Compile, false, selector, [])
+        return mavenDependencyMetadata(MavenScope.Compile, selector, [])
     }
 
     ExternalDependencyDescriptor createWithExcludes(ModuleComponentSelector selector, List<Exclude> excludes) {
-        return mavenDependencyMetadata(MavenScope.Compile, false, selector, excludes)
+        return mavenDependencyMetadata(MavenScope.Compile, selector, excludes)
     }
 
     def "excludes nothing when no exclude rules provided"() {
@@ -63,7 +68,7 @@ class MavenDependencyDescriptorTest extends ExternalDependencyDescriptorTest {
 
         expect:
         def exclusions = moduleExclusions.excludeAny(dep.allExcludes)
-        exclusions == ModuleExclusions.excludeNone()
+        exclusions == nothing
         exclusions.is(moduleExclusions.excludeAny(dep.allExcludes))
     }
 
@@ -74,7 +79,7 @@ class MavenDependencyDescriptorTest extends ExternalDependencyDescriptorTest {
 
         expect:
         def exclusions = moduleExclusions.excludeAny(dep.allExcludes)
-        exclusions == moduleExclusions.excludeAny(exclude1, exclude2)
+        exclusions == moduleExclusions.excludeAny(ImmutableList.of(exclude1, exclude2))
         exclusions.is(moduleExclusions.excludeAny(dep.allExcludes))
     }
 
@@ -87,9 +92,9 @@ class MavenDependencyDescriptorTest extends ExternalDependencyDescriptorTest {
         fromCompile.name >> "compile"
         toComponent.getConfiguration("compile") >> toCompile
         toComponent.getConfiguration("master") >> toMaster
-        toMaster.artifacts >> [Stub(ComponentArtifactMetadata)]
+        toMaster.artifacts >> ImmutableList.of(ComponentArtifactMetadata)
 
-        def dep = mavenDependencyMetadata(MavenScope.Compile, false, Stub(ModuleComponentSelector), [])
+        def dep = mavenDependencyMetadata(MavenScope.Compile, Stub(ModuleComponentSelector), [])
 
         expect:
         dep.selectLegacyConfigurations(fromComponent, fromCompile, toComponent) as List == [toCompile, toMaster]
@@ -108,9 +113,9 @@ class MavenDependencyDescriptorTest extends ExternalDependencyDescriptorTest {
         toComponent.getConfiguration("runtime") >> toRuntime
         toComponent.getConfiguration("compile") >> toCompile
         toComponent.getConfiguration("master") >> toMaster
-        toMaster.artifacts >> [Stub(ComponentArtifactMetadata)]
+        toMaster.artifacts >> ImmutableList.of(ComponentArtifactMetadata)
 
-        def dep = mavenDependencyMetadata(MavenScope.Compile, false, Stub(ModuleComponentSelector), [])
+        def dep = mavenDependencyMetadata(MavenScope.Compile, Stub(ModuleComponentSelector), [])
 
         expect:
         dep.selectLegacyConfigurations(fromComponent, fromRuntime, toComponent) as List == [toRuntime, toCompile, toMaster]
@@ -128,10 +133,10 @@ class MavenDependencyDescriptorTest extends ExternalDependencyDescriptorTest {
         fromRuntime2.name >> "provided"
         toComponent.getConfiguration("runtime") >> toRuntime
         toComponent.getConfiguration("master") >> toMaster
-        toRuntime.hierarchy >> ["runtime", "compile"]
-        toMaster.artifacts >> [Stub(ComponentArtifactMetadata)]
+        toRuntime.hierarchy >> ImmutableSet.of("runtime", "compile")
+        toMaster.artifacts >> ImmutableList.of(ComponentArtifactMetadata)
 
-        def dep = mavenDependencyMetadata(MavenScope.Compile, false, Stub(ModuleComponentSelector), [])
+        def dep = mavenDependencyMetadata(MavenScope.Compile, Stub(ModuleComponentSelector), [])
 
         expect:
         dep.selectLegacyConfigurations(fromComponent, fromRuntime, toComponent) as List == [toRuntime, toMaster]
@@ -146,9 +151,9 @@ class MavenDependencyDescriptorTest extends ExternalDependencyDescriptorTest {
         fromRuntime.name >> "runtime"
         toComponent.getConfiguration("runtime") >> toRuntime
         toComponent.getConfiguration("master") >> null
-        toRuntime.hierarchy >> ["compile", "runtime"]
+        toRuntime.hierarchy >> ImmutableSet.of("compile", "runtime")
 
-        def dep = mavenDependencyMetadata(MavenScope.Compile, false, Stub(ModuleComponentSelector), [])
+        def dep = mavenDependencyMetadata(MavenScope.Compile, Stub(ModuleComponentSelector), [])
 
         expect:
         dep.selectLegacyConfigurations(fromComponent, fromRuntime, toComponent) as List == [toRuntime]
@@ -160,12 +165,14 @@ class MavenDependencyDescriptorTest extends ExternalDependencyDescriptorTest {
         def fromRuntime = Stub(ConfigurationMetadata)
         def toRuntime = Stub(ConfigurationMetadata)
         def toMaster = Stub(ConfigurationMetadata)
+        toRuntime.artifacts >> ImmutableList.of()
+        toMaster.artifacts >> ImmutableList.of()
         fromRuntime.name >> "runtime"
         toComponent.getConfiguration("runtime") >> toRuntime
         toComponent.getConfiguration("master") >> toMaster
-        toRuntime.hierarchy >> ["compile", "runtime"]
+        toRuntime.hierarchy >> ImmutableSet.of("compile", "runtime")
 
-        def dep = mavenDependencyMetadata(MavenScope.Compile, false, Stub(ModuleComponentSelector), [])
+        def dep = mavenDependencyMetadata(MavenScope.Compile, Stub(ModuleComponentSelector), [])
 
         expect:
         dep.selectLegacyConfigurations(fromComponent, fromRuntime, toComponent) as List == [toRuntime]
@@ -181,9 +188,9 @@ class MavenDependencyDescriptorTest extends ExternalDependencyDescriptorTest {
         toComponent.getConfiguration("compile") >> null
         toComponent.getConfiguration("default") >> toDefault
         toComponent.getConfiguration("master") >> toMaster
-        toMaster.artifacts >> [Stub(ComponentArtifactMetadata)]
+        toMaster.artifacts >> ImmutableList.of(ComponentArtifactMetadata)
 
-        def dep = mavenDependencyMetadata(MavenScope.Compile, false, Stub(ModuleComponentSelector), [])
+        def dep = mavenDependencyMetadata(MavenScope.Compile, Stub(ModuleComponentSelector), [])
 
         expect:
         dep.selectLegacyConfigurations(fromComponent, fromCompile, toComponent) as List == [toDefault, toMaster]
@@ -199,10 +206,10 @@ class MavenDependencyDescriptorTest extends ExternalDependencyDescriptorTest {
         toComponent.getConfiguration("runtime") >> null
         toComponent.getConfiguration("default") >> toDefault
         toComponent.getConfiguration("master") >> toMaster
-        toDefault.hierarchy >> ["compile", "default"]
-        toMaster.artifacts >> [Stub(ComponentArtifactMetadata)]
+        toDefault.hierarchy >> ImmutableSet.of("compile", "default")
+        toMaster.artifacts >> ImmutableList.of(ComponentArtifactMetadata)
 
-        def dep = mavenDependencyMetadata(MavenScope.Compile, false, Stub(ModuleComponentSelector), [])
+        def dep = mavenDependencyMetadata(MavenScope.Compile, Stub(ModuleComponentSelector), [])
 
         expect:
         dep.selectLegacyConfigurations(fromComponent, fromRuntime, toComponent) as List == [toDefault, toMaster]
@@ -217,7 +224,7 @@ class MavenDependencyDescriptorTest extends ExternalDependencyDescriptorTest {
         toComponent.getConfiguration("default") >> null
         toComponent.getConfiguration("master") >> null
 
-        def dep = mavenDependencyMetadata(MavenScope.Compile, false, Stub(ModuleComponentSelector), [])
+        def dep = mavenDependencyMetadata(MavenScope.Compile, Stub(ModuleComponentSelector), [])
 
         when:
         dep.selectLegacyConfigurations(fromComponent, fromCompile, toComponent)
@@ -235,7 +242,7 @@ class MavenDependencyDescriptorTest extends ExternalDependencyDescriptorTest {
         toComponent.getConfiguration("default") >> null
         toComponent.getConfiguration("master") >> null
 
-        def dep = mavenDependencyMetadata(MavenScope.Compile, false, Stub(ModuleComponentSelector), [])
+        def dep = mavenDependencyMetadata(MavenScope.Compile, Stub(ModuleComponentSelector), [])
 
         when:
         dep.selectLegacyConfigurations(fromComponent, fromRuntime, toComponent)
@@ -244,7 +251,7 @@ class MavenDependencyDescriptorTest extends ExternalDependencyDescriptorTest {
         thrown(ConfigurationNotFoundException)
     }
 
-    private static MavenDependencyDescriptor mavenDependencyMetadata(MavenScope scope, boolean optional, ModuleComponentSelector selector, List<ExcludeMetadata> excludes) {
-        return new MavenDependencyDescriptor(scope, optional, selector, null, excludes)
+    private static MavenDependencyDescriptor mavenDependencyMetadata(MavenScope scope, ModuleComponentSelector selector, List<ExcludeMetadata> excludes) {
+        return new MavenDependencyDescriptor(scope, MavenDependencyType.DEPENDENCY, selector, null, excludes)
     }
 }

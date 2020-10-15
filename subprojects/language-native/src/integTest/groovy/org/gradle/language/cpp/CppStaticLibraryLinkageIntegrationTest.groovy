@@ -16,6 +16,7 @@
 
 package org.gradle.language.cpp
 
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.nativeplatform.fixtures.app.CppLib
 import org.gradle.nativeplatform.fixtures.app.SourceElement
 
@@ -34,8 +35,8 @@ class CppStaticLibraryLinkageIntegrationTest extends AbstractCppIntegrationTest 
     }
 
     @Override
-    protected List<String> getTasksToAssembleDevelopmentBinary() {
-        return [":compileDebugCpp", ":createDebug"]
+    protected List<String> getTasksToAssembleDevelopmentBinary(String variant) {
+        return [":compileDebug${variant.capitalize()}Cpp", ":createDebug${variant.capitalize()}"]
     }
 
     @Override
@@ -48,6 +49,7 @@ class CppStaticLibraryLinkageIntegrationTest extends AbstractCppIntegrationTest 
         return new CppLib()
     }
 
+    @ToBeFixedForConfigurationCache
     def "can create static library binary when only static linkage is specified"() {
         def library = new CppLib()
         buildFile << """
@@ -70,6 +72,7 @@ class CppStaticLibraryLinkageIntegrationTest extends AbstractCppIntegrationTest 
         staticLibrary('build/lib/main/debug/foo').assertExists()
     }
 
+    @ToBeFixedForConfigurationCache
     def "can create debug and release variants of library"() {
         def library = new CppLib()
         buildFile << """
@@ -99,6 +102,7 @@ class CppStaticLibraryLinkageIntegrationTest extends AbstractCppIntegrationTest 
         staticLibrary('build/lib/main/debug/foo').assertExists()
     }
 
+    @ToBeFixedForConfigurationCache
     def "can use link file as task dependency"() {
         given:
         settingsFile << "rootProject.name = 'hello'"
@@ -108,11 +112,11 @@ class CppStaticLibraryLinkageIntegrationTest extends AbstractCppIntegrationTest 
         and:
         buildFile << """
             apply plugin: 'cpp-library'
-            
+
             library {
                 linkage = [Linkage.STATIC]
             }
-            
+
             task assembleLinkDebug {
                 dependsOn library.binaries.get { !it.optimized }.map { it.linkFile }
             }
@@ -124,6 +128,7 @@ class CppStaticLibraryLinkageIntegrationTest extends AbstractCppIntegrationTest 
         staticLibrary("build/lib/main/debug/hello").assertExists()
     }
 
+    @ToBeFixedForConfigurationCache
     def "can use objects as task dependency"() {
         given:
         settingsFile << "rootProject.name = 'hello'"
@@ -133,11 +138,11 @@ class CppStaticLibraryLinkageIntegrationTest extends AbstractCppIntegrationTest 
         and:
         buildFile << """
             apply plugin: 'cpp-library'
-            
+
             library {
                 linkage = [Linkage.STATIC]
             }
-            
+
             task compileDebug {
                 dependsOn library.binaries.get { !it.optimized }.map { it.objects }
             }

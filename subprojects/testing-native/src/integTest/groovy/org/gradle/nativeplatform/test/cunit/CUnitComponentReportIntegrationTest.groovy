@@ -16,6 +16,7 @@
 package org.gradle.nativeplatform.test.cunit
 
 import org.gradle.api.reporting.components.AbstractNativeComponentReportIntegrationTest
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.nativeplatform.fixtures.RequiresInstalledToolChain
 
 class CUnitComponentReportIntegrationTest extends AbstractNativeComponentReportIntegrationTest {
@@ -44,10 +45,11 @@ model {
         fails "components"
 
         then:
-        errorOutput.contains "Test suite 'someExeTest' doesn't declare component under test. Please specify it with `testing \$.components.myComponent`."
+        failure.assertHasCause "Test suite 'someExeTest' doesn't declare component under test. Please specify it with `testing \$.components.myComponent`."
     }
 
     @RequiresInstalledToolChain
+    @ToBeFixedForConfigurationCache(because = ":components")
     def "shows details of native C executable with test suite"() {
         given:
         buildFile << """

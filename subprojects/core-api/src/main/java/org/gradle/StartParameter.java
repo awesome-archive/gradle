@@ -21,6 +21,7 @@ import com.google.common.collect.Sets;
 import org.apache.commons.lang.builder.EqualsBuilder;
 import org.apache.commons.lang.builder.HashCodeBuilder;
 import org.gradle.api.Incubating;
+import org.gradle.api.artifacts.verification.DependencyVerificationMode;
 import org.gradle.api.logging.LogLevel;
 import org.gradle.api.logging.configuration.ConsoleOutput;
 import org.gradle.api.logging.configuration.LoggingConfiguration;
@@ -34,8 +35,7 @@ import org.gradle.initialization.UserHomeInitScriptFinder;
 import org.gradle.internal.DefaultTaskExecutionRequest;
 import org.gradle.internal.FileUtils;
 import org.gradle.internal.concurrent.DefaultParallelismConfiguration;
-import org.gradle.internal.installation.CurrentGradleInstallation;
-import org.gradle.internal.installation.GradleInstallation;
+import org.gradle.internal.deprecation.DeprecationLogger;
 import org.gradle.internal.logging.DefaultLoggingConfiguration;
 
 import javax.annotation.Nullable;
@@ -49,6 +49,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+
+import static java.util.Collections.emptyList;
 
 /**
  * <p>{@code StartParameter} defines the configuration used by a Gradle instance to execute a build. The properties of {@code StartParameter} generally correspond to the command-line options of
@@ -66,20 +68,20 @@ public class StartParameter implements LoggingConfiguration, ParallelismConfigur
 
     private final DefaultLoggingConfiguration loggingConfiguration = new DefaultLoggingConfiguration();
     private final DefaultParallelismConfiguration parallelismConfiguration = new DefaultParallelismConfiguration();
-    private List<TaskExecutionRequest> taskRequests = new ArrayList<TaskExecutionRequest>();
-    private Set<String> excludedTaskNames = new LinkedHashSet<String>();
+    private List<TaskExecutionRequest> taskRequests = new ArrayList<>();
+    private Set<String> excludedTaskNames = new LinkedHashSet<>();
     private boolean buildProjectDependencies = true;
     private File currentDir;
     private File projectDir;
-    private boolean searchUpwards;
-    private Map<String, String> projectProperties = new HashMap<String, String>();
-    private Map<String, String> systemPropertiesArgs = new HashMap<String, String>();
+    protected boolean searchUpwards;
+    private Map<String, String> projectProperties = new HashMap<>();
+    private Map<String, String> systemPropertiesArgs = new HashMap<>();
     private File gradleUserHomeDir;
-    private File gradleHomeDir;
+    protected File gradleHomeDir;
     private File settingsFile;
-    private boolean useEmptySettings;
+    protected boolean useEmptySettings;
     private File buildFile;
-    private List<File> initScripts = new ArrayList<File>();
+    private List<File> initScripts = new ArrayList<>();
     private boolean dryRun;
     private boolean rerunTasks;
     private boolean profile;
@@ -87,15 +89,19 @@ public class StartParameter implements LoggingConfiguration, ParallelismConfigur
     private boolean offline;
     private File projectCacheDir;
     private boolean refreshDependencies;
-    private boolean recompileScripts;
     private boolean buildCacheEnabled;
     private boolean buildCacheDebugLogging;
     private boolean configureOnDemand;
     private boolean continuous;
-    private List<File> includedBuilds = new ArrayList<File>();
+    private List<File> includedBuilds = new ArrayList<>();
     private boolean buildScan;
     private boolean noBuildScan;
-    private boolean interactive;
+    private boolean writeDependencyLocks;
+    private List<String> writeDependencyVerifications = emptyList();
+    private List<String> lockedDependenciesToUpdate = emptyList();
+    private DependencyVerificationMode verificationMode = DependencyVerificationMode.STRICT;
+    private boolean isRefreshKeys;
+    private boolean isExportKeys;
 
     /**
      * {@inheritDoc}
@@ -182,14 +188,8 @@ public class StartParameter implements LoggingConfiguration, ParallelismConfigur
      * Creates a {@code StartParameter} with default values. This is roughly equivalent to running Gradle on the command-line with no arguments.
      */
     public StartParameter() {
-        GradleInstallation gradleInstallation = CurrentGradleInstallation.get();
-        if (gradleInstallation == null) {
-            gradleHomeDir = null;
-        } else {
-            gradleHomeDir = gradleInstallation.getGradleHome();
-        }
-
         BuildLayoutParameters layoutParameters = new BuildLayoutParameters();
+        gradleHomeDir = layoutParameters.getGradleInstallationHomeDir();
         searchUpwards = layoutParameters.getSearchUpwards();
         currentDir = layoutParameters.getCurrentDir();
         projectDir = layoutParameters.getProjectDir();
@@ -212,16 +212,15 @@ public class StartParameter implements LoggingConfiguration, ParallelismConfigur
         p.projectDir = projectDir;
         p.settingsFile = settingsFile;
         p.useEmptySettings = useEmptySettings;
-        p.taskRequests = new ArrayList<TaskExecutionRequest>(taskRequests);
-        p.excludedTaskNames = new LinkedHashSet<String>(excludedTaskNames);
+        p.taskRequests = new ArrayList<>(taskRequests);
+        p.excludedTaskNames = new LinkedHashSet<>(excludedTaskNames);
         p.buildProjectDependencies = buildProjectDependencies;
         p.currentDir = currentDir;
         p.searchUpwards = searchUpwards;
-        p.projectProperties = new HashMap<String, String>(projectProperties);
-        p.systemPropertiesArgs = new HashMap<String, String>(systemPropertiesArgs);
-        p.gradleHomeDir = gradleHomeDir;
-        p.initScripts = new ArrayList<File>(initScripts);
-        p.includedBuilds = new ArrayList<File>(includedBuilds);
+        p.projectProperties = new HashMap<>(projectProperties);
+        p.systemPropertiesArgs = new HashMap<>(systemPropertiesArgs);
+        p.initScripts = new ArrayList<>(initScripts);
+        p.includedBuilds = new ArrayList<>(includedBuilds);
         p.dryRun = dryRun;
         p.projectCacheDir = projectCacheDir;
         return p;
@@ -239,6 +238,7 @@ public class StartParameter implements LoggingConfiguration, ParallelismConfigur
 
     protected StartParameter prepareNewBuild(StartParameter p) {
         p.gradleUserHomeDir = gradleUserHomeDir;
+        p.gradleHomeDir = gradleHomeDir;
         p.setLogLevel(getLogLevel());
         p.setConsoleOutput(getConsoleOutput());
         p.setShowStacktrace(getShowStacktrace());
@@ -247,14 +247,18 @@ public class StartParameter implements LoggingConfiguration, ParallelismConfigur
         p.continueOnFailure = continueOnFailure;
         p.offline = offline;
         p.rerunTasks = rerunTasks;
-        p.recompileScripts = recompileScripts;
         p.refreshDependencies = refreshDependencies;
         p.setParallelProjectExecutionEnabled(isParallelProjectExecutionEnabled());
         p.buildCacheEnabled = buildCacheEnabled;
         p.configureOnDemand = configureOnDemand;
         p.setMaxWorkerCount(getMaxWorkerCount());
-        p.systemPropertiesArgs = new HashMap<String, String>(systemPropertiesArgs);
-        p.interactive = interactive;
+        p.systemPropertiesArgs = new HashMap<>(systemPropertiesArgs);
+        p.writeDependencyLocks = writeDependencyLocks;
+        p.writeDependencyVerifications = writeDependencyVerifications;
+        p.lockedDependenciesToUpdate = new ArrayList<>(lockedDependenciesToUpdate);
+        p.verificationMode = verificationMode;
+        p.isRefreshKeys = isRefreshKeys;
+        p.isExportKeys = isExportKeys;
         return p;
     }
 
@@ -294,17 +298,25 @@ public class StartParameter implements LoggingConfiguration, ParallelismConfigur
     /**
      * Specifies that an empty settings script should be used.
      *
-     * This means that even if a settings file exists in the conventional location, or has been previously specified by {@link #setSettingsFile(java.io.File)}, it will not be used.
+     * This means that even if a settings file exists in the conventional location, or has been previously specified by {@link #setSettingsFile(File)}, it will not be used.
      *
-     * If {@link #setSettingsFile(java.io.File)} is called after this, it will supersede calling this method.
+     * If {@link #setSettingsFile(File)} is called after this, it will supersede calling this method.
      *
      * @return this
      */
     public StartParameter useEmptySettings() {
+        DeprecationLogger.deprecateMethod(StartParameter.class, "useEmptySettings()")
+            .willBeRemovedInGradle7()
+            .withUpgradeGuideSection(6, "discontinued_methods")
+            .nagUser();
+        doUseEmptySettings();
+        return this;
+    }
+
+    protected void doUseEmptySettings() {
         searchUpwards = false;
         useEmptySettings = true;
         settingsFile = null;
-        return this;
     }
 
     /**
@@ -313,12 +325,15 @@ public class StartParameter implements LoggingConfiguration, ParallelismConfigur
      * @return Whether to use empty settings or not.
      */
     public boolean isUseEmptySettings() {
+        DeprecationLogger.deprecateMethod(StartParameter.class, "isUseEmptySettings()")
+            .willBeRemovedInGradle7()
+            .withUpgradeGuideSection(6, "discontinued_methods")
+            .nagUser();
         return useEmptySettings;
     }
 
     /**
-     * Returns the names of the tasks to execute in this build. When empty, the default tasks for the project will be executed. If {@link TaskExecutionRequest}s are set for this build then names from
-     * these task parameters are returned.
+     * Returns the names of the tasks to execute in this build. When empty, the default tasks for the project will be executed. If {@link TaskExecutionRequest}s are set for this build then names from these task parameters are returned.
      *
      * @return the names of the tasks to execute in this build. Never returns null.
      */
@@ -338,9 +353,9 @@ public class StartParameter implements LoggingConfiguration, ParallelismConfigur
      */
     public void setTaskNames(@Nullable Iterable<String> taskNames) {
         if (taskNames == null) {
-            this.taskRequests = Collections.emptyList();
+            this.taskRequests = emptyList();
         } else {
-            this.taskRequests = Arrays.<TaskExecutionRequest>asList(new DefaultTaskExecutionRequest(taskNames));
+            this.taskRequests = Arrays.asList(new DefaultTaskExecutionRequest(taskNames));
         }
     }
 
@@ -349,7 +364,6 @@ public class StartParameter implements LoggingConfiguration, ParallelismConfigur
      *
      * @return the tasks to execute in this build. Never returns null.
      */
-    @Incubating
     public List<TaskExecutionRequest> getTaskRequests() {
         return taskRequests;
     }
@@ -360,7 +374,6 @@ public class StartParameter implements LoggingConfiguration, ParallelismConfigur
      *
      * @param taskParameters the tasks to execute in this build.
      */
-    @Incubating
     public void setTaskRequests(Iterable<? extends TaskExecutionRequest> taskParameters) {
         this.taskRequests = Lists.newArrayList(taskParameters);
     }
@@ -406,10 +419,18 @@ public class StartParameter implements LoggingConfiguration, ParallelismConfigur
     }
 
     public boolean isSearchUpwards() {
+        DeprecationLogger.deprecateMethod(StartParameter.class, "isSearchUpwards()")
+            .willBeRemovedInGradle7()
+            .withUpgradeGuideSection(5, "search_upwards_related_apis_in_startparameter_have_been_deprecated")
+            .nagUser();
         return searchUpwards;
     }
 
     public void setSearchUpwards(boolean searchUpwards) {
+        DeprecationLogger.deprecateMethod(StartParameter.class, "setSearchUpwards(boolean)")
+            .willBeRemovedInGradle7()
+            .withUpgradeGuideSection(5, "search_upwards_related_apis_in_startparameter_have_been_deprecated")
+            .nagUser();
         this.searchUpwards = searchUpwards;
     }
 
@@ -533,13 +554,13 @@ public class StartParameter implements LoggingConfiguration, ParallelismConfigur
      *
      * @return All init scripts, including explicit init scripts and implicit init scripts.
      */
-    @Incubating
     public List<File> getAllInitScripts() {
         CompositeInitScriptFinder initScriptFinder = new CompositeInitScriptFinder(
-            new UserHomeInitScriptFinder(getGradleUserHomeDir()), new DistributionInitScriptFinder(gradleHomeDir)
+            new UserHomeInitScriptFinder(getGradleUserHomeDir()),
+            new DistributionInitScriptFinder(gradleHomeDir)
         );
 
-        List<File> scripts = new ArrayList<File>(getInitScripts());
+        List<File> scripts = new ArrayList<>(getInitScripts());
         initScriptFinder.findScripts(scripts);
         return Collections.unmodifiableList(scripts);
     }
@@ -645,23 +666,8 @@ public class StartParameter implements LoggingConfiguration, ParallelismConfigur
     }
 
     /**
-     * Specifies whether the build scripts should be recompiled.
-     */
-    public boolean isRecompileScripts() {
-        return recompileScripts;
-    }
-
-    /**
-     * Specifies whether the build scripts should be recompiled.
-     */
-    public void setRecompileScripts(boolean recompileScripts) {
-        this.recompileScripts = recompileScripts;
-    }
-
-    /**
      * {@inheritDoc}
      */
-    @Incubating
     @Override
     public boolean isParallelProjectExecutionEnabled() {
         return parallelismConfiguration.isParallelProjectExecutionEnabled();
@@ -670,7 +676,6 @@ public class StartParameter implements LoggingConfiguration, ParallelismConfigur
     /**
      * {@inheritDoc}
      */
-    @Incubating
     @Override
     public void setParallelProjectExecutionEnabled(boolean parallelProjectExecution) {
         parallelismConfiguration.setParallelProjectExecutionEnabled(parallelProjectExecution);
@@ -699,7 +704,6 @@ public class StartParameter implements LoggingConfiguration, ParallelismConfigur
      *
      * @since 4.6
      */
-    @Incubating
     public boolean isBuildCacheDebugLogging() {
         return buildCacheDebugLogging;
     }
@@ -709,7 +713,6 @@ public class StartParameter implements LoggingConfiguration, ParallelismConfigur
      *
      * @since 4.6
      */
-    @Incubating
     public void setBuildCacheDebugLogging(boolean buildCacheDebugLogging) {
         this.buildCacheDebugLogging = buildCacheDebugLogging;
     }
@@ -717,7 +720,6 @@ public class StartParameter implements LoggingConfiguration, ParallelismConfigur
     /**
      * {@inheritDoc}
      */
-    @Incubating
     @Override
     public int getMaxWorkerCount() {
         return parallelismConfiguration.getMaxWorkerCount();
@@ -726,7 +728,6 @@ public class StartParameter implements LoggingConfiguration, ParallelismConfigur
     /**
      * {@inheritDoc}
      */
-    @Incubating
     @Override
     public void setMaxWorkerCount(int maxWorkerCount) {
         parallelismConfiguration.setMaxWorkerCount(maxWorkerCount);
@@ -757,14 +758,15 @@ public class StartParameter implements LoggingConfiguration, ParallelismConfigur
             + ", initScripts=" + initScripts
             + ", dryRun=" + dryRun
             + ", rerunTasks=" + rerunTasks
-            + ", recompileScripts=" + recompileScripts
             + ", offline=" + offline
             + ", refreshDependencies=" + refreshDependencies
             + ", parallelProjectExecution=" + isParallelProjectExecutionEnabled()
             + ", configureOnDemand=" + configureOnDemand
             + ", maxWorkerCount=" + getMaxWorkerCount()
             + ", buildCacheEnabled=" + buildCacheEnabled
-            + ", interactive=" + interactive
+            + ", writeDependencyLocks=" + writeDependencyLocks
+            + ", verificationMode=" + verificationMode
+            + ", refreshKeys=" + isRefreshKeys
             + '}';
     }
 
@@ -780,27 +782,22 @@ public class StartParameter implements LoggingConfiguration, ParallelismConfigur
         this.configureOnDemand = configureOnDemand;
     }
 
-    @Incubating
     public boolean isContinuous() {
         return continuous;
     }
 
-    @Incubating
     public void setContinuous(boolean enabled) {
         this.continuous = enabled;
     }
 
-    @Incubating
     public void includeBuild(File includedBuild) {
         includedBuilds.add(includedBuild);
     }
 
-    @Incubating
     public void setIncludedBuilds(List<File> includedBuilds) {
         this.includedBuilds = includedBuilds;
     }
 
-    @Incubating
     public List<File> getIncludedBuilds() {
         return Collections.unmodifiableList(includedBuilds);
     }
@@ -810,7 +807,6 @@ public class StartParameter implements LoggingConfiguration, ParallelismConfigur
      *
      * @since 3.4
      */
-    @Incubating
     public boolean isBuildScan() {
         return buildScan;
     }
@@ -820,7 +816,6 @@ public class StartParameter implements LoggingConfiguration, ParallelismConfigur
      *
      * @since 3.4
      */
-    @Incubating
     public void setBuildScan(boolean buildScan) {
         this.buildScan = buildScan;
     }
@@ -830,7 +825,6 @@ public class StartParameter implements LoggingConfiguration, ParallelismConfigur
      *
      * @since 3.4
      */
-    @Incubating
     public boolean isNoBuildScan() {
         return noBuildScan;
     }
@@ -840,28 +834,151 @@ public class StartParameter implements LoggingConfiguration, ParallelismConfigur
      *
      * @since 3.4
      */
-    @Incubating
     public void setNoBuildScan(boolean noBuildScan) {
         this.noBuildScan = noBuildScan;
     }
 
     /**
-     * Returns true when console is interactive.
+     * Specifies whether dependency resolution needs to be persisted for locking
      *
-     * @since 4.3
+     * @since 4.8
      */
-    @Incubating
-    public boolean isInteractive() {
-        return interactive;
+    public void setWriteDependencyLocks(boolean writeDependencyLocks) {
+        this.writeDependencyLocks = writeDependencyLocks;
     }
 
     /**
-     * Specifies whether console is interactive.
+     * Returns true when dependency resolution is to be persisted for locking
      *
-     * @since 4.3
+     * @since 4.8
+     */
+    public boolean isWriteDependencyLocks() {
+        return writeDependencyLocks;
+    }
+
+    /**
+     * Indicates that specified dependencies are to be allowed to update their version.
+     * Implicitly activates dependency locking persistence.
+     *
+     * @param lockedDependenciesToUpdate the modules to update
+     * @see #isWriteDependencyLocks()
+     * @since 4.8
+     */
+    public void setLockedDependenciesToUpdate(List<String> lockedDependenciesToUpdate) {
+        this.lockedDependenciesToUpdate = Lists.newArrayList(lockedDependenciesToUpdate);
+        this.writeDependencyLocks = true;
+    }
+
+    /**
+     * Indicates if a dependency verification metadata file should be written at the
+     * end of this build. If the list is not empty, then it means we need to generate
+     * or update the dependency verification file with the checksums specified in the
+     * list.
+     *
+     * @since 6.1
      */
     @Incubating
-    public void setInteractive(boolean interactive) {
-        this.interactive = interactive;
+    public List<String> getWriteDependencyVerifications() {
+        return writeDependencyVerifications;
+    }
+
+    /**
+     * Tells if a dependency verification metadata file should be written at the end
+     * of this build.
+     *
+     * @param checksums the list of checksums to generate
+     * @since 6.1
+     */
+    @Incubating
+    public void setWriteDependencyVerifications(List<String> checksums) {
+        this.writeDependencyVerifications = checksums;
+    }
+
+    /**
+     * Returns the list of modules that are to be allowed to update their version compared to the lockfile.
+     *
+     * @return a list of modules allowed to have a version update
+     * @since 4.8
+     */
+    public List<String> getLockedDependenciesToUpdate() {
+        return lockedDependenciesToUpdate;
+    }
+
+    /**
+     * Sets the dependency verification mode. There are three different modes:
+     * <ul>
+     *     <li><i>strict</i>, the default, verification is enabled as soon as a dependency verification file is present.</li>
+     *     <li><i>lenient</i>, in this mode, failure to verify a checksum, missing checksums or signatures will be logged
+     *     but will not fail the build. This mode should only be used when updating dependencies as it is inherently unsafe.</li>
+     *     <li><i>off</i>, this mode disables all verifications</li>
+     * </ul>
+     *
+     * @param verificationMode if true, enables lenient dependency verification
+     * @since 6.2
+     */
+    @Incubating
+    public void setDependencyVerificationMode(DependencyVerificationMode verificationMode) {
+        this.verificationMode = verificationMode;
+    }
+
+    /**
+     * Returns the dependency verification mode.
+     *
+     * @since 6.2
+     */
+    @Incubating
+    public DependencyVerificationMode getDependencyVerificationMode() {
+        return verificationMode;
+    }
+
+    /**
+     * Sets the key refresh flag.
+     *
+     * @param refresh If set to true, missing keys will be checked again. By default missing keys are cached for 24 hours.
+     * @since 6.2
+     */
+    @Incubating
+    public void setRefreshKeys(boolean refresh) {
+        isRefreshKeys = refresh;
+    }
+
+    /**
+     * If true, Gradle will try to download missing keys again.
+     *
+     * @since 6.2
+     */
+    @Incubating
+    public boolean isRefreshKeys() {
+        return isRefreshKeys;
+    }
+
+    /**
+     * If true, after writing the dependency verification file, a public keyring
+     * file will be generated with all keys seen during generation of the file.
+     *
+     * This file can then be used as a source for public keys instead of reaching
+     * out public key servers.
+     *
+     * @return true if keys should be exported
+     * @since 6.2
+     */
+    @Incubating
+    public boolean isExportKeys() {
+        return isExportKeys;
+    }
+
+    /**
+     * If true, after writing the dependency verification file, a public keyring
+     * file will be generated with all keys seen during generation of the file.
+     *
+     * This file can then be used as a source for public keys instead of reaching
+     * out public key servers.
+     *
+     * @param exportKeys set to true if keys should be exported
+     * @since 6.2
+     */
+    @Incubating
+    public void setExportKeys(boolean exportKeys) {
+        isExportKeys = exportKeys;
     }
 }

@@ -23,7 +23,7 @@ import org.junit.runner.RunWith
 
 @RunWith(FluidDependenciesResolveRunner)
 class FileDependencyResolveIntegrationTest extends AbstractDependencyResolutionTest {
-    def resolve = new ResolveTestFixture(buildFile)
+    def resolve = new ResolveTestFixture(buildFile, "compile")
 
     def setup() {
         resolve.prepare()
@@ -35,9 +35,10 @@ class FileDependencyResolveIntegrationTest extends AbstractDependencyResolutionT
             allprojects {
                 configurations { compile }
                 task jar {
-                    doLast { 
-                        file("${project.name}.jar").text = 'content' 
-                    } 
+                    def jarFile = file("${project.name}.jar")
+                    doLast {
+                        jarFile.text = 'content'
+                    }
                 }
             }
             dependencies { 
@@ -74,10 +75,12 @@ class FileDependencyResolveIntegrationTest extends AbstractDependencyResolutionT
             allprojects {
                 configurations { compile }
                 task jar {
-                    doLast { 
-                        file("${project.name}-1.jar").text = 'content' 
-                        file("${project.name}-2.jar").text = 'content' 
-                    } 
+                    def jar1 = file("${project.name}-1.jar")
+                    def jar2 = file("${project.name}-2.jar")
+                    doLast {
+                        jar1.text = 'content'
+                        jar2.text = 'content'
+                    }
                 }
             }
             dependencies { 
@@ -117,16 +120,14 @@ class FileDependencyResolveIntegrationTest extends AbstractDependencyResolutionT
         buildFile << '''
             def jarFile = file("jar-1.jar")
             jarFile << 'content'
-            def libFiles = new org.gradle.api.internal.file.collections.ListBackedFileSet(jarFile) {
-                Set<File> getFiles() {
-                    println "FILES REQUESTED"
-                    return super.getFiles()
-                }
+            def libFiles = {
+                println "FILES REQUESTED"
+                [jarFile]
             }
             
             configurations { compile }
             dependencies { 
-                compile new org.gradle.api.internal.file.collections.FileCollectionAdapter(libFiles)
+                compile files(libFiles)
             }
             
             task checkFiles {

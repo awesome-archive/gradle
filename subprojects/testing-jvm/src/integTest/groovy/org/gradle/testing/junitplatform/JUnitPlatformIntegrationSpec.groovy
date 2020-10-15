@@ -17,28 +17,31 @@
 package org.gradle.testing.junitplatform
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.util.Requires
-import org.gradle.util.TestPrecondition
+
 import static org.gradle.testing.fixture.JUnitCoverage.LATEST_JUPITER_VERSION
 
-@Requires(TestPrecondition.JDK8_OR_LATER)
 class JUnitPlatformIntegrationSpec extends AbstractIntegrationSpec {
     def setup() {
         executer.noExtraLogging()
-        buildFile << """
-            apply plugin: 'java'
-
-            repositories {
-                mavenCentral()
-            }
-            dependencies { 
-                compile 'org.junit.jupiter:junit-jupiter-api:${LATEST_JUPITER_VERSION}','org.junit.jupiter:junit-jupiter-engine:${LATEST_JUPITER_VERSION}'
-                testCompile 'org.junit.jupiter:junit-jupiter-api:${LATEST_JUPITER_VERSION}','org.junit.jupiter:junit-jupiter-engine:${LATEST_JUPITER_VERSION}'
-            }
-
+        buildScriptWithJupiterDependencies("""
             test {
                 useJUnitPlatform()
             }
-        """
+        """)
+    }
+
+    def buildScriptWithJupiterDependencies(script) {
+        buildScript("""
+            apply plugin: 'java'
+
+            repositories {
+                ${mavenCentralRepository()}
+            }
+            dependencies {
+                implementation 'org.junit.jupiter:junit-jupiter-api:${LATEST_JUPITER_VERSION}','org.junit.jupiter:junit-jupiter-engine:${LATEST_JUPITER_VERSION}'
+                testImplementation 'org.junit.jupiter:junit-jupiter-api:${LATEST_JUPITER_VERSION}','org.junit.jupiter:junit-jupiter-engine:${LATEST_JUPITER_VERSION}'
+            }
+            $script
+        """)
     }
 }

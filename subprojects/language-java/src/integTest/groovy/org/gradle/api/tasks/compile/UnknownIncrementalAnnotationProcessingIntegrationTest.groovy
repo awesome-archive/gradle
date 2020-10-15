@@ -16,7 +16,10 @@
 
 package org.gradle.api.tasks.compile
 
+import org.gradle.api.internal.tasks.compile.CompileJavaBuildOperationType
 import org.gradle.language.fixtures.NonIncrementalProcessorFixture
+
+import static org.gradle.api.internal.tasks.compile.CompileJavaBuildOperationType.Result.AnnotationProcessorDetails.Type.UNKNOWN
 
 class UnknownIncrementalAnnotationProcessingIntegrationTest extends AbstractIncrementalAnnotationProcessingIntegrationTest {
 
@@ -48,28 +51,49 @@ class UnknownIncrementalAnnotationProcessingIntegrationTest extends AbstractIncr
         run "compileJava", "--info"
 
         then:
-        output.contains("The following annotation processors don't support incremental compilation:")
-        output.contains("Processor (type: UNKNOWN)")
+        output.contains("Full recompilation is required because ThingProcessor is not incremental.")
+        with(operations[':compileJava'].result.annotationProcessorDetails as List<CompileJavaBuildOperationType.Result.AnnotationProcessorDetails>) {
+            size() == 1
+            first().className == 'ThingProcessor'
+            first().type == UNKNOWN.name()
+        }
     }
 
-    def "generated files are deleted when processor is removed"() {
+    def "compilation is incremental if the non-incremental processor is not used"() {
+        def a = java "class A {}"
+        java "class B {}"
+
+        when:
+        outputs.snapshot { run "compileJava" }
+        a.text = "class A { public void foo() {} }"
+        run "compileJava", "--info"
+
+        then:
+        outputs.recompiledClasses("A")
+    }
+
+    def "generated files and classes are deleted when processor is removed"() {
         given:
-        def a = java "@Thing class A {}"
+        java "@Thing class A {}"
 
         when:
         outputs.snapshot { run "compileJava" }
 
         then:
-        file("build/classes/java/main/AThing.java").exists()
+        file("build/generated/sources/annotationProcessor/java/main/AThing.java").exists()
 
         when:
         buildFile << "compileJava.options.annotationProcessorPath = files()"
         run "compileJava", "--info"
 
         then:
-        !file("build/classes/java/main/AThing.java").exists()
+        !file("build/generated/sources/annotationProcessor/java/main/AThing.java").exists()
 
         and:
-        output.contains("Annotation processor path changed")
+        outputs.deletedClasses("AThing")
+
+        and:
+        outputContains("Input property 'options.annotationProcessorPath' file ${file("annotation/build/libs/annotation.jar").absolutePath} has been removed")
+        outputContains("The input changes require a full rebuild for incremental task ':compileJava'")
     }
 }

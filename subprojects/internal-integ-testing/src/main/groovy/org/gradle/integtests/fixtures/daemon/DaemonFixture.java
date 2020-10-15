@@ -37,14 +37,42 @@ public interface DaemonFixture {
     File getLogFile();
 
     /**
+     * Returns whether the log file contains a given String.
+     *
+     * Works without reading the whole log file into memory.
+     */
+    boolean logContains(String searchString);
+
+    /**
+     * Returns whether the log file contains a given String, starting from line `fromLine`
+     *
+     * The first line in the file is the line 0.
+     *
+     * Works without reading the whole log file into memory.
+     */
+    boolean logContains(long fromLine, String searchString);
+
+    /**
+     * Returns the number of lines in the daemon log.
+     *
+     * Works without reading the whole log file into memory.
+     */
+    long getLogLineCount();
+
+    /**
      * Returns the TCP port used by this daemon.
      */
     int getPort();
 
     /**
-     * Forcefully kills this daemon.
+     * Forcefully kills this daemon and all child processes.
      */
     void kill();
+
+    /**
+     * Forcefully kills this daemon, but not child processes.
+     */
+    void killDaemonOnly();
 
     /**
      * Changes the authentication token for this daemon in the registry, so that client will see a different token to that expected by this daemon

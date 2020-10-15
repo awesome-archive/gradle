@@ -21,14 +21,19 @@ import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.ConfigurableFileTree;
 import org.gradle.api.file.CopySpec;
 import org.gradle.api.file.DeleteSpec;
+import org.gradle.api.file.FileCollection;
 import org.gradle.api.file.FileTree;
 import org.gradle.api.resources.ResourceHandler;
 import org.gradle.api.tasks.WorkResult;
+import org.gradle.api.tasks.util.PatternSet;
+import org.gradle.internal.service.scopes.Scopes;
+import org.gradle.internal.service.scopes.ServiceScope;
 
 import java.io.File;
 import java.net.URI;
 import java.util.Map;
 
+@ServiceScope(Scopes.Build.class)
 public interface FileOperations {
     File file(Object path);
 
@@ -40,7 +45,18 @@ public interface FileOperations {
 
     String relativePath(Object path);
 
-    ConfigurableFileCollection files(Object... paths);
+    /**
+     * Creates a mutable file collection and initializes it with the given paths.
+     */
+    ConfigurableFileCollection configurableFiles(Object... paths);
+
+    /**
+     * Creates an immutable file collection with the given paths. The paths are resolved
+     * with the file resolver.
+     *
+     * @see #getFileResolver()
+     */
+    FileCollection immutableFiles(Object... paths);
 
     ConfigurableFileTree fileTree(Object baseDir);
 
@@ -63,4 +79,6 @@ public interface FileOperations {
     WorkResult delete(Action<? super DeleteSpec> action);
 
     ResourceHandler getResources();
+
+    PatternSet patternSet();
 }

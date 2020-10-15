@@ -16,11 +16,97 @@
 
 package org.gradle.api.internal.artifacts;
 
-import org.gradle.api.internal.artifacts.ivyservice.DefaultArtifactCacheMetadata;
+import org.gradle.BuildAdapter;
+import org.gradle.BuildResult;
+import org.gradle.api.internal.DocumentationRegistry;
+import org.gradle.api.internal.GradleInternal;
+import org.gradle.api.internal.artifacts.ivyservice.ArtifactCachesProvider;
+import org.gradle.api.internal.artifacts.ivyservice.DefaultArtifactCaches;
+import org.gradle.api.internal.artifacts.transform.ImmutableTransformationWorkspaceProvider;
+import org.gradle.api.internal.cache.StringInterner;
+import org.gradle.api.internal.changedetection.state.DefaultExecutionHistoryCacheAccess;
+import org.gradle.cache.CacheRepository;
 import org.gradle.cache.internal.CacheScopeMapping;
+import org.gradle.cache.internal.InMemoryCacheDecoratorFactory;
+import org.gradle.cache.internal.UsedGradleVersions;
+import org.gradle.initialization.RootBuildLifecycleListener;
+import org.gradle.internal.event.ListenerManager;
+import org.gradle.internal.execution.history.ExecutionHistoryCacheAccess;
+import org.gradle.internal.execution.history.ExecutionHistoryStore;
+import org.gradle.internal.execution.history.impl.DefaultExecutionHistoryStore;
+import org.gradle.internal.file.FileAccessTimeJournal;
+import org.gradle.internal.service.ServiceRegistry;
 
 public class DependencyManagementGradleUserHomeScopeServices {
-    DefaultArtifactCacheMetadata createArtifactCacheMetaData(CacheScopeMapping cacheScopeMapping) {
-        return new DefaultArtifactCacheMetadata(cacheScopeMapping);
+
+    DefaultArtifactCaches.WritableArtifactCacheLockingParameters createWritableArtifactCacheLockingParameters(FileAccessTimeJournal fileAccessTimeJournal, UsedGradleVersions usedGradleVersions) {
+        return new DefaultArtifactCaches.WritableArtifactCacheLockingParameters() {
+            @Override
+            public FileAccessTimeJournal getFileAccessTimeJournal() {
+                return fileAccessTimeJournal;
+            }
+
+            @Override
+            public UsedGradleVersions getUsedGradleVersions() {
+                return usedGradleVersions;
+            }
+        };
+    }
+
+    ArtifactCachesProvider createArtifactCaches(CacheScopeMapping cacheScopeMapping,
+                                                CacheRepository cacheRepository,
+                                                ServiceRegistry registry,
+                                                ListenerManager listenerManager,
+                                                DocumentationRegistry documentationRegistry) {
+        DefaultArtifactCaches artifactCachesProvider = new DefaultArtifactCaches(cacheScopeMapping, cacheRepository, () -> registry.get(DefaultArtifactCaches.WritableArtifactCacheLockingParameters.class), documentationRegistry);
+        listenerManager.addListener(new BuildAdapter() {
+            @Override
+            public void buildFinished(BuildResult result) {
+                artifactCachesProvider.getWritableCacheLockingManager().useCache(() -> {
+                    // forces cleanup even if cache wasn't used
+                });
+            }
+        });
+        return artifactCachesProvider;
+    }
+
+    ExecutionHistoryCacheAccess createExecutionHistoryCacheAccess(CacheRepository cacheRepository) {
+        return new DefaultExecutionHistoryCacheAccess(null, cacheRepository);
+    }
+
+    ExecutionHistoryStore createExecutionHistoryStore(
+        ExecutionHistoryCacheAccess executionHistoryCacheAccess,
+        InMemoryCacheDecoratorFactory inMemoryCacheDecoratorFactory,
+        StringInterner stringInterner
+    ) {
+        return new DefaultExecutionHistoryStore(
+            executionHistoryCacheAccess,
+            inMemoryCacheDecoratorFactory,
+            stringInterner
+        );
+    }
+
+    ImmutableTransformationWorkspaceProvider createTransformerWorkspaceProvider(
+        ArtifactCachesProvider artifactCaches,
+        CacheRepository cacheRepository,
+        FileAccessTimeJournal fileAccessTimeJournal,
+        ExecutionHistoryStore executionHistoryStore, ListenerManager listenerManager) {
+        ImmutableTransformationWorkspaceProvider workspaceProvider = new ImmutableTransformationWorkspaceProvider(
+            artifactCaches.getWritableCacheMetadata().getTransformsStoreDirectory(),
+            cacheRepository,
+            fileAccessTimeJournal,
+            executionHistoryStore
+        );
+        listenerManager.addListener(new RootBuildLifecycleListener() {
+            @Override
+            public void afterStart(GradleInternal gradle) {
+            }
+
+            @Override
+            public void beforeComplete(GradleInternal gradle) {
+                workspaceProvider.getIdentityCache().invalidateAll();
+            }
+        });
+        return workspaceProvider;
     }
 }

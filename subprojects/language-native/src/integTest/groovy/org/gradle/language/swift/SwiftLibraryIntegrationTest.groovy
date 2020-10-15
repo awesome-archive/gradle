@@ -16,6 +16,7 @@
 
 package org.gradle.language.swift
 
+
 import org.gradle.nativeplatform.fixtures.AbstractInstalledToolChainIntegrationSpec
 import org.gradle.nativeplatform.fixtures.NativeBinaryFixture
 import org.gradle.nativeplatform.fixtures.RequiresInstalledToolChain
@@ -57,24 +58,6 @@ class SwiftLibraryIntegrationTest extends AbstractInstalledToolChainIntegrationS
         failure.assertThatCause(containsText("Swift compiler failed while compiling swift file(s)"))
     }
 
-    def "sources are compiled with Swift compiler"() {
-        given:
-        def lib = new SwiftLib()
-        settingsFile << "rootProject.name = '${lib.projectName}'"
-        lib.writeToProject(testDirectory)
-
-        and:
-        buildFile << """
-            apply plugin: 'swift-library'
-         """
-
-        expect:
-        succeeds "assemble"
-        result.assertTasksExecuted(":compileDebugSwift", ":linkDebug", ":assemble")
-        file("build/modules/main/debug/${lib.moduleName}.swiftmodule").assertIsFile()
-        sharedLibrary("build/lib/main/debug/${lib.moduleName}").assertExists()
-    }
-
     def "can build debug and release variants of library"() {
         given:
         def lib = new SwiftLib()
@@ -113,7 +96,7 @@ class SwiftLibraryIntegrationTest extends AbstractInstalledToolChainIntegrationS
         and:
         buildFile << """
             apply plugin: 'swift-library'
-            
+
             task assembleLinkDebug {
                 dependsOn library.binaries.getByName('mainDebug').map { it.linkFile }
             }
@@ -134,7 +117,7 @@ class SwiftLibraryIntegrationTest extends AbstractInstalledToolChainIntegrationS
         and:
         buildFile << """
             apply plugin: 'swift-library'
-            
+
             task assembleRuntimeDebug {
                 dependsOn library.binaries.getByName('mainDebug').map { it.runtimeFile }
             }
@@ -155,7 +138,7 @@ class SwiftLibraryIntegrationTest extends AbstractInstalledToolChainIntegrationS
         and:
         buildFile << """
             apply plugin: 'swift-library'
-            
+
             task compileDebug {
                 dependsOn library.binaries.getByName('mainDebug').map { it.objects }
             }

@@ -17,8 +17,11 @@
 package org.gradle.model
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
 
+@UnsupportedWithConfigurationCache(because = "software model")
 class UnmanagedElementIntegrationTest extends AbstractIntegrationSpec {
+
     def "can view unmanaged element as ModelElement"() {
         given:
         buildFile << '''

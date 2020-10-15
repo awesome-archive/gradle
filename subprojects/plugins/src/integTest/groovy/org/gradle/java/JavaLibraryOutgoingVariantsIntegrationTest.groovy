@@ -16,6 +16,7 @@
 
 package org.gradle.java
 
+import org.gradle.api.JavaVersion
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import spock.lang.Unroll
 
@@ -25,6 +26,7 @@ class JavaLibraryOutgoingVariantsIntegrationTest extends AbstractIntegrationSpec
         repo.module("test", "api", "1.0").publish()
         repo.module("test", "compile", "1.0").publish()
         repo.module("test", "compile-only", "1.0").publish()
+        repo.module("test", "compile-only-api", "1.0").publish()
         repo.module("test", "runtime", "1.0").publish()
         repo.module("test", "implementation", "1.0").publish()
         repo.module("test", "runtime-only", "1.0").publish()
@@ -49,6 +51,7 @@ project(':java') {
         compile project(':other-java')
         compile files('file-dep.jar')
         compileOnly 'test:compile-only:1.0'
+        compileOnlyApi 'test:compile-only-api:1.0'
         runtime 'test:runtime:1.0'
         implementation 'test:implementation:1.0'
         runtimeOnly 'test:runtime-only:1.0'
@@ -71,17 +74,23 @@ project(':consumer') {
 """
     }
 
+    private resolve() {
+        // this test uses all configurations including the deprecated 'compile' and 'runtime'
+        executer.expectDeprecationWarnings(2)
+        succeeds "resolve"
+    }
+
     def "provides runtime JAR as default variant"() {
         when:
-        run "resolve"
+        resolve()
 
         then:
         result.assertTasksExecuted(":other-java:compileJava", ":other-java:processResources", ":other-java:classes", ":other-java:jar", ":java:compileJava", ":java:processResources", ":java:classes", ":java:jar", ":consumer:resolve")
-        result.assertOutputContains("files: [java.jar, file-dep.jar, api-1.0.jar, compile-1.0.jar, other-java.jar, implementation-1.0.jar, runtime-1.0.jar, runtime-only-1.0.jar]")
-        result.assertOutputContains("file-dep.jar {artifactType=jar}")
-        result.assertOutputContains("compile.jar (test:compile:1.0) {artifactType=jar}")
-        result.assertOutputContains("other-java.jar (project :other-java) {artifactType=jar, org.gradle.usage=java-runtime-jars}")
-        result.assertOutputContains("java.jar (project :java) {artifactType=jar, org.gradle.usage=java-runtime-jars}")
+        outputContains("files: [java.jar, file-dep.jar, api-1.0.jar, compile-1.0.jar, other-java.jar, implementation-1.0.jar, runtime-1.0.jar, runtime-only-1.0.jar]")
+        outputContains("file-dep.jar {artifactType=jar}")
+        outputContains("compile-1.0.jar (test:compile:1.0) {artifactType=jar, org.gradle.status=release}")
+        outputContains("other-java.jar (project :other-java) {artifactType=jar, org.gradle.category=library, org.gradle.dependency.bundling=external, ${defaultTargetPlatform()}, org.gradle.libraryelements=jar, org.gradle.usage=java-runtime}")
+        outputContains("java.jar (project :java) {artifactType=jar, org.gradle.category=library, org.gradle.dependency.bundling=external, ${defaultTargetPlatform()}, org.gradle.libraryelements=jar, org.gradle.usage=java-runtime}")
 
         when:
         buildFile << """
@@ -91,34 +100,37 @@ project(':consumer') {
             }
 """
 
-        run "resolve"
+        resolve()
 
         then:
         result.assertTasksExecuted(":other-java:compileJava", ":other-java:processResources", ":other-java:classes", ":other-java:jar", ":java:compileJava", ":java:processResources", ":java:classes", ":java:jar", ":consumer:resolve")
-        result.assertOutputContains("files: [java.jar, file-dep.jar, api-1.0.jar, compile-1.0.jar, other-java.jar, implementation-1.0.jar, runtime-1.0.jar, runtime-only-1.0.jar]")
-        result.assertOutputContains("file-dep.jar {artifactType=jar, org.gradle.usage=java-runtime-jars}")
-        result.assertOutputContains("compile.jar (test:compile:1.0) {artifactType=jar, org.gradle.usage=java-runtime-jars}")
-        result.assertOutputContains("other-java.jar (project :other-java) {artifactType=jar, org.gradle.usage=java-runtime-jars}")
-        result.assertOutputContains("java.jar (project :java) {artifactType=jar, org.gradle.usage=java-runtime-jars}")
+        outputContains("files: [java.jar, file-dep.jar, api-1.0.jar, compile-1.0.jar, other-java.jar, implementation-1.0.jar, runtime-1.0.jar, runtime-only-1.0.jar]")
+        outputContains("file-dep.jar {artifactType=jar, org.gradle.libraryelements=jar, org.gradle.usage=java-runtime}")
+        outputContains("compile-1.0.jar (test:compile:1.0) {artifactType=jar, org.gradle.category=library, org.gradle.libraryelements=jar, org.gradle.status=release, org.gradle.usage=java-runtime}")
+        outputContains("other-java.jar (project :other-java) {artifactType=jar, org.gradle.category=library, org.gradle.dependency.bundling=external, ${defaultTargetPlatform()}, org.gradle.libraryelements=jar, org.gradle.usage=java-runtime}")
+        outputContains("java.jar (project :java) {artifactType=jar, org.gradle.category=library, org.gradle.dependency.bundling=external, ${defaultTargetPlatform()}, org.gradle.libraryelements=jar, org.gradle.usage=java-runtime}")
     }
 
-    @Unroll
-    def "provides API variant - #usage"() {
+    def "provides API variant"() {
         buildFile << """
             project(':consumer') {
-                configurations.consume.attributes.attribute(Usage.USAGE_ATTRIBUTE, ${usage})
+                configurations.consume.attributes.attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage, Usage.JAVA_API))
+                configurations.consume.attributes.attribute(LibraryElements.LIBRARY_ELEMENTS_ATTRIBUTE, objects.named(LibraryElements, LibraryElements.CLASSES))
+                dependencies.attributesSchema.attribute(Usage.USAGE_ATTRIBUTE).compatibilityRules.add(org.gradle.api.internal.artifacts.JavaEcosystemSupport.UsageCompatibilityRules)
+                dependencies.attributesSchema.attribute(LibraryElements.LIBRARY_ELEMENTS_ATTRIBUTE).compatibilityRules.add(org.gradle.api.internal.artifacts.JavaEcosystemSupport.LibraryElementsCompatibilityRules)
             }
 """
         when:
-        run "resolve"
+        resolve()
 
         then:
         result.assertTasksExecuted(":other-java:compileJava", ":java:compileJava", ":consumer:resolve")
-        result.assertOutputContains("files: [main, file-dep.jar, api-1.0.jar, compile-1.0.jar, main, runtime-1.0.jar]")
-        result.assertOutputContains("file-dep.jar {artifactType=jar}")
-        result.assertOutputContains("compile.jar (test:compile:1.0) {artifactType=jar}")
-        result.assertOutputContains("main (project :other-java) {artifactType=java-classes-directory, org.gradle.usage=java-api-classes}")
-        result.assertOutputContains("main (project :java) {artifactType=java-classes-directory, org.gradle.usage=java-api-classes}")
+        outputContains("files: [main, file-dep.jar, api-1.0.jar, compile-1.0.jar, main, compile-only-api-1.0.jar, runtime-1.0.jar]")
+        outputContains("file-dep.jar {artifactType=jar}")
+        outputContains("compile-1.0.jar (test:compile:1.0) {artifactType=jar, org.gradle.status=release}")
+        outputContains("compile-only-api-1.0.jar (test:compile-only-api:1.0) {artifactType=jar, org.gradle.status=release}")
+        outputContains("main (project :other-java) {artifactType=java-classes-directory, org.gradle.category=library, org.gradle.dependency.bundling=external, ${defaultTargetPlatform()}, org.gradle.libraryelements=classes, org.gradle.usage=java-api}")
+        outputContains("main (project :java) {artifactType=java-classes-directory, org.gradle.category=library, org.gradle.dependency.bundling=external, ${defaultTargetPlatform()}, org.gradle.libraryelements=classes, org.gradle.usage=java-api}")
 
         when:
         buildFile << """
@@ -128,39 +140,40 @@ project(':consumer') {
             }
 """
 
-        run "resolve"
+        resolve()
 
         then:
         result.assertTasksExecuted(":other-java:compileJava", ":java:compileJava", ":consumer:resolve")
-        result.assertOutputContains("files: [main, file-dep.jar, api-1.0.jar, compile-1.0.jar, main, runtime-1.0.jar]")
-        result.assertOutputContains("file-dep.jar {artifactType=jar, org.gradle.usage=java-runtime-jars}")
-        result.assertOutputContains("compile.jar (test:compile:1.0) {artifactType=jar, org.gradle.usage=java-runtime-jars}")
-        result.assertOutputContains("main (project :other-java) {artifactType=java-classes-directory, org.gradle.usage=java-api-classes}")
-        result.assertOutputContains("main (project :java) {artifactType=java-classes-directory, org.gradle.usage=java-api-classes}")
-
-        where:
-        usage                                          | _
-        "objects.named(Usage, Usage.JAVA_API)"         | _
-        "objects.named(Usage, Usage.JAVA_API_CLASSES)" | _
+        outputContains("files: [main, file-dep.jar, api-1.0.jar, compile-1.0.jar, main, compile-only-api-1.0.jar, runtime-1.0.jar]")
+        outputContains("file-dep.jar {artifactType=jar, org.gradle.libraryelements=jar, org.gradle.usage=java-runtime}")
+        outputContains("compile-1.0.jar (test:compile:1.0) {artifactType=jar, org.gradle.category=library, org.gradle.libraryelements=jar, org.gradle.status=release, org.gradle.usage=java-api}")
+        outputContains("compile-only-api-1.0.jar (test:compile-only-api:1.0) {artifactType=jar, org.gradle.category=library, org.gradle.libraryelements=jar, org.gradle.status=release, org.gradle.usage=java-api}")
+        outputContains("main (project :other-java) {artifactType=java-classes-directory, org.gradle.category=library, org.gradle.dependency.bundling=external, ${defaultTargetPlatform()}, org.gradle.libraryelements=classes, org.gradle.usage=java-api}")
+        outputContains("main (project :java) {artifactType=java-classes-directory, org.gradle.category=library, org.gradle.dependency.bundling=external, ${defaultTargetPlatform()}, org.gradle.libraryelements=classes, org.gradle.usage=java-api}")
     }
 
     @Unroll
-    def "provides runtime variant - #usage"() {
+    def "provides runtime variant - format: #format"() {
         buildFile << """
             project(':consumer') {
-                configurations.consume.attributes.attribute(Usage.USAGE_ATTRIBUTE, ${usage})
+                configurations.consume.attributes.attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage, Usage.JAVA_RUNTIME))
+                if ($format) {
+                    configurations.consume.attributes.attribute(LibraryElements.LIBRARY_ELEMENTS_ATTRIBUTE, objects.named(LibraryElements, LibraryElements.JAR))
+                }
+                dependencies.attributesSchema.attribute(Usage.USAGE_ATTRIBUTE).compatibilityRules.add(org.gradle.api.internal.artifacts.JavaEcosystemSupport.UsageCompatibilityRules)
+                dependencies.attributesSchema.attribute(LibraryElements.LIBRARY_ELEMENTS_ATTRIBUTE).compatibilityRules.add(org.gradle.api.internal.artifacts.JavaEcosystemSupport.LibraryElementsCompatibilityRules)
             }
 """
         when:
-        run "resolve"
+        resolve()
 
         then:
         result.assertTasksExecuted(":other-java:compileJava", ":other-java:processResources", ":other-java:classes", ":other-java:jar", ":java:compileJava", ":java:processResources", ":java:classes", ":java:jar", ":consumer:resolve")
-        result.assertOutputContains("files: [java.jar, file-dep.jar, api-1.0.jar, compile-1.0.jar, other-java.jar, implementation-1.0.jar, runtime-1.0.jar, runtime-only-1.0.jar]")
-        result.assertOutputContains("file-dep.jar {artifactType=jar}")
-        result.assertOutputContains("compile.jar (test:compile:1.0) {artifactType=jar}")
-        result.assertOutputContains("java.jar (project :java) {artifactType=jar, org.gradle.usage=java-runtime-jars}")
-        result.assertOutputContains("other-java.jar (project :other-java) {artifactType=jar, org.gradle.usage=java-runtime-jars}")
+        outputContains("files: [java.jar, file-dep.jar, api-1.0.jar, compile-1.0.jar, other-java.jar, implementation-1.0.jar, runtime-1.0.jar, runtime-only-1.0.jar]")
+        outputContains("file-dep.jar {artifactType=jar}")
+        outputContains("compile-1.0.jar (test:compile:1.0) {artifactType=jar, org.gradle.status=release}")
+        outputContains("java.jar (project :java) {artifactType=jar, org.gradle.category=library, org.gradle.dependency.bundling=external, ${defaultTargetPlatform()}, org.gradle.libraryelements=jar, org.gradle.usage=java-runtime}")
+        outputContains("other-java.jar (project :other-java) {artifactType=jar, org.gradle.category=library, org.gradle.dependency.bundling=external, ${defaultTargetPlatform()}, org.gradle.libraryelements=jar, org.gradle.usage=java-runtime}")
 
         when:
         buildFile << """
@@ -170,20 +183,20 @@ project(':consumer') {
             }
 """
 
-        run "resolve"
+        resolve()
 
         then:
         result.assertTasksExecuted(":other-java:compileJava", ":other-java:processResources", ":other-java:classes", ":other-java:jar", ":java:compileJava", ":java:processResources", ":java:classes", ":java:jar", ":consumer:resolve")
-        result.assertOutputContains("files: [java.jar, file-dep.jar, api-1.0.jar, compile-1.0.jar, other-java.jar, implementation-1.0.jar, runtime-1.0.jar, runtime-only-1.0.jar]")
-        result.assertOutputContains("file-dep.jar {artifactType=jar, org.gradle.usage=java-runtime-jars}")
-        result.assertOutputContains("compile.jar (test:compile:1.0) {artifactType=jar, org.gradle.usage=java-runtime-jars}")
-        result.assertOutputContains("java.jar (project :java) {artifactType=jar, org.gradle.usage=java-runtime-jars}")
-        result.assertOutputContains("other-java.jar (project :other-java) {artifactType=jar, org.gradle.usage=java-runtime-jars}")
+        outputContains("files: [java.jar, file-dep.jar, api-1.0.jar, compile-1.0.jar, other-java.jar, implementation-1.0.jar, runtime-1.0.jar, runtime-only-1.0.jar]")
+        outputContains("file-dep.jar {artifactType=jar, org.gradle.libraryelements=jar, org.gradle.usage=java-runtime}")
+        outputContains("compile-1.0.jar (test:compile:1.0) {artifactType=jar, org.gradle.category=library, org.gradle.libraryelements=jar, org.gradle.status=release, org.gradle.usage=java-runtime}")
+        outputContains("java.jar (project :java) {artifactType=jar, org.gradle.category=library, org.gradle.dependency.bundling=external, ${defaultTargetPlatform()}, org.gradle.libraryelements=jar, org.gradle.usage=java-runtime}")
+        outputContains("other-java.jar (project :other-java) {artifactType=jar, org.gradle.category=library, org.gradle.dependency.bundling=external, ${defaultTargetPlatform()}, org.gradle.libraryelements=jar, org.gradle.usage=java-runtime}")
 
         where:
-        usage                                           | _
-        "objects.named(Usage, Usage.JAVA_RUNTIME)"      | _
-        "objects.named(Usage, Usage.JAVA_RUNTIME_JARS)" | _
+        format | _
+        true   | _
+        false  | _
     }
 
     def "provides runtime JAR variant using artifactType"() {
@@ -194,33 +207,36 @@ project(':consumer') {
             }
 """
         when:
-        run "resolve"
+        resolve()
 
         then:
         result.assertTasksExecuted(":other-java:compileJava", ":other-java:processResources", ":other-java:classes", ":other-java:jar", ":java:compileJava", ":java:processResources", ":java:classes", ":java:jar", ":consumer:resolve")
-        result.assertOutputContains("files: [java.jar, file-dep.jar, api-1.0.jar, compile-1.0.jar, other-java.jar, implementation-1.0.jar, runtime-1.0.jar, runtime-only-1.0.jar]")
-        result.assertOutputContains("file-dep.jar {artifactType=jar}")
-        result.assertOutputContains("java.jar (project :java) {artifactType=jar, org.gradle.usage=java-runtime-jars}")
-        result.assertOutputContains("other-java.jar (project :other-java) {artifactType=jar, org.gradle.usage=java-runtime-jars}")
+        outputContains("files: [java.jar, file-dep.jar, api-1.0.jar, compile-1.0.jar, other-java.jar, implementation-1.0.jar, runtime-1.0.jar, runtime-only-1.0.jar]")
+        outputContains("file-dep.jar {artifactType=jar}")
+        outputContains("java.jar (project :java) {artifactType=jar, org.gradle.category=library, org.gradle.dependency.bundling=external, ${defaultTargetPlatform()}, org.gradle.libraryelements=jar, org.gradle.usage=java-runtime}")
+        outputContains("other-java.jar (project :other-java) {artifactType=jar, org.gradle.category=library, org.gradle.dependency.bundling=external, ${defaultTargetPlatform()}, org.gradle.libraryelements=jar, org.gradle.usage=java-runtime}")
     }
 
     def "provides runtime classes variant"() {
         buildFile << """
             project(':consumer') {
-                configurations.consume.attributes.attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage, Usage.JAVA_RUNTIME_CLASSES))
+                configurations.consume.attributes.attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage, Usage.JAVA_RUNTIME))
+                configurations.consume.attributes.attribute(LibraryElements.LIBRARY_ELEMENTS_ATTRIBUTE, objects.named(LibraryElements, LibraryElements.CLASSES))
+                dependencies.attributesSchema.attribute(Usage.USAGE_ATTRIBUTE).compatibilityRules.add(org.gradle.api.internal.artifacts.JavaEcosystemSupport.UsageCompatibilityRules)
+                dependencies.attributesSchema.attribute(LibraryElements.LIBRARY_ELEMENTS_ATTRIBUTE).compatibilityRules.add(org.gradle.api.internal.artifacts.JavaEcosystemSupport.LibraryElementsCompatibilityRules)
             }
 """
 
         when:
-        run "resolve"
+        resolve()
 
         then:
         result.assertTasksExecuted(":other-java:compileJava", ":java:compileJava", ":consumer:resolve")
-        result.assertOutputContains("files: [main, file-dep.jar, api-1.0.jar, compile-1.0.jar, main, implementation-1.0.jar, runtime-1.0.jar, runtime-only-1.0.jar]")
-        result.assertOutputContains("file-dep.jar {artifactType=jar}")
-        result.assertOutputContains("compile.jar (test:compile:1.0) {artifactType=jar}")
-        result.assertOutputContains("main (project :other-java) {artifactType=java-classes-directory, org.gradle.usage=java-runtime-classes}")
-        result.assertOutputContains("main (project :java) {artifactType=java-classes-directory, org.gradle.usage=java-runtime-classes}")
+        outputContains("files: [main, file-dep.jar, api-1.0.jar, compile-1.0.jar, main, implementation-1.0.jar, runtime-1.0.jar, runtime-only-1.0.jar]")
+        outputContains("file-dep.jar {artifactType=jar}")
+        outputContains("compile-1.0.jar (test:compile:1.0) {artifactType=jar, org.gradle.status=release}")
+        outputContains("main (project :other-java) {artifactType=java-classes-directory, org.gradle.category=library, org.gradle.dependency.bundling=external, ${defaultTargetPlatform()}, org.gradle.libraryelements=classes, org.gradle.usage=java-runtime}")
+        outputContains("main (project :java) {artifactType=java-classes-directory, org.gradle.category=library, org.gradle.dependency.bundling=external, ${defaultTargetPlatform()}, org.gradle.libraryelements=classes, org.gradle.usage=java-runtime}")
 
         when:
         buildFile << """
@@ -230,34 +246,37 @@ project(':consumer') {
             }
 """
 
-        run "resolve"
+        resolve()
 
         then:
         result.assertTasksExecuted(":other-java:compileJava", ":java:compileJava", ":consumer:resolve")
-        result.assertOutputContains("files: [main, file-dep.jar, api-1.0.jar, compile-1.0.jar, main, implementation-1.0.jar, runtime-1.0.jar, runtime-only-1.0.jar]")
-        result.assertOutputContains("file-dep.jar {artifactType=jar, org.gradle.usage=java-runtime-jars}")
-        result.assertOutputContains("compile.jar (test:compile:1.0) {artifactType=jar, org.gradle.usage=java-runtime-jars}")
-        result.assertOutputContains("main (project :other-java) {artifactType=java-classes-directory, org.gradle.usage=java-runtime-classes}")
-        result.assertOutputContains("main (project :java) {artifactType=java-classes-directory, org.gradle.usage=java-runtime-classes}")
+        outputContains("files: [main, file-dep.jar, api-1.0.jar, compile-1.0.jar, main, implementation-1.0.jar, runtime-1.0.jar, runtime-only-1.0.jar]")
+        outputContains("file-dep.jar {artifactType=jar, org.gradle.libraryelements=jar, org.gradle.usage=java-runtime}")
+        outputContains("compile-1.0.jar (test:compile:1.0) {artifactType=jar, org.gradle.category=library, org.gradle.libraryelements=jar, org.gradle.status=release, org.gradle.usage=java-runtime}")
+        outputContains("main (project :other-java) {artifactType=java-classes-directory, org.gradle.category=library, org.gradle.dependency.bundling=external, ${defaultTargetPlatform()}, org.gradle.libraryelements=classes, org.gradle.usage=java-runtime}")
+        outputContains("main (project :java) {artifactType=java-classes-directory, org.gradle.category=library, org.gradle.dependency.bundling=external, ${defaultTargetPlatform()}, org.gradle.libraryelements=classes, org.gradle.usage=java-runtime}")
     }
 
     def "provides runtime resources variant"() {
         buildFile << """
             project(':consumer') {
-                configurations.consume.attributes.attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage, Usage.JAVA_RUNTIME_RESOURCES))
+                configurations.consume.attributes.attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage, Usage.JAVA_RUNTIME))
+                configurations.consume.attributes.attribute(LibraryElements.LIBRARY_ELEMENTS_ATTRIBUTE, objects.named(LibraryElements, LibraryElements.RESOURCES))
+                dependencies.attributesSchema.attribute(Usage.USAGE_ATTRIBUTE).compatibilityRules.add(org.gradle.api.internal.artifacts.JavaEcosystemSupport.UsageCompatibilityRules)
+                dependencies.attributesSchema.attribute(LibraryElements.LIBRARY_ELEMENTS_ATTRIBUTE).compatibilityRules.add(org.gradle.api.internal.artifacts.JavaEcosystemSupport.LibraryElementsCompatibilityRules)
             }
 """
 
         when:
-        run "resolve"
+        resolve()
 
         then:
         result.assertTasksExecuted(":other-java:processResources", ":java:processResources", ":consumer:resolve")
-        result.assertOutputContains("files: [main, file-dep.jar, api-1.0.jar, compile-1.0.jar, main, implementation-1.0.jar, runtime-1.0.jar, runtime-only-1.0.jar]")
-        result.assertOutputContains("file-dep.jar {artifactType=jar}")
-        result.assertOutputContains("compile.jar (test:compile:1.0) {artifactType=jar}")
-        result.assertOutputContains("main (project :other-java) {artifactType=java-resources-directory, org.gradle.usage=java-runtime-resources}")
-        result.assertOutputContains("main (project :java) {artifactType=java-resources-directory, org.gradle.usage=java-runtime-resources}")
+        outputContains("files: [main, file-dep.jar, api-1.0.jar, compile-1.0.jar, main, implementation-1.0.jar, runtime-1.0.jar, runtime-only-1.0.jar]")
+        outputContains("file-dep.jar {artifactType=jar}")
+        outputContains("compile-1.0.jar (test:compile:1.0) {artifactType=jar, org.gradle.status=release}")
+        outputContains("main (project :other-java) {artifactType=java-resources-directory, org.gradle.category=library, org.gradle.dependency.bundling=external, ${defaultTargetPlatform()}, org.gradle.libraryelements=resources, org.gradle.usage=java-runtime}")
+        outputContains("main (project :java) {artifactType=java-resources-directory, org.gradle.category=library, org.gradle.dependency.bundling=external, ${defaultTargetPlatform()}, org.gradle.libraryelements=resources, org.gradle.usage=java-runtime}")
 
         when:
         buildFile << """
@@ -267,14 +286,18 @@ project(':consumer') {
             }
 """
 
-        run "resolve"
+        resolve()
 
         then:
         result.assertTasksExecuted(":other-java:processResources", ":java:processResources", ":consumer:resolve")
-        result.assertOutputContains("files: [main, file-dep.jar, api-1.0.jar, compile-1.0.jar, main, implementation-1.0.jar, runtime-1.0.jar, runtime-only-1.0.jar]")
-        result.assertOutputContains("file-dep.jar {artifactType=jar, org.gradle.usage=java-runtime-jars}")
-        result.assertOutputContains("compile.jar (test:compile:1.0) {artifactType=jar, org.gradle.usage=java-runtime-jars}")
-        result.assertOutputContains("main (project :other-java) {artifactType=java-resources-directory, org.gradle.usage=java-runtime-resources}")
-        result.assertOutputContains("main (project :java) {artifactType=java-resources-directory, org.gradle.usage=java-runtime-resources}")
+        outputContains("files: [main, file-dep.jar, api-1.0.jar, compile-1.0.jar, main, implementation-1.0.jar, runtime-1.0.jar, runtime-only-1.0.jar]")
+        outputContains("file-dep.jar {artifactType=jar, org.gradle.libraryelements=jar, org.gradle.usage=java-runtime}")
+        outputContains("compile-1.0.jar (test:compile:1.0) {artifactType=jar, org.gradle.category=library, org.gradle.libraryelements=jar, org.gradle.status=release, org.gradle.usage=java-runtime}")
+        outputContains("main (project :other-java) {artifactType=java-resources-directory, org.gradle.category=library, org.gradle.dependency.bundling=external, ${defaultTargetPlatform()}, org.gradle.libraryelements=resources, org.gradle.usage=java-runtime}")
+        outputContains("main (project :java) {artifactType=java-resources-directory, org.gradle.category=library, org.gradle.dependency.bundling=external, ${defaultTargetPlatform()}, org.gradle.libraryelements=resources, org.gradle.usage=java-runtime}")
+    }
+
+    static String defaultTargetPlatform() {
+        "org.gradle.jvm.version=${JavaVersion.current().majorVersion}"
     }
 }

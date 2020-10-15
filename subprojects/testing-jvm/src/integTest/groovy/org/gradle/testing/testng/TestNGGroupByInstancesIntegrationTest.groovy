@@ -27,7 +27,7 @@ public class TestNGGroupByInstancesIntegrationTest extends MultiVersionIntegrati
         buildFile << """
             apply plugin: 'java'
             ${mavenCentralRepository()}
-            dependencies { testCompile 'org.testng:testng:$version' }
+            dependencies { testImplementation 'org.testng:testng:$version' }
             test {
                 useTestNG {
                     suiteName 'Suite Name'
@@ -84,16 +84,16 @@ public class TestNGGroupByInstancesIntegrationTest extends MultiVersionIntegrati
             }
         """
 
-        when: run "test"
+        when: succeeds "test"
 
         then:
-        result.output.contains("""
+        outputContains("""
 TestFactory[data1].beforeClass()
 TestFactory[data1].test1()
 TestFactory[data1].test2()
 TestFactory[data1].afterClass()
 """)
-        result.output.contains("""
+        outputContains("""
 TestFactory[data2].beforeClass()
 TestFactory[data2].test1()
 TestFactory[data2].test2()

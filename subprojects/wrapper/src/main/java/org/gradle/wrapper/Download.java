@@ -16,13 +16,28 @@
 
 package org.gradle.wrapper;
 
-import java.io.*;
+import java.io.BufferedOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.lang.reflect.Method;
-import java.net.*;
+import java.net.Authenticator;
+import java.net.PasswordAuthentication;
+import java.net.SocketTimeoutException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URL;
+import java.net.URLConnection;
 
 public class Download implements IDownload {
-    private static final int PROGRESS_CHUNK = 1024 * 1024;
+    public static final String UNKNOWN_VERSION = "0";
+
     private static final int BUFFER_SIZE = 10 * 1024;
+    private static final int PROGRESS_CHUNK = 1024 * 1024;
+    private static final int CONNECTION_TIMEOUT_MILLISECONDS = 10 * 1000;
+    private static final int READ_TIMEOUT_MILLISECONDS = 10 * 1000;
     private final Logger logger;
     private final String appName;
     private final String appVersion;
@@ -36,12 +51,13 @@ public class Download implements IDownload {
         this.logger = logger;
         this.appName = appName;
         this.appVersion = appVersion;
-        this.progressListener = progressListener;
+        this.progressListener = new DefaultDownloadProgressListener(logger, progressListener);
         configureProxyAuthentication();
     }
 
     private void configureProxyAuthentication() {
-        if (System.getProperty("http.proxyUser") != null) {
+        if (System.getProperty("http.proxyUser") != null || System.getProperty("https.proxyUser") != null) {
+            // Only an authenticator for proxies needs to be set. Basic authentication is supported by directly setting the request header field.
             Authenticator.setDefault(new ProxyAuthenticator());
         }
     }
@@ -52,39 +68,46 @@ public class Download implements IDownload {
     }
 
     private void downloadInternal(URI address, File destination)
-            throws Exception {
+        throws Exception {
         OutputStream out = null;
         URLConnection conn;
         InputStream in = null;
+        URL safeUrl = safeUri(address).toURL();
         try {
-            URL url = safeUri(address).toURL();
             out = new BufferedOutputStream(new FileOutputStream(destination));
-            conn = url.openConnection();
+
+            // No proxy is passed here as proxies are set globally using the HTTP(S) proxy system properties. The respective protocol handler implementation then makes use of these properties.
+            conn = safeUrl.openConnection();
+
             addBasicAuthentication(address, conn);
             final String userAgentValue = calculateUserAgent();
             conn.setRequestProperty("User-Agent", userAgentValue);
+            conn.setConnectTimeout(CONNECTION_TIMEOUT_MILLISECONDS);
+            conn.setReadTimeout(READ_TIMEOUT_MILLISECONDS);
             in = conn.getInputStream();
             byte[] buffer = new byte[BUFFER_SIZE];
             int numRead;
-            int contentLength = conn.getContentLength();
+            int totalLength = conn.getContentLength();
+            long downloadedLength = 0;
             long progressCounter = 0;
-            long numDownloaded = 0;
             while ((numRead = in.read(buffer)) != -1) {
                 if (Thread.currentThread().isInterrupted()) {
                     System.out.print("interrupted");
                     throw new IOException("Download was interrupted.");
                 }
-                numDownloaded += numRead;
+
+                downloadedLength += numRead;
                 progressCounter += numRead;
-                if (progressCounter / PROGRESS_CHUNK > 0) {
-                    logger.append(".");
+
+                if (progressCounter / PROGRESS_CHUNK > 0 || downloadedLength == totalLength) {
                     progressCounter = progressCounter - PROGRESS_CHUNK;
-                    if (progressListener != null) {
-                        progressListener.downloadStatusChanged(address, contentLength, numDownloaded);
-                    }
+                    progressListener.downloadStatusChanged(address, totalLength, downloadedLength);
                 }
+
                 out.write(buffer, 0, numRead);
             }
+        } catch (SocketTimeoutException e) {
+            throw new IOException("Downloading from " + safeUrl + " failed: timeout", e);
         } finally {
             logger.log("");
             if (in != null) {
@@ -102,8 +125,12 @@ public class Download implements IDownload {
      * @param uri Original URI
      * @return a new URI with no user info
      */
-    static URI safeUri(URI uri) throws URISyntaxException {
-        return new URI(uri.getScheme(), null, uri.getHost(), uri.getPort(), uri.getPath(), uri.getQuery(), uri.getFragment());
+    static URI safeUri(URI uri) {
+        try {
+            return new URI(uri.getScheme(), null, uri.getHost(), uri.getPort(), uri.getPath(), uri.getQuery(), uri.getFragment());
+        } catch (URISyntaxException e) {
+            throw new RuntimeException("Failed to parse URI", e);
+        }
     }
 
     private void addBasicAuthentication(URI address, URLConnection connection) throws IOException {
@@ -167,9 +194,61 @@ public class Download implements IDownload {
     private static class ProxyAuthenticator extends Authenticator {
         @Override
         protected PasswordAuthentication getPasswordAuthentication() {
-            return new PasswordAuthentication(
-                    System.getProperty("http.proxyUser"), System.getProperty(
-                    "http.proxyPassword", "").toCharArray());
+            if (getRequestorType() == RequestorType.PROXY) {
+                // Note: Do not use getRequestingProtocol() here, which is "http" even for HTTPS proxies.
+                String protocol = getRequestingURL().getProtocol();
+                String proxyUser = System.getProperty(protocol + ".proxyUser");
+                if (proxyUser != null) {
+                    String proxyPassword = System.getProperty(protocol + ".proxyPassword", "");
+                    return new PasswordAuthentication(proxyUser, proxyPassword.toCharArray());
+                }
+            }
+
+            return super.getPasswordAuthentication();
+        }
+    }
+
+    private static class DefaultDownloadProgressListener implements DownloadProgressListener {
+        private final Logger logger;
+        private final DownloadProgressListener delegate;
+        private int previousDownloadPercent;
+
+        public DefaultDownloadProgressListener(Logger logger, DownloadProgressListener delegate) {
+            this.logger = logger;
+            this.delegate = delegate;
+            this.previousDownloadPercent = 0;
+        }
+
+        @Override
+        public void downloadStatusChanged(URI address, long contentLength, long downloaded) {
+            // If the total size of distribution is known, but there's no advanced progress listener, provide extra progress information
+            if (contentLength > 0 && delegate == null) {
+                appendPercentageSoFar(contentLength, downloaded);
+            }
+
+            if (contentLength != downloaded) {
+                logger.append(".");
+            }
+
+            if (delegate != null) {
+                delegate.downloadStatusChanged(address, contentLength, downloaded);
+            }
+        }
+
+        private void appendPercentageSoFar(long contentLength, long downloaded) {
+            try {
+                int currentDownloadPercent = 10 * (calculateDownloadPercent(contentLength, downloaded) / 10);
+                if (currentDownloadPercent != 0 && previousDownloadPercent != currentDownloadPercent) {
+                    logger.append(String.valueOf(currentDownloadPercent)).append('%');
+                    previousDownloadPercent = currentDownloadPercent;
+                }
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
+
+        private int calculateDownloadPercent(long totalLength, long downloadedLength) {
+            return Math.min(100, Math.max(0, (int) ((downloadedLength / (double) totalLength) * 100)));
         }
     }
 }

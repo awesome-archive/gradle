@@ -21,46 +21,76 @@ import org.gradle.internal.logging.events.ProgressEvent;
 import org.gradle.internal.logging.events.ProgressStartEvent;
 import org.gradle.internal.operations.BuildOperationCategory;
 import org.gradle.internal.operations.BuildOperationDescriptor;
+import org.gradle.internal.operations.BuildOperationIdFactory;
+import org.gradle.internal.operations.BuildOperationMetadata;
+import org.gradle.internal.operations.BuildOperationRef;
 import org.gradle.internal.operations.CurrentBuildOperationRef;
 import org.gradle.internal.operations.OperationIdentifier;
 import org.gradle.internal.time.Clock;
 import org.gradle.util.GUtil;
 
 import javax.annotation.Nullable;
-import java.util.concurrent.atomic.AtomicLong;
 
 public class DefaultProgressLoggerFactory implements ProgressLoggerFactory {
     private final ProgressListener progressListener;
     private final Clock clock;
-    private final AtomicLong nextId = new AtomicLong(ROOT_PROGRESS_OPERATION_ID);
+    private final BuildOperationIdFactory buildOperationIdFactory;
     private final ThreadLocal<ProgressLoggerImpl> current = new ThreadLocal<ProgressLoggerImpl>();
     private final CurrentBuildOperationRef currentBuildOperationRef = CurrentBuildOperationRef.instance();
 
-    public DefaultProgressLoggerFactory(ProgressListener progressListener, Clock clock) {
+    public DefaultProgressLoggerFactory(ProgressListener progressListener, Clock clock, BuildOperationIdFactory buildOperationIdFactory) {
         this.progressListener = progressListener;
         this.clock = clock;
+        this.buildOperationIdFactory = buildOperationIdFactory;
     }
 
-    public ProgressLogger newOperation(Class loggerCategory) {
+    @Override
+    public ProgressLogger newOperation(Class<?> loggerCategory) {
         return newOperation(loggerCategory.getName());
     }
 
-    public ProgressLogger newOperation(Class loggerCategory, @Nullable BuildOperationDescriptor buildOperationDescriptor) {
-        return init(
-            loggerCategory.getName(),
+    @Override
+    public ProgressLogger newOperation(Class<?> loggerCategory, BuildOperationDescriptor buildOperationDescriptor) {
+        String category = ProgressStartEvent.BUILD_OP_CATEGORY;
+        BuildOperationMetadata metadata = buildOperationDescriptor.getMetadata();
+        BuildOperationCategory buildOperationCategory = metadata == BuildOperationMetadata.NONE
+            ? BuildOperationCategory.UNCATEGORIZED
+            : (BuildOperationCategory) metadata;
+        if (buildOperationCategory == BuildOperationCategory.TASK) {
+            // This is a legacy quirk.
+            // Scans use this to determine that progress logging is indicating start/finish of tasks.
+            // This can be removed in Gradle 5.0 (along with the concept of a “logging category” of an operation)
+            category = ProgressStartEvent.TASK_CATEGORY;
+        }
+
+        ProgressLoggerImpl logger = new ProgressLoggerImpl(
             null,
+            buildOperationDescriptor.getId(),
+            category,
+            progressListener,
+            clock,
             true,
             buildOperationDescriptor.getId(),
             buildOperationDescriptor.getParentId(),
-            buildOperationDescriptor.getOperationType()
+            buildOperationCategory
         );
+        logger.totalProgress = buildOperationDescriptor.getTotalProgress();
+
+        // Make some assumptions about the console output
+        if (buildOperationCategory.isTopLevelWorkItem()) {
+            logger.loggingHeader = buildOperationDescriptor.getProgressDisplayName();
+        }
+
+        return logger;
     }
 
+    @Override
     public ProgressLogger newOperation(String loggerCategory) {
         return init(loggerCategory, null);
     }
 
-    public ProgressLogger newOperation(Class loggerClass, ProgressLogger parent) {
+    @Override
+    public ProgressLogger newOperation(Class<?> loggerClass, ProgressLogger parent) {
         return init(loggerClass.toString(), parent);
     }
 
@@ -68,37 +98,20 @@ public class DefaultProgressLoggerFactory implements ProgressLoggerFactory {
         String loggerCategory,
         @Nullable ProgressLogger parentOperation
     ) {
-        return init(
-            loggerCategory,
-            parentOperation,
-            false,
-            currentBuildOperationRef.getId(),
-            currentBuildOperationRef.getParentId(),
-            null
-        );
-    }
-
-    private ProgressLogger init(
-        String loggerCategory,
-        @Nullable ProgressLogger parentOperation,
-        boolean buildOperationStart,
-        @Nullable OperationIdentifier buildOperationId,
-        @Nullable OperationIdentifier parentBuildOperationId,
-        @Nullable BuildOperationCategory buildOperationCategory
-    ) {
         if (parentOperation != null && !(parentOperation instanceof ProgressLoggerImpl)) {
             throw new IllegalArgumentException("Unexpected parent logger.");
         }
+        BuildOperationRef currentBuildOperation = currentBuildOperationRef.get();
         return new ProgressLoggerImpl(
             (ProgressLoggerImpl) parentOperation,
-            new OperationIdentifier(nextId.getAndIncrement()),
+            new OperationIdentifier(buildOperationIdFactory.nextId()),
             loggerCategory,
             progressListener,
             clock,
-            buildOperationStart,
-            buildOperationId,
-            parentBuildOperationId,
-            buildOperationCategory
+            false,
+            currentBuildOperation != null ? currentBuildOperation.getId() : null,
+            currentBuildOperation != null ? currentBuildOperation.getParentId() : null,
+            null
         );
     }
 
@@ -115,11 +128,12 @@ public class DefaultProgressLoggerFactory implements ProgressLoggerFactory {
         @Nullable
         private final OperationIdentifier parentBuildOperationId;
         private final BuildOperationCategory buildOperationCategory;
+        private ProgressLoggerImpl previous;
         private ProgressLoggerImpl parent;
         private String description;
-        private String shortDescription;
         private String loggingHeader;
         private State state = State.idle;
+        private int totalProgress;
 
         ProgressLoggerImpl(
             ProgressLoggerImpl parent,
@@ -148,103 +162,93 @@ public class DefaultProgressLoggerFactory implements ProgressLoggerFactory {
             return category + " - " + description;
         }
 
+        @Override
         public String getDescription() {
             return description;
         }
 
+        @Override
         public ProgressLogger setDescription(String description) {
             assertCanConfigure();
             this.description = description;
             return this;
         }
 
-        public String getShortDescription() {
-            return shortDescription;
-        }
-
-        public ProgressLogger setShortDescription(String shortDescription) {
-            assertCanConfigure();
-            this.shortDescription = shortDescription;
-            return this;
-        }
-
-        public String getLoggingHeader() {
-            return loggingHeader;
-        }
-
-        public ProgressLogger setLoggingHeader(String loggingHeader) {
-            assertCanConfigure();
-            this.loggingHeader = loggingHeader;
-            return this;
-        }
-
-
-        public ProgressLogger start(String description, String shortDescription) {
-            start(description, shortDescription, 0);
-            return this;
-        }
-
-        public ProgressLogger start(String description, String shortDescription, int totalProgress) {
+        @Override
+        public ProgressLogger start(String description, String status) {
             setDescription(description);
-            setShortDescription(shortDescription);
-            started(null, totalProgress);
+            started(status);
             return this;
         }
 
+        @Override
         public void started() {
             started(null);
         }
 
+        @Override
         public void started(String status) {
-            started(status, 0);
+            started(status, totalProgress);
         }
 
-        public void started(String status, int totalProgress) {
+        private void started(String status, int totalProgress) {
             if (!GUtil.isTrue(description)) {
                 throw new IllegalStateException("A description must be specified before this operation is started.");
             }
             assertNotStarted();
             state = State.started;
+            previous = current.get();
+            OperationIdentifier parentProgressId;
             if (parent == null) {
-                parent = current.get();
+                if (previous != null) {
+                    parent = previous;
+                    parentProgressId = parent.progressOperationId;
+                } else if (buildOperationStart) {
+                    parentProgressId = parentBuildOperationId;
+                } else {
+                    parentProgressId = buildOperationId;
+                }
             } else {
+                parentProgressId = parent.progressOperationId;
                 parent.assertRunning();
             }
             current.set(this);
             listener.started(new ProgressStartEvent(
                 progressOperationId,
-                parent == null ? null : parent.progressOperationId,
+                parentProgressId,
                 clock.getCurrentTime(),
                 category,
                 description,
-                shortDescription,
                 loggingHeader,
                 ensureNotNull(status),
                 totalProgress,
                 buildOperationStart,
                 buildOperationId,
-                parentBuildOperationId,
                 buildOperationCategory
             ));
         }
 
+        @Override
         public void progress(String status) {
             progress(status, false);
         }
 
+        @Override
         public void progress(String status, boolean failing) {
             assertRunning();
             listener.progress(new ProgressEvent(progressOperationId, ensureNotNull(status), failing));
         }
 
+        @Override
         public void completed() {
             completed(null, false);
         }
 
+        @Override
         public void completed(String status, boolean failed) {
             assertRunning();
             state = State.completed;
-            current.set(parent);
+            current.set(previous);
             listener.completed(new ProgressCompleteEvent(progressOperationId, clock.getCurrentTime(), ensureNotNull(status), failed));
         }
 

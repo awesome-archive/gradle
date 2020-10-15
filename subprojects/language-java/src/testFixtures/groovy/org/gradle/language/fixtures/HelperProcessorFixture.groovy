@@ -17,8 +17,10 @@
 package org.gradle.language.fixtures
 
 import groovy.transform.CompileStatic
-import org.gradle.api.internal.tasks.compile.processing.IncrementalAnnotationProcessorType
+import org.gradle.api.internal.tasks.compile.incremental.processing.IncrementalAnnotationProcessorType
 import org.gradle.test.fixtures.file.TestFile
+
+import javax.tools.StandardLocation
 
 /**
  * Generates a "Helper" class for each annotated type. The helper has a "getValue()" method that returns
@@ -29,11 +31,13 @@ import org.gradle.test.fixtures.file.TestFile
 @CompileStatic
 class HelperProcessorFixture extends AnnotationProcessorFixture {
     String message = "greetings"
+    boolean writeResources
+    String resourceLocation = StandardLocation.CLASS_OUTPUT.toString()
     private String suffix = ""
 
     HelperProcessorFixture() {
         super("Helper")
-        declaredType = IncrementalAnnotationProcessorType.SINGLE_ORIGIN
+        declaredType = IncrementalAnnotationProcessorType.DYNAMIC
     }
 
     void setSuffix(String suffix) {
@@ -51,7 +55,7 @@ class HelperProcessorFixture extends AnnotationProcessorFixture {
     }
 
     String getGeneratorCode() {
-        """
+        def baseCode = """
 for (Element element : elements) {
     TypeElement typeElement = (TypeElement) element;
     String className = typeElement.getSimpleName().toString() + "Helper";
@@ -75,7 +79,46 @@ for (Element element : elements) {
     } catch (IOException e) {
         messager.printMessage(Diagnostic.Kind.ERROR, "Failed to generate source file " + className, element);
     }
-}
 """
+        def resourceCode = writeResources ? """
+    try {
+        FileObject resourceFile = filer.createResource($resourceLocation, \"\", className + \"Resource.txt\", element);
+        Writer writer = resourceFile.openWriter();
+        try {
+            String messageFromOptions = options.get("message");
+            if (messageFromOptions == null) {
+                writer.write(HelperUtil.getValue() + "${suffix}");
+            } else {
+                writer.write(messageFromOptions);
+            }
+        } finally {
+            writer.close();
+        }
+    } catch (Exception e) {
+        messager.printMessage(Diagnostic.Kind.ERROR, "Failed to write resource file .txt");
+    }
+}
+""" : "}"
+
+        return baseCode + resourceCode
+    }
+
+    @Override
+    protected String getSupportedOptionsBlock() {
+        if (declaredType == IncrementalAnnotationProcessorType.DYNAMIC) {
+            """
+            @Override
+            public Set<String> getSupportedOptions() {
+                return new HashSet<String>(Arrays.asList("message", "${IncrementalAnnotationProcessorType.ISOLATING.processorOption}"));
+            }
+            """
+        } else {
+            """
+            @Override
+            public Set<String> getSupportedOptions() {
+                return Collections.singleton("message");
+            }
+            """
+        }
     }
 }

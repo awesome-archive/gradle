@@ -76,12 +76,12 @@ dependencies {
 
         then:
         failure.assertHasCause("Compilation failed; see the compiler error output for details.")
-        failure.error.contains("package org.apache.commons.logging does not exist")
+        failure.assertHasErrorOutput("package org.apache.commons.logging does not exist")
     }
 
     def "compile only dependencies not included in runtime classpath"() {
         given:
-        def compileModule = mavenRepo.module('org.gradle.test', 'compile', '1.2').publish()
+        def implementationModule = mavenRepo.module('org.gradle.test', 'implementation', '1.2').publish()
         def compileOnlyModule = mavenRepo.module('org.gradle.test', 'compileOnly', '1.0').publish()
         def runtimeModule = mavenRepo.module('org.gradle.test', 'runtime', '1.1').publish()
 
@@ -93,39 +93,33 @@ repositories {
 }
 
 dependencies {
-    compile 'org.gradle.test:compile:1.2'
+    implementation 'org.gradle.test:implementation:1.2'
     compileOnly 'org.gradle.test:compileOnly:1.0'
-    runtime 'org.gradle.test:runtime:1.1'
+    runtimeOnly 'org.gradle.test:runtime:1.1'
 }
 
-task checkCompile {
+task checkCompileClasspath {
     doLast {
-        assert configurations.compile.files == [file('${normaliseFileSeparators(compileModule.artifactFile.path)}')] as Set
+        assert configurations.compileClasspath.files == [file('${normaliseFileSeparators(compileOnlyModule.artifactFile.path)}'), file('${normaliseFileSeparators(implementationModule.artifactFile.path)}')] as Set
     }
 }
 
-task checkCompileOnly {
+task checkRuntimeClasspath {
     doLast {
-        assert configurations.compileOnly.files == [file('${normaliseFileSeparators(compileOnlyModule.artifactFile.path)}')] as Set
-    }
-}
-
-task checkRuntime {
-    doLast {
-        assert configurations.runtime.files == [file('${normaliseFileSeparators(compileModule.artifactFile.path)}'), file('${normaliseFileSeparators(runtimeModule.artifactFile.path)}')] as Set
+        assert configurations.runtimeClasspath.files == [file('${normaliseFileSeparators(implementationModule.artifactFile.path)}'), file('${normaliseFileSeparators(runtimeModule.artifactFile.path)}')] as Set
     }
 }
 """
 
         expect:
-        succeeds('checkCompile', 'checkCompileOnly', 'checkRuntime')
+        succeeds('checkCompileClasspath', 'checkRuntimeClasspath')
     }
 
-    def "Conflict resolution between compile and compile only dependencies"() {
+    def "conflict resolution between implementation and compile only dependencies"() {
         given:
         def shared10 = mavenRepo.module('org.gradle.test', 'shared', '1.0').publish()
         def shared11 = mavenRepo.module('org.gradle.test', 'shared', '1.1').publish()
-        def compileModule = mavenRepo.module('org.gradle.test', 'compile', '1.0').dependsOn(shared11).publish()
+        def implementationModule = mavenRepo.module('org.gradle.test', 'implementation', '1.0').dependsOn(shared11).publish()
         def compileOnlyModule = mavenRepo.module('org.gradle.test', 'compileOnly', '1.0').dependsOn(shared10).publish()
 
         buildFile << """
@@ -135,31 +129,40 @@ repositories {
     maven { url '$mavenRepo.uri' }
 }
 
+configurations {
+    implementationClasspath {
+        extendsFrom implementation
+    }
+    compileOnlyClasspath {
+        extendsFrom compileOnly
+    }
+}
+
 dependencies {
-    compile 'org.gradle.test:compile:1.0'
+    implementation 'org.gradle.test:implementation:1.0'
     compileOnly 'org.gradle.test:compileOnly:1.0'
 }
 
-task checkCompile {
+task checkImplementation {
     doLast {
-        assert configurations.compile.files == [file('${normaliseFileSeparators(shared11.artifactFile.path)}'), file('${normaliseFileSeparators(compileModule.artifactFile.path)}')] as Set
+        assert configurations.implementationClasspath.files == [file('${normaliseFileSeparators(shared11.artifactFile.path)}'), file('${normaliseFileSeparators(implementationModule.artifactFile.path)}')] as Set
     }
 }
 
 task checkCompileOnly {
     doLast {
-        assert configurations.compileOnly.files == [file('${normaliseFileSeparators(shared10.artifactFile.path)}'), file('${normaliseFileSeparators(compileOnlyModule.artifactFile.path)}')] as Set
+        assert configurations.compileOnlyClasspath.files == [file('${normaliseFileSeparators(shared10.artifactFile.path)}'), file('${normaliseFileSeparators(compileOnlyModule.artifactFile.path)}')] as Set
     }
 }
 
 task checkCompileClasspath{
     doLast {
-        assert configurations.compileClasspath.files == [file('${normaliseFileSeparators(shared11.artifactFile.path)}'), file('${normaliseFileSeparators(compileModule.artifactFile.path)}'), file('${normaliseFileSeparators(compileOnlyModule.artifactFile.path)}')] as Set
+        assert configurations.compileClasspath.files == [file('${normaliseFileSeparators(shared11.artifactFile.path)}'), file('${normaliseFileSeparators(implementationModule.artifactFile.path)}'), file('${normaliseFileSeparators(compileOnlyModule.artifactFile.path)}')] as Set
     }
 }
 """
         expect:
-        succeeds('checkCompile', 'checkCompileOnly', 'checkCompileClasspath')
+        succeeds('checkImplementation', 'checkCompileOnly', 'checkCompileClasspath')
     }
 
     def "compile only dependencies from project dependency are non transitive"() {
@@ -171,7 +174,7 @@ task checkCompileClasspath{
 
         buildFile << """
 allprojects {
-    apply plugin: 'java'
+    apply plugin: 'java-library'
 
     repositories {
         maven { url '$mavenRepo.uri' }
@@ -186,12 +189,14 @@ project(':projectA') {
 
 project(':projectB') {
     dependencies {
-        compile project(':projectA')
+        api project(':projectA')
     }
 
     task checkClasspath {
+        def compileClasspathFiles = configurations.compileClasspath.files
+        def projectAJavaDestDir = project(':projectA').compileJava.destinationDir
         doLast {
-            assert configurations.compile.files == [project(':projectA').jar.archivePath] as Set
+            assert compileClasspathFiles == [projectAJavaDestDir] as Set
         }
     }
 }
@@ -208,7 +213,7 @@ project(':projectB') {
         and:
         buildFile << """
             allprojects {
-                apply plugin: 'java'
+                apply plugin: 'java-library'
                 repositories {
                     maven { url '$mavenRepo.uri' }
                 }
@@ -217,14 +222,31 @@ project(':projectB') {
             project(':projectA') {}
 
             project(':projectB') {
+                configurations {
+                    compileOnlyClasspath {
+                        extendsFrom compileOnly
+                    }
+                    implementationClasspath {
+                        extendsFrom implementation
+                    }
+                }
+
                 dependencies {
                     compileOnly project(':projectA')
                 }
 
                 task checkClasspath {
+                    def compileClasspathFiles = configurations.compileClasspath.files
+                    def runtimeClasspathFiles = configurations.runtimeClasspath.files
+                    def compileOnlyClasspathFiles = configurations.compileOnlyClasspath.files
+                    def implementationClasspathFiles = configurations.implementationClasspath.files
+                    def projectAJavaDir = project(':projectA').compileJava.destinationDir
+                    def projectAJarArchiveFile = project(':projectA').jar.archiveFile
                     doLast {
-                        assert configurations.compileOnly.files == [project(':projectA').jar.archivePath] as Set
-                        assert configurations.compile.files == [] as Set
+                        assert compileClasspathFiles == [projectAJavaDir] as Set
+                        assert runtimeClasspathFiles == [] as Set
+                        assert compileOnlyClasspathFiles == [projectAJarArchiveFile.get().asFile] as Set
+                        assert implementationClasspathFiles == [] as Set
                     }
                 }
             }

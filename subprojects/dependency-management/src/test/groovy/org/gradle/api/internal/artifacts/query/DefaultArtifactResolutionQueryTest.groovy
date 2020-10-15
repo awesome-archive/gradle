@@ -23,18 +23,26 @@ import org.gradle.api.artifacts.result.ArtifactResolutionResult
 import org.gradle.api.artifacts.result.UnresolvedComponentResult
 import org.gradle.api.component.Artifact
 import org.gradle.api.component.Component
+import org.gradle.api.internal.artifacts.DefaultModuleIdentifier
 import org.gradle.api.internal.artifacts.GlobalDependencyResolutionRules
 import org.gradle.api.internal.artifacts.configurations.ConfigurationContainerInternal
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.ComponentResolvers
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.ResolveIvyFactory
 import org.gradle.api.internal.component.ComponentTypeRegistration
 import org.gradle.api.internal.component.ComponentTypeRegistry
+import org.gradle.cache.CacheRepository
+import org.gradle.cache.internal.DefaultInMemoryCacheDecoratorFactory
 import org.gradle.internal.component.external.model.DefaultModuleComponentIdentifier
 import org.gradle.internal.component.model.ComponentOverrideMetadata
 import org.gradle.internal.component.model.ComponentResolveMetadata
+import org.gradle.internal.resolve.caching.ComponentMetadataSupplierRuleExecutor
 import org.gradle.internal.resolve.resolver.ArtifactResolver
 import org.gradle.internal.resolve.resolver.ComponentMetaDataResolver
 import org.gradle.internal.resolve.result.BuildableComponentResolveResult
+import org.gradle.internal.serialize.Serializer
+import org.gradle.internal.snapshot.ValueSnapshotter
+import org.gradle.util.AttributeTestUtil
+import org.gradle.util.BuildCommencedTimeProvider
 import spock.lang.Shared
 import spock.lang.Specification
 import spock.lang.Unroll
@@ -48,8 +56,10 @@ class DefaultArtifactResolutionQueryTest extends Specification {
     def artifactResolver = Mock(ArtifactResolver)
     def repositoryChain = Mock(ComponentResolvers)
     def componentMetaDataResolver = Mock(ComponentMetaDataResolver)
+    def ruleExecutor = new ComponentMetadataSupplierRuleExecutor(Stub(CacheRepository), Stub(DefaultInMemoryCacheDecoratorFactory), Stub(ValueSnapshotter), Stub(BuildCommencedTimeProvider), Stub(Serializer))
 
-    @Shared ComponentTypeRegistry testComponentTypeRegistry = createTestComponentTypeRegistry()
+    @Shared
+    ComponentTypeRegistry testComponentTypeRegistry = createTestComponentTypeRegistry()
 
     def "cannot call withArtifacts multiple times"() {
         def query = createArtifactResolutionQuery(componentTypeRegistry)
@@ -84,7 +94,7 @@ class DefaultArtifactResolutionQueryTest extends Specification {
         def query = createArtifactResolutionQuery(givenComponentTypeRegistry)
 
         when:
-        ModuleComponentIdentifier componentIdentifier = new DefaultModuleComponentIdentifier('mygroup', 'mymodule', '1.0')
+        ModuleComponentIdentifier componentIdentifier = new DefaultModuleComponentIdentifier(DefaultModuleIdentifier.newId('mygroup', 'mymodule'), '1.0')
         ArtifactResolutionResult result = query
             .forComponents(componentIdentifier)
             .withArtifacts(selectedComponentType, selectedArtifactType)
@@ -96,14 +106,14 @@ class DefaultArtifactResolutionQueryTest extends Specification {
         def componentResult = result.components.iterator().next()
         componentResult.id.displayName == componentIdentifier.displayName
         componentResult instanceof UnresolvedComponentResult
-        UnresolvedComponentResult unresolvedComponentResult = (UnresolvedComponentResult)componentResult
+        UnresolvedComponentResult unresolvedComponentResult = (UnresolvedComponentResult) componentResult
         unresolvedComponentResult.failure instanceof IllegalArgumentException
         unresolvedComponentResult.failure.message == failureMessage
 
         where:
-        givenComponentTypeRegistry | selectedComponentType | selectedArtifactType   | failureMessage
-        testComponentTypeRegistry  | UnknownComponent      | TestArtifact           | "Not a registered component type: ${UnknownComponent.name}."
-        testComponentTypeRegistry  | TestComponent         | UnknownArtifact        | "Artifact type $UnknownArtifact.name is not registered for component type ${TestComponent.name}."
+        givenComponentTypeRegistry | selectedComponentType | selectedArtifactType | failureMessage
+        testComponentTypeRegistry  | UnknownComponent      | TestArtifact         | "Not a registered component type: ${UnknownComponent.name}."
+        testComponentTypeRegistry  | TestComponent         | UnknownArtifact      | "Artifact type $UnknownArtifact.name is not registered for component type ${TestComponent.name}."
     }
 
     def "forModule is cumulative"() {
@@ -124,7 +134,7 @@ class DefaultArtifactResolutionQueryTest extends Specification {
     }
 
     private def withArtifactResolutionInteractions(int numberOfComponentsToResolve = 1) {
-        1 * resolveIvyFactory.create(_, _, _) >> repositoryChain
+        1 * resolveIvyFactory.create(_, _, _, _, _, _, _, _) >> repositoryChain
         1 * repositoryChain.artifactResolver >> artifactResolver
         1 * repositoryChain.componentResolver >> componentMetaDataResolver
         numberOfComponentsToResolve * componentMetaDataResolver.resolve(_, _, _) >> { ComponentIdentifier componentId, ComponentOverrideMetadata requestMetaData, BuildableComponentResolveResult resolveResult ->
@@ -133,7 +143,7 @@ class DefaultArtifactResolutionQueryTest extends Specification {
     }
 
     private DefaultArtifactResolutionQuery createArtifactResolutionQuery(ComponentTypeRegistry componentTypeRegistry) {
-        new DefaultArtifactResolutionQuery(configurationContainerInternal, repositoryHandler, resolveIvyFactory, globalDependencyResolutionRules, componentTypeRegistry)
+        new DefaultArtifactResolutionQuery(configurationContainerInternal, repositoryHandler, resolveIvyFactory, globalDependencyResolutionRules, componentTypeRegistry, AttributeTestUtil.attributesFactory(), ruleExecutor)
     }
 
     private ComponentTypeRegistry createTestComponentTypeRegistry() {

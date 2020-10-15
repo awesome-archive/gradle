@@ -17,6 +17,7 @@ package org.gradle.testing
 
 import org.gradle.integtests.fixtures.TargetCoverage
 import org.gradle.integtests.fixtures.TestResources
+import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
 import org.gradle.testing.fixture.JUnitMultiVersionIntegrationSpec
 import org.junit.Before
 import org.junit.Rule
@@ -61,7 +62,7 @@ public class SomeTest {
         buildFile << """
 apply plugin: 'java'
 ${mavenCentralRepository()}
-dependencies { testCompile "junit:junit:4.12" }
+dependencies { testImplementation "junit:junit:4.13" }
 
 test.addTestOutputListener(new VerboseOutputListener(logger: project.logger))
 
@@ -98,6 +99,7 @@ class RemoveMeListener implements TestOutputListener {
     }
 
     @Test
+    @UnsupportedWithConfigurationCache
     def "can register output listener at gradle level and using onOutput method"() {
         given:
         def test = file("src/test/java/SomeTest.java")
@@ -114,7 +116,7 @@ public class SomeTest {
         buildFile << """
 apply plugin: 'java'
 ${mavenCentralRepository()}
-dependencies { testCompile "junit:junit:4.12" }
+dependencies { testImplementation "junit:junit:4.13" }
 
 test.onOutput { descriptor, event ->
     logger.lifecycle("first: " + event.message)
@@ -133,11 +135,11 @@ class VerboseOutputListener implements TestOutputListener {
 """
 
         when:
-        def result = executer.withTasks('test').run()
+        succeeds('test')
 
         then:
-        result.output.contains('first: message from foo')
-        result.output.contains('second: message from foo')
+        outputContains('first: message from foo')
+        outputContains('second: message from foo')
     }
 
     @Test
@@ -157,7 +159,7 @@ public class SomeTest {
         buildFile << """
 apply plugin: 'java'
 ${mavenCentralRepository()}
-dependencies { testCompile "junit:junit:4.12" }
+dependencies { testImplementation "junit:junit:4.13" }
 
 test.testLogging {
     showStandardStreams = true
@@ -165,10 +167,11 @@ test.testLogging {
 """
 
         when:
-        def result = executer.withTasks('test').withArguments('-i').run()
+        executer.withArgument('-i')
+        succeeds('test')
 
         then:
-        result.output.contains('message from foo')
+        outputContains('message from foo')
     }
 
     @Test
@@ -192,7 +195,7 @@ public class SomeTest {
         buildFile << """
 apply plugin: 'java'
 ${mavenCentralRepository()}
-dependencies { testCompile 'org.testng:testng:6.3.1' }
+dependencies { testImplementation 'org.testng:testng:6.3.1' }
 
 test {
     useTestNG()
@@ -200,14 +203,17 @@ test {
 }
 """
         when: "run with quiet"
-        def result = executer.withArguments("-q").withTasks('test'). run()
+        executer.withArguments("-q")
+        succeeds('test')
+
         then:
-        !result.output.contains('output from foo')
+        outputDoesNotContain('output from foo')
 
         when: "run with lifecycle"
-        result = executer.noExtraLogging().withTasks('cleanTest', 'test').run()
+        executer.noExtraLogging()
+        succeeds('cleanTest', 'test')
 
         then:
-        result.output.contains('output from foo')
+        outputContains('output from foo')
     }
 }

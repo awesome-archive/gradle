@@ -17,7 +17,6 @@
 package org.gradle.nativeplatform.tasks;
 
 import org.gradle.api.DefaultTask;
-import org.gradle.api.Incubating;
 import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.provider.Property;
@@ -25,6 +24,8 @@ import org.gradle.api.tasks.InputFile;
 import org.gradle.api.tasks.Internal;
 import org.gradle.api.tasks.Nested;
 import org.gradle.api.tasks.OutputFile;
+import org.gradle.api.tasks.PathSensitive;
+import org.gradle.api.tasks.PathSensitivity;
 import org.gradle.api.tasks.TaskAction;
 import org.gradle.api.tasks.WorkResult;
 import org.gradle.internal.Cast;
@@ -45,7 +46,6 @@ import org.gradle.nativeplatform.toolchain.internal.PlatformToolProvider;
  *
  * @since 4.5
  */
-@Incubating
 public class StripSymbols extends DefaultTask {
     private final RegularFileProperty binaryFile;
     private final RegularFileProperty outputFile;
@@ -55,8 +55,8 @@ public class StripSymbols extends DefaultTask {
     public StripSymbols() {
         ObjectFactory objectFactory = getProject().getObjects();
 
-        this.binaryFile = newInputFile();
-        this.outputFile = newOutputFile();
+        this.binaryFile = objectFactory.fileProperty();
+        this.outputFile = objectFactory.fileProperty();
         this.targetPlatform = objectFactory.property(NativePlatform.class);
         this.toolChain = objectFactory.property(NativeToolChain.class);
     }
@@ -66,6 +66,7 @@ public class StripSymbols extends DefaultTask {
      * and a new stripped binary will be written to the file specified by {{@link #getOutputFile()}}.
      */
     @InputFile
+    @PathSensitive(PathSensitivity.NONE)
     public RegularFileProperty getBinaryFile() {
         return binaryFile;
     }
@@ -101,7 +102,7 @@ public class StripSymbols extends DefaultTask {
     // TODO: Need to track version/implementation of symbol strip tool.
 
     @TaskAction
-    public void stripSymbols() {
+    protected void stripSymbols() {
         BuildOperationLogger operationLogger = getServices().get(BuildOperationLoggerFactory.class).newOperationLogger(getName(), getTemporaryDir());
 
         StripperSpec spec = new DefaultStripperSpec();

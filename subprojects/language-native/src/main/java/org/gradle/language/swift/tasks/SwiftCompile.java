@@ -18,9 +18,7 @@ package org.gradle.language.swift.tasks;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
-import org.gradle.api.Action;
 import org.gradle.api.DefaultTask;
-import org.gradle.api.Incubating;
 import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.DirectoryProperty;
 import org.gradle.api.file.RegularFileProperty;
@@ -40,9 +38,8 @@ import org.gradle.api.tasks.PathSensitivity;
 import org.gradle.api.tasks.SkipWhenEmpty;
 import org.gradle.api.tasks.TaskAction;
 import org.gradle.api.tasks.WorkResult;
-import org.gradle.api.tasks.incremental.IncrementalTaskInputs;
-import org.gradle.api.tasks.incremental.InputFileDetails;
 import org.gradle.internal.Cast;
+import org.gradle.internal.file.Deleter;
 import org.gradle.internal.operations.logging.BuildOperationLogger;
 import org.gradle.internal.operations.logging.BuildOperationLoggerFactory;
 import org.gradle.language.base.compile.CompilerVersion;
@@ -59,6 +56,9 @@ import org.gradle.nativeplatform.toolchain.internal.NativeToolChainInternal;
 import org.gradle.nativeplatform.toolchain.internal.PlatformToolProvider;
 import org.gradle.nativeplatform.toolchain.internal.compilespec.SwiftCompileSpec;
 import org.gradle.nativeplatform.toolchain.internal.swift.IncrementalSwiftCompiler;
+import org.gradle.work.ChangeType;
+import org.gradle.work.FileChange;
+import org.gradle.work.InputChanges;
 
 import javax.inject.Inject;
 import java.io.File;
@@ -73,7 +73,6 @@ import java.util.Set;
  *
  * @since 4.1
  */
-@Incubating
 @CacheableTask
 public class SwiftCompile extends DefaultTask {
     private final Property<String> moduleName;
@@ -90,22 +89,27 @@ public class SwiftCompile extends DefaultTask {
     private final Property<NativeToolChain> toolChain;
 
     private final CompilerOutputFileNamingSchemeFactory compilerOutputFileNamingSchemeFactory;
+    private final Deleter deleter;
 
     @Inject
-    public SwiftCompile(CompilerOutputFileNamingSchemeFactory compilerOutputFileNamingSchemeFactory) {
+    public SwiftCompile(
+        CompilerOutputFileNamingSchemeFactory compilerOutputFileNamingSchemeFactory,
+        Deleter deleter
+    ) {
         this.compilerOutputFileNamingSchemeFactory = compilerOutputFileNamingSchemeFactory;
+        this.deleter = deleter;
 
         ObjectFactory objectFactory = getProject().getObjects();
         this.moduleName = objectFactory.property(String.class);
-        this.moduleFile = newOutputFile();
+        this.moduleFile = objectFactory.fileProperty();
         this.modules = getProject().files();
         this.compilerArgs = objectFactory.listProperty(String.class);
-        this.objectFileDir = newOutputDirectory();
+        this.objectFileDir = objectFactory.directoryProperty();
         this.source = getProject().files();
         this.sourceCompatibility = objectFactory.property(SwiftVersion.class);
         this.macros = objectFactory.listProperty(String.class);
-        this.debuggable = objectFactory.property(Boolean.class);
-        this.optimize = objectFactory.property(Boolean.class);
+        this.debuggable = objectFactory.property(Boolean.class).value(false);
+        this.optimize = objectFactory.property(Boolean.class).value(false);
         this.targetPlatform = objectFactory.property(NativePlatform.class);
         this.toolChain = objectFactory.property(NativeToolChain.class);
     }
@@ -272,36 +276,22 @@ public class SwiftCompile extends DefaultTask {
     }
 
     @TaskAction
-    void compile(IncrementalTaskInputs inputs) {
+    protected void compile(InputChanges inputs) {
         final List<File> removedFiles = Lists.newArrayList();
         final Set<File> changedFiles = Sets.newHashSet();
         boolean isIncremental = inputs.isIncremental();
 
         // TODO: This should become smarter and move into the compiler infrastructure instead
-        // of the task, similar to how the other native languages are done.
-        // For now, this does a rudimentary incremental build analysis by looking at
-        // which files changed and marking the compilation incremental or not.
+        //   of the task, similar to how the other native languages are done.
+        //   For now, this does a rudimentary incremental build analysis by looking at
+        //   which files changed .
         if (isIncremental) {
-            inputs.outOfDate(new Action<InputFileDetails>() {
-                @Override
-                public void execute(InputFileDetails inputFileDetails) {
-                    if (inputFileDetails.isModified()) {
-                        changedFiles.add(inputFileDetails.getFile());
-                    }
+            for (FileChange fileChange : inputs.getFileChanges(getSource())) {
+                if (fileChange.getChangeType() == ChangeType.REMOVED) {
+                    removedFiles.add(fileChange.getFile());
+                } else {
+                    changedFiles.add(fileChange.getFile());
                 }
-            });
-            inputs.removed(new Action<InputFileDetails>() {
-                @Override
-                public void execute(InputFileDetails removed) {
-                    removedFiles.add(removed.getFile());
-                }
-            });
-
-            Set<File> allSourceFiles = getSource().getFiles();
-            if (!allSourceFiles.containsAll(changedFiles)) {
-                // If a non-source file changed, the compilation cannot be incremental
-                // due to the way the Swift compiler detects changes from other modules
-                isIncremental = false;
             }
         }
 
@@ -309,7 +299,12 @@ public class SwiftCompile extends DefaultTask {
 
         NativePlatformInternal targetPlatform = Cast.cast(NativePlatformInternal.class, this.targetPlatform.get());
         SwiftCompileSpec spec = createSpec(operationLogger, isIncremental, changedFiles, removedFiles, targetPlatform);
-        Compiler<SwiftCompileSpec> baseCompiler = new IncrementalSwiftCompiler(createCompiler(), getOutputs(), compilerOutputFileNamingSchemeFactory);
+        Compiler<SwiftCompileSpec> baseCompiler = new IncrementalSwiftCompiler(
+            createCompiler(),
+            getOutputs(),
+            compilerOutputFileNamingSchemeFactory,
+            deleter
+        );
         Compiler<SwiftCompileSpec> loggingCompiler = BuildOperationLoggingCompilerDecorator.wrap(baseCompiler);
         WorkResult result = loggingCompiler.execute(spec);
         setDidWork(result.getDidWork());
@@ -335,7 +330,7 @@ public class SwiftCompile extends DefaultTask {
         spec.setChangedFiles(changedFiles);
 
         // Convert Swift-like macros to a Map like NativeCompileSpec expects
-        Map<String, String> macros = new LinkedHashMap<String, String>();
+        Map<String, String> macros = new LinkedHashMap<>();
         for (String macro : getMacros().get()) {
             macros.put(macro, null);
         }

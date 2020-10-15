@@ -22,6 +22,7 @@ import org.gradle.integtests.fixtures.daemon.DaemonIntegrationSpec
 import org.gradle.integtests.fixtures.daemon.DaemonLogsAnalyzer
 import org.gradle.integtests.fixtures.executer.GradleHandle
 import org.gradle.internal.jvm.Jvm
+import org.gradle.launcher.daemon.context.DaemonContext
 import org.gradle.launcher.daemon.registry.DaemonDir
 import org.gradle.launcher.daemon.server.DaemonStateCoordinator
 import org.gradle.launcher.daemon.server.api.HandleStop
@@ -42,7 +43,7 @@ import static org.gradle.test.fixtures.ConcurrentTestUtil.poll
 class DaemonLifecycleSpec extends DaemonIntegrationSpec {
 
     public static final int BUILD_EXECUTION_TIMEOUT = 40
-    int daemonIdleTimeout = 100
+    int daemonIdleTimeout = 200
     int periodicCheckInterval = 5
     //normally, state transition timeout must be lower than the daemon timeout
     //so that the daemon does not timeout in the middle of the state verification
@@ -67,6 +68,7 @@ class DaemonLifecycleSpec extends DaemonIntegrationSpec {
 
     def buildDirWithScript(buildNum, buildScript) {
         def dir = buildDir(buildNum)
+        dir.file("settings.gradle").touch()
         dir.file("build.gradle") << buildScript
         dir
     }
@@ -77,8 +79,8 @@ class DaemonLifecycleSpec extends DaemonIntegrationSpec {
             executer.withDaemonIdleTimeoutSecs(daemonIdleTimeout)
             executer.withArguments(
                     "-Dorg.gradle.daemon.healthcheckinterval=${periodicCheckInterval * 1000}",
-                    "--debug", // Need debug logging so we can extract the `DefaultDaemonContext`
-                    "-Dorg.gradle.jvmargs=-ea")
+                    "--debug" // Need debug logging so we can extract the `DefaultDaemonContext`
+            )
             if (javaHome) {
                 executer.withJavaHome(javaHome)
             }
@@ -128,7 +130,7 @@ class DaemonLifecycleSpec extends DaemonIntegrationSpec {
 
     void waitForBuildToWait(buildNum = 0) {
         run {
-            poll(BUILD_EXECUTION_TIMEOUT) { assert builds[buildNum].standardOutput.contains("waiting for stop file"); }
+            poll(BUILD_EXECUTION_TIMEOUT) { assert builds[buildNum].standardOutput.contains("waiting for stop file") }
         }
     }
 
@@ -220,7 +222,13 @@ class DaemonLifecycleSpec extends DaemonIntegrationSpec {
     }
 
     void doDaemonContext(gradleHandle, Closure assertions) {
-        DaemonContextParser.parseFromString(gradleHandle.standardOutput).with(assertions)
+        // poll here since even though the daemon has been marked as busy in the registry, the context may not have been
+        // flushed to the log yet.
+        DaemonContext context
+        poll(5) {
+            context = DaemonContextParser.parseFromString(gradleHandle.standardOutput)
+        }
+        context.with(assertions)
     }
 
     def "daemons do some work - sit idle - then timeout and die"() {
@@ -245,6 +253,8 @@ class DaemonLifecycleSpec extends DaemonIntegrationSpec {
         stopped()
     }
 
+    //Java 9 and above needs --add-opens to make environment variable mutation work
+    @Requires(TestPrecondition.JDK8_OR_EARLIER)
     def "existing foreground idle daemons are used"() {
         when:
         startForegroundDaemon()

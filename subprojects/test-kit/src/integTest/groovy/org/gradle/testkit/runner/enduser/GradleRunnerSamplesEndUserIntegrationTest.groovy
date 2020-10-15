@@ -18,63 +18,96 @@
 package org.gradle.testkit.runner.enduser
 
 import org.gradle.integtests.fixtures.Sample
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.integtests.fixtures.UsesSample
+import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
 import org.gradle.testing.internal.util.RetryUtil
 import org.gradle.testkit.runner.fixtures.NoDebug
 import org.gradle.testkit.runner.fixtures.NonCrossVersion
 import org.gradle.util.Requires
-import org.gradle.util.TestPrecondition
 import org.junit.Rule
+import spock.lang.IgnoreIf
+import spock.lang.Unroll
+
+import static org.gradle.util.TestPrecondition.JDK8_OR_EARLIER
+import static org.gradle.util.TestPrecondition.ONLINE
 
 @NonCrossVersion
 @NoDebug
+@IgnoreIf({ GradleContextualExecuter.embedded }) // These tests run builds that themselves run a build in a test worker with 'gradleTestKit()' dependency, which needs to pick up Gradle modules from a real distribution
 class GradleRunnerSamplesEndUserIntegrationTest extends BaseTestKitEndUserIntegrationTest {
 
     @Rule
     Sample sample = new Sample(testDirectoryProvider)
 
-    @UsesSample("testKit/gradleRunner/junitQuickstart")
-    def junitQuickstart() {
-        expect:
-        executer.inDirectory(sample.dir)
-        succeeds "check"
+    def setup() {
+        executer.withRepositoryMirrors()
     }
 
-    @UsesSample("testKit/gradleRunner/spockQuickstart")
+    @Unroll
+    @UsesSample("testKit/junitQuickstart")
+    @ToBeFixedForConfigurationCache(iterationMatchers = ".*kotlin dsl.*")
+    def "junitQuickstart with #dsl dsl"() {
+        expect:
+        executer.inDirectory(sample.dir.file(dsl))
+        succeeds "check"
+
+        where:
+        dsl << ['groovy', 'kotlin']
+    }
+
+    @UsesSample("testKit/spockQuickstart")
+    @ToBeFixedForConfigurationCache(because = "gradle/configuration-cache#270")
     def spockQuickstart() {
         expect:
-        executer.inDirectory(sample.dir)
+        executer.inDirectory(sample.dir.file('groovy'))
         succeeds "check"
     }
 
-    @UsesSample("testKit/gradleRunner/manualClasspathInjection")
-    @Requires(TestPrecondition.JDK8_OR_EARLIER) // Uses Gradle 2.8 which does not support Java 9
-    def manualClasspathInjection() {
+    @Unroll
+    @UsesSample("testKit/manualClasspathInjection")
+    @Requires(JDK8_OR_EARLIER)
+    @ToBeFixedForConfigurationCache(iterationMatchers = ".*kotlin dsl.*")
+    // Uses Gradle 2.8 which does not support Java 9
+    def "manualClasspathInjection with #dsl dsl"() {
         expect:
-        executer.inDirectory(sample.dir)
-        succeeds "check"
+        executer.inDirectory(sample.dir.file(dsl))
+        succeeds "check", '--stacktrace', '--info'
+
+        where:
+        dsl << ['groovy', 'kotlin']
     }
 
-    @UsesSample("testKit/gradleRunner/automaticClasspathInjectionQuickstart")
-    def automaticClasspathInjectionQuickstart() {
+    @Unroll
+    @UsesSample("testKit/automaticClasspathInjectionQuickstart")
+    def "automaticClasspathInjectionQuickstart with #dsl dsl"() {
         expect:
-        executer.inDirectory(sample.dir)
+        executer.inDirectory(sample.dir.file(dsl))
         succeeds "check"
+
+        where:
+        dsl << ['groovy', 'kotlin']
     }
 
-    @UsesSample("testKit/gradleRunner/automaticClasspathInjectionCustomTestSourceSet")
-    def automaticClasspathInjectionCustomTestSourceSet() {
+    @Unroll
+    @UsesSample("testKit/automaticClasspathInjectionCustomTestSourceSet")
+    def "automaticClasspathInjectionCustomTestSourceSet with #dsl dsl"() {
         expect:
-        executer.inDirectory(sample.dir)
+        executer.inDirectory(sample.dir.file(dsl))
         succeeds "check"
+
+        where:
+        dsl << ['groovy', 'kotlin']
     }
 
-    @Requires([TestPrecondition.ONLINE, TestPrecondition.JDK8_OR_EARLIER]) // Uses Gradle 2.6 which does not support Java 9
-    @UsesSample("testKit/gradleRunner/gradleVersion")
+    @Requires([ONLINE, JDK8_OR_EARLIER])
+    // Uses Gradle 2.6 which does not support Java 9
+    @UsesSample("testKit/gradleVersion")
+    @ToBeFixedForConfigurationCache(because = "gradle/configuration-cache#270")
     def gradleVersion() {
         expect:
         RetryUtil.retry { //This test is also affected by gradle/gradle#1111 on Windows
-            executer.inDirectory(sample.dir)
+            executer.inDirectory(sample.dir.file('groovy'))
             succeeds "check"
 
         }

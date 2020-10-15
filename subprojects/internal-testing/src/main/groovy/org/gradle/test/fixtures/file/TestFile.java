@@ -17,7 +17,6 @@
 package org.gradle.test.fixtures.file;
 
 import com.google.common.collect.Lists;
-import com.google.common.io.Files;
 import groovy.lang.Closure;
 import groovy.lang.DelegatesTo;
 import org.apache.commons.io.FileUtils;
@@ -44,6 +43,12 @@ import java.io.ObjectStreamException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.FileVisitResult;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Formatter;
@@ -56,7 +61,13 @@ import java.util.TreeSet;
 import java.util.jar.JarFile;
 import java.util.jar.Manifest;
 
-import static org.junit.Assert.*;
+import static java.nio.file.StandardCopyOption.COPY_ATTRIBUTES;
+import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assume.assumeTrue;
 
 public class TestFile extends File {
@@ -143,7 +154,7 @@ public class TestFile extends File {
 
     public TestFile write(Object content) {
         try {
-            FileUtils.writeStringToFile(this, content.toString());
+            FileUtils.writeStringToFile(this, content.toString(), StandardCharsets.UTF_8);
         } catch (IOException e) {
             throw new RuntimeException(String.format("Could not write to test file '%s'", this), e);
         }
@@ -170,6 +181,7 @@ public class TestFile extends File {
         }
     }
 
+    @Override
     public TestFile[] listFiles() {
         File[] children = super.listFiles();
         if (children == null) {
@@ -186,7 +198,7 @@ public class TestFile extends File {
     public String getText() {
         assertIsFile();
         try {
-            return FileUtils.readFileToString(this);
+            return FileUtils.readFileToString(this, StandardCharsets.UTF_8);
         } catch (IOException e) {
             throw new RuntimeException(String.format("Could not read from test file '%s'", this), e);
         }
@@ -260,10 +272,27 @@ public class TestFile extends File {
     public void copyTo(File target) {
         if (isDirectory()) {
             try {
-                FileUtils.copyDirectory(this, target);
+                final Path targetDir = target.toPath();
+                final Path sourceDir = this.toPath();
+                Files.walkFileTree(sourceDir, new SimpleFileVisitor<Path>() {
+                    @Override
+                    public FileVisitResult visitFile(Path sourceFile, BasicFileAttributes attributes) throws IOException {
+                        Path targetFile = targetDir.resolve(sourceDir.relativize(sourceFile));
+                        Files.copy(sourceFile, targetFile, COPY_ATTRIBUTES, REPLACE_EXISTING);
+
+                        return FileVisitResult.CONTINUE;
+                    }
+
+                    @Override
+                    public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attributes) throws IOException {
+                        Path newDir = targetDir.resolve(sourceDir.relativize(dir));
+                        Files.createDirectories(newDir);
+
+                        return FileVisitResult.CONTINUE;
+                    }
+                });
             } catch (IOException e) {
-                throw new RuntimeException(String.format("Could not copy test directory '%s' to '%s'", this,
-                    target), e);
+                throw new RuntimeException(String.format("Could not copy test directory '%s' to '%s'", this, target), e);
             }
         } else {
             try {
@@ -340,7 +369,7 @@ public class TestFile extends File {
      * }
      * </pre>
      */
-    public TestFile create(@DelegatesTo(TestWorkspaceBuilder.class) Closure structure) {
+    public TestFile create(@DelegatesTo(value = TestWorkspaceBuilder.class, strategy = Closure.DELEGATE_FIRST) Closure structure) {
         assertTrue(isDirectory() || mkdirs());
         new TestWorkspaceBuilder(this).apply(structure);
         return this;
@@ -440,22 +469,55 @@ public class TestFile extends File {
     }
 
     public static HashCode md5(File file) {
-        HashingOutputStream hashingStream = new HashingOutputStream(Hashing.md5(), NullOutputStream.INSTANCE);
+        HashingOutputStream hashingStream = Hashing.primitiveStreamHasher();
         try {
-            Files.copy(file, hashingStream);
+            Files.copy(file.toPath(), hashingStream);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
         return hashingStream.hash();
     }
 
-    public void createLink(File target) {
-        createLink(target.getAbsolutePath());
+    public String getSha256Hash() {
+        // Sha256 is not part of core-services (i.e. no Hashing.sha256() available), hence we use plain Guava classes here.
+        com.google.common.hash.HashingOutputStream hashingStream =
+            new com.google.common.hash.HashingOutputStream(com.google.common.hash.Hashing.sha256(), NullOutputStream.INSTANCE);
+        try {
+            Files.copy(this.toPath(), hashingStream);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        return hashingStream.hash().toString();
     }
 
-    public void createLink(String target) {
-        NativeServices.getInstance().get(FileSystem.class).createSymbolicLink(this, new File(target));
+    public TestFile createLink(String target) {
+        return createLink(new File(target));
+    }
+
+    public TestFile createLink(File target) {
+        FileSystem fileSystem = NativeServices.getInstance().get(FileSystem.class);
+        if (fileSystem.isSymlink(this)) {
+            try {
+                Files.delete(toPath());
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        }
+        fileSystem.createSymbolicLink(this, target);
         clearCanonCaches();
+        return this;
+    }
+
+    public TestFile createNamedPipe() {
+        try {
+            Process mkfifo = new ProcessBuilder("mkfifo", getAbsolutePath())
+                .redirectErrorStream(true)
+                .start();
+            assert mkfifo.waitFor() == 0; // assert the exit value signals success
+            return this;
+        } catch (IOException | InterruptedException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     private void clearCanonCaches() {
@@ -494,39 +556,42 @@ public class TestFile extends File {
     }
 
     /**
-     * Asserts that this file contains exactly the given set of descendants.
+     * Asserts that this is a directory and contains exactly the given set of descendant files and child directories. Ignores directories that are not empty.
      */
     public TestFile assertHasDescendants(String... descendants) {
         return assertHasDescendants(Arrays.asList(descendants));
     }
 
     /**
-     * Convenience method for {@link #assertHasDescendants(String...)}.
+     * Asserts that this is a directory and contains exactly the given set of descendant files and child directories. Ignores directories that are not empty.
      */
     public TestFile assertHasDescendants(Iterable<String> descendants) {
+        return assertHasDescendants(descendants, false);
+    }
+
+    public TestFile assertHasDescendants(Iterable<String> descendants, boolean ignoreDirs) {
         Set<String> actual = new TreeSet<String>();
         assertIsDir();
-        visit(actual, "", this);
-        Set<String> expected = new TreeSet<String>(Lists.<String>newArrayList(descendants));
+        visit(actual, "", this, ignoreDirs);
+        Set<String> expected = new TreeSet<>(Lists.newArrayList(descendants));
 
-        Set<String> extras = new TreeSet<String>(actual);
+        Set<String> extras = new TreeSet<>(actual);
         extras.removeAll(expected);
-        Set<String> missing = new TreeSet<String>(expected);
+        Set<String> missing = new TreeSet<>(expected);
         missing.removeAll(actual);
 
         assertEquals(String.format("For dir: %s\n extra files: %s, missing files: %s, expected: %s", this, extras, missing, expected), expected, actual);
 
         return this;
-
     }
 
     /**
-     * Convenience method for {@link #assertContainsDescendants(String...)}.
+     * Asserts that this is a directory and contains the given set of descendant files and child directories (and possibly other files). Ignores directories that are not empty.
      */
     public TestFile assertContainsDescendants(Iterable<String> descendants) {
         assertIsDir();
         Set<String> actual = new TreeSet<String>();
-        visit(actual, "", this);
+        visit(actual, "", this, false);
 
         Set<String> expected = new TreeSet<String>(Lists.newArrayList(descendants));
 
@@ -539,14 +604,13 @@ public class TestFile extends File {
     }
 
     /**
-     * Asserts that this file contains the given set of descendants (and possibly other files).
+     * Asserts that this is a directory and contains the given set of descendant files (and possibly other files). Ignores directories that are not empty.
      */
     public TestFile assertContainsDescendants(String... descendants) {
         return assertContainsDescendants(Arrays.asList(descendants));
     }
 
     public TestFile assertIsEmptyDir() {
-        assertIsDir();
         assertHasDescendants();
         return this;
     }
@@ -554,17 +618,17 @@ public class TestFile extends File {
     public Set<String> allDescendants() {
         Set<String> names = new TreeSet<String>();
         if (isDirectory()) {
-            visit(names, "", this);
+            visit(names, "", this, false);
         }
         return names;
     }
 
-    private void visit(Set<String> names, String prefix, File file) {
+    private void visit(Set<String> names, String prefix, File file, boolean ignoreDirs) {
         for (File child : file.listFiles()) {
-            if (child.isFile()) {
+            if (child.isFile() || !ignoreDirs && child.isDirectory() && child.list().length == 0) {
                 names.add(prefix + child.getName());
             } else if (child.isDirectory()) {
-                visit(names, prefix + child.getName() + "/", child);
+                visit(names, prefix + child.getName() + "/", child, ignoreDirs);
             }
         }
     }
@@ -610,6 +674,54 @@ public class TestFile extends File {
         return this;
     }
 
+    /**
+     * Recursively delete this directory, reporting all failed paths.
+     */
+    public TestFile forceDeleteDir() throws IOException {
+        if (isDirectory()) {
+            if (FileUtils.isSymlink(this)) {
+                if (!delete()) {
+                    throw new IOException("Unable to delete symlink: " + getCanonicalPath());
+                }
+            } else {
+                List<String> errorPaths = new ArrayList<>();
+                Files.walkFileTree(toPath(), new SimpleFileVisitor<Path>() {
+
+                    @Override
+                    public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                        if (!file.toFile().delete()) {
+                            errorPaths.add(file.toFile().getCanonicalPath());
+                        }
+                        return FileVisitResult.CONTINUE;
+                    }
+
+                    @Override
+                    public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
+                        if (!dir.toFile().delete()) {
+                            errorPaths.add(dir.toFile().getCanonicalPath());
+                        }
+                        return FileVisitResult.CONTINUE;
+                    }
+                });
+                if (!errorPaths.isEmpty()) {
+                    StringBuilder builder = new StringBuilder()
+                        .append("Unable to recursively delete directory ")
+                        .append(getCanonicalPath())
+                        .append(", failed paths:\n");
+                    for (String errorPath : errorPaths) {
+                        builder.append("\t- ").append(errorPath).append("\n");
+                    }
+                    throw new IOException(builder.toString());
+                }
+            }
+        } else if (exists()) {
+            if (!delete()) {
+                throw new IOException("Unable to delete file: " + getCanonicalPath());
+            }
+        }
+        return this;
+    }
+
     public TestFile createFile() {
         new TestFile(getParentFile()).createDir();
         try {
@@ -617,6 +729,18 @@ public class TestFile extends File {
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
+        return this;
+    }
+
+    public TestFile makeUnreadable() {
+        setReadable(false, false);
+        assert !Files.isReadable(toPath());
+        return this;
+    }
+
+    public TestFile makeReadable() {
+        setReadable(true, false);
+        assert Files.isReadable(toPath());
         return this;
     }
 
@@ -731,11 +855,11 @@ public class TestFile extends File {
         return new TestFileHelper(this).executeSuccess(Arrays.asList(args), null);
     }
 
-    public ExecOutput execWithFailure(List args, List env) {
+    public ExecOutput execWithFailure(List<?> args, List<?> env) {
         return new TestFileHelper(this).executeFailure(args, env);
     }
 
-    public ExecOutput execute(List args, List env) {
+    public ExecOutput execute(List<?> args, List<?> env) {
         return new TestFileHelper(this).executeSuccess(args, env);
     }
 
@@ -746,7 +870,7 @@ public class TestFile extends File {
         return baseDir.toURI().relativize(toURI());
     }
 
-    public class Snapshot {
+    public static class Snapshot {
         private final long modTime;
         private final HashCode hash;
 

@@ -16,9 +16,13 @@
 
 package org.gradle.internal.featurelifecycle;
 
+import org.gradle.api.GradleException;
 import org.gradle.api.internal.DocumentationRegistry;
 import org.gradle.api.logging.configuration.WarningMode;
 import org.gradle.internal.SystemProperties;
+import org.gradle.internal.deprecation.DeprecatedFeatureUsage;
+import org.gradle.internal.logging.LoggingConfigurationBuildOptions;
+import org.gradle.internal.operations.BuildOperationProgressEventEmitter;
 import org.gradle.util.GradleVersion;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,7 +32,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
-public class LoggingDeprecatedFeatureHandler implements FeatureHandler {
+public class LoggingDeprecatedFeatureHandler implements FeatureHandler<DeprecatedFeatureUsage> {
     public static final String ORG_GRADLE_DEPRECATION_TRACE_PROPERTY_NAME = "org.gradle.deprecation.trace";
     public static final String WARNING_SUMMARY = "Deprecated Gradle features were used in this build, making it incompatible with Gradle";
     public static final String WARNING_LOGGING_DOCS_MESSAGE = "See";
@@ -37,56 +41,70 @@ public class LoggingDeprecatedFeatureHandler implements FeatureHandler {
     private static final Logger LOGGER = LoggerFactory.getLogger(LoggingDeprecatedFeatureHandler.class);
     private static final String ELEMENT_PREFIX = "\tat ";
     private static final String RUN_WITH_STACKTRACE_INFO = "\t(Run with --stacktrace to get the full stack trace of this deprecation warning.)";
-    private static String deprecationMessage;
     private static boolean traceLoggingEnabled;
 
     private final Set<String> messages = new HashSet<String>();
     private UsageLocationReporter locationReporter;
-    private WarningMode warningMode;
+
+    private WarningMode warningMode = WarningMode.Summary;
+    private BuildOperationProgressEventEmitter progressEventEmitter;
+    private GradleException error;
 
     public LoggingDeprecatedFeatureHandler() {
-        this(DoNothingReporter.INSTANCE);
+        this.locationReporter = DoNothingReporter.INSTANCE;
     }
 
-    public LoggingDeprecatedFeatureHandler(UsageLocationReporter locationReporter) {
-        this.locationReporter = locationReporter;
-    }
-
-    public void init(UsageLocationReporter reporter, WarningMode warningMode) {
+    public void init(UsageLocationReporter reporter, WarningMode warningMode, BuildOperationProgressEventEmitter progressEventEmitter) {
         this.locationReporter = reporter;
         this.warningMode = warningMode;
+        this.progressEventEmitter = progressEventEmitter;
     }
 
     @Override
-    public void featureUsed(FeatureUsage usage) {
-        if (messages.add(usage.getMessage())) {
-            usage = usage.withStackTrace();
+    public void featureUsed(DeprecatedFeatureUsage usage) {
+        String featureMessage = usage.formattedMessage();
+        if (messages.add(featureMessage)) {
             StringBuilder message = new StringBuilder();
             locationReporter.reportLocation(usage, message);
             if (message.length() > 0) {
                 message.append(SystemProperties.getInstance().getLineSeparator());
             }
-            message.append(usage.getMessage());
-            logTraceIfNecessary(usage.getStack(), message);
-            if (warningMode == WarningMode.All) {
+            message.append(featureMessage);
+            appendLogTraceIfNecessary(usage.getStack(), message);
+            if (warningMode.shouldDisplayMessages()) {
                 LOGGER.warn(message.toString());
             }
+            if (warningMode == WarningMode.Fail) {
+                if (error == null) {
+                    error = new GradleException(WARNING_SUMMARY + " " + GradleVersion.current().getNextMajor().getVersion());
+                }
+            }
+        }
+        fireDeprecatedUsageBuildOperationProgress(usage);
+    }
+
+    private void fireDeprecatedUsageBuildOperationProgress(DeprecatedFeatureUsage usage) {
+        if (progressEventEmitter != null) {
+            progressEventEmitter.emitNowIfCurrent(new DefaultDeprecatedUsageProgressDetails(usage));
         }
     }
 
     public void reset() {
+        progressEventEmitter = null;
         messages.clear();
+        error = null;
     }
 
     public void reportSuppressedDeprecations() {
         if (warningMode == WarningMode.Summary && !messages.isEmpty()) {
-            LOGGER.warn("\n{} {}.\n{} {}",
+            LOGGER.warn("\n{} {}.\nUse '--{} {}' to show the individual deprecation warnings.\n{} {}",
                 WARNING_SUMMARY, GradleVersion.current().getNextMajor().getVersion(),
+                LoggingConfigurationBuildOptions.WarningsOption.LONG_OPTION, WarningMode.All.name().toLowerCase(),
                 WARNING_LOGGING_DOCS_MESSAGE, DOCUMENTATION_REGISTRY.getDocumentationFor("command_line_interface", "sec:command_line_warnings"));
         }
     }
 
-    private static void logTraceIfNecessary(List<StackTraceElement> stack, StringBuilder message) {
+    private static void appendLogTraceIfNecessary(List<StackTraceElement> stack, StringBuilder message) {
         final String lineSeparator = SystemProperties.getInstance().getLineSeparator();
 
         if (isTraceLoggingEnabled()) {
@@ -126,7 +144,7 @@ public class LoggingDeprecatedFeatureHandler implements FeatureHandler {
         fileName = fileName.toLowerCase(Locale.US);
         if (fileName.endsWith(".gradle") // ordinary Groovy Gradle script
             || fileName.endsWith(".gradle.kts") // Kotlin Gradle script
-            ) {
+        ) {
             return true;
         }
         return false;
@@ -152,18 +170,8 @@ public class LoggingDeprecatedFeatureHandler implements FeatureHandler {
         return Boolean.parseBoolean(value);
     }
 
-    private static String initDeprecationMessage() {
-        String messageBase = "has been deprecated and is scheduled to be removed in";
-        String when = String.format("Gradle %s", GradleVersion.current().getNextMajor().getVersion());
-
-        return String.format("%s %s", messageBase, when);
-    }
-
-    public static String getDeprecationMessage() {
-        if (deprecationMessage == null) {
-            deprecationMessage = initDeprecationMessage();
-        }
-        return deprecationMessage;
+    public GradleException getDeprecationFailure() {
+        return error;
     }
 
     private enum DoNothingReporter implements UsageLocationReporter {

@@ -19,35 +19,33 @@ package org.gradle.api.internal.artifacts.ivyservice.resolveengine;
 import org.gradle.api.artifacts.component.ProjectComponentIdentifier;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.conflicts.DefaultConflictResolverDetails;
 import org.gradle.internal.Cast;
-import org.gradle.internal.component.model.ComponentResolveMetadata;
 
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
-class ProjectDependencyForcingResolver implements ModuleConflictResolver {
-    private final ModuleConflictResolver delegate;
+class ProjectDependencyForcingResolver<T extends ComponentResolutionState> implements ModuleConflictResolver<T> {
+    private final ModuleConflictResolver<T> delegate;
 
-    ProjectDependencyForcingResolver(ModuleConflictResolver delegate) {
+    ProjectDependencyForcingResolver(ModuleConflictResolver<T> delegate) {
         this.delegate = delegate;
     }
 
     @Override
-    public <T extends ComponentResolutionState> void select(ConflictResolverDetails<T> details) {
+    public void select(ConflictResolverDetails<T> details) {
         // the collection will only be initialized if more than one project candidate is found
         Collection<T> projectCandidates = null;
         T foundProjectCandidate = null;
         // fine one or more project dependencies among conflicting modules
         for (T candidate : details.getCandidates()) {
-            ComponentResolveMetadata metaData = candidate.getMetaData();
-            if (metaData != null && metaData.getComponentId() instanceof ProjectComponentIdentifier) {
+            if (candidate.getComponentId() instanceof ProjectComponentIdentifier) {
                 if (foundProjectCandidate == null) {
                     // found the first project dependency
                     foundProjectCandidate = candidate;
                 } else {
                     // found more than one
                     if (projectCandidates == null) {
-                        projectCandidates = new ArrayList<T>();
+                        projectCandidates = new ArrayList<>();
                         projectCandidates.add(foundProjectCandidate);
                     }
                     projectCandidates.add(candidate);
@@ -57,7 +55,7 @@ class ProjectDependencyForcingResolver implements ModuleConflictResolver {
         // if more than one conflicting project dependencies
         // let the delegate resolver select among them
         if (projectCandidates != null) {
-            ConflictResolverDetails<T> projectDetails = new DefaultConflictResolverDetails<T>(Cast.<List<T>>uncheckedCast(projectCandidates));
+            ConflictResolverDetails<T> projectDetails = new DefaultConflictResolverDetails<>(Cast.<List<T>>uncheckedCast(projectCandidates));
             delegate.select(projectDetails);
             details.select(projectDetails.getSelected());
             return;

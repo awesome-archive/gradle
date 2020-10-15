@@ -18,6 +18,7 @@ package org.gradle.integtests.resolve.http
 
 import org.gradle.integtests.fixtures.AbstractHttpDependencyResolutionTest
 import org.gradle.integtests.fixtures.TestResources
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.test.fixtures.keystore.TestKeyStore
 import org.gradle.test.fixtures.server.http.AuthScheme
 import org.junit.Rule
@@ -29,7 +30,9 @@ abstract class AbstractHttpsRepoResolveIntegrationTest extends AbstractHttpDepen
     @Rule TestResources resources = new TestResources(temporaryFolder)
     TestKeyStore keyStore
 
-    abstract protected String setupRepo(boolean useAuth)
+    abstract protected void setupRepo(boolean useAuth)
+
+    abstract protected String getRepoType()
 
     @Unroll
     def "resolve with server certificate and #authSchemeName authentication"() {
@@ -37,7 +40,7 @@ abstract class AbstractHttpsRepoResolveIntegrationTest extends AbstractHttpDepen
         keyStore.enableSslWithServerCert(server)
         server.authenticationScheme = authScheme
 
-        def repoType = setupRepo(useAuth)
+        setupRepo(useAuth)
         setupBuildFile(repoType, useAuth)
 
         when:
@@ -61,7 +64,7 @@ abstract class AbstractHttpsRepoResolveIntegrationTest extends AbstractHttpDepen
         keyStore = TestKeyStore.init(resources.dir)
         keyStore.enableSslWithServerAndClientCerts(server)
 
-        def repoType = setupRepo()
+        setupRepo()
         setupBuildFile(repoType)
 
         when:
@@ -72,11 +75,11 @@ abstract class AbstractHttpsRepoResolveIntegrationTest extends AbstractHttpDepen
         file('libs').assertHasDescendants('my-module-1.0.jar')
     }
 
+    @ToBeFixedForConfigurationCache
     def "decent error message when client can't authenticate server"() {
         keyStore = TestKeyStore.init(resources.dir)
         keyStore.enableSslWithServerCert(server)
 
-        def repoType = setupRepo()
         setupBuildFile(repoType)
 
         when:
@@ -85,15 +88,15 @@ abstract class AbstractHttpsRepoResolveIntegrationTest extends AbstractHttpDepen
         fails "libs"
 
         then:
-        failure.assertThatCause(containsText("Could not GET '${server.uri}/repo1/my-group/my-module/1.0/"))
-        failure.error.contains("javax.net.ssl.SSLHandshakeException")
+        failure.assertHasCause("Could not GET '${server.uri}/repo1/my-group/my-module/1.0/")
+        failure.assertThatCause(containsText("java.security.cert.CertPathValidatorException"))
     }
 
+    @ToBeFixedForConfigurationCache
     def "build fails when server can't authenticate client"() {
         keyStore = TestKeyStore.init(resources.dir)
         keyStore.enableSslWithServerAndBadClientCert(server)
 
-        def repoType = setupRepo()
         setupBuildFile(repoType)
 
         when:
@@ -102,8 +105,7 @@ abstract class AbstractHttpsRepoResolveIntegrationTest extends AbstractHttpDepen
         fails "libs"
 
         then:
-        failure.assertThatCause(containsText("Could not GET '${server.uri}/repo1/my-group/my-module/1.0/"))
-        failure.error.contains("at org.apache.http.conn.ssl.SSLConnectionSocketFactory.createLayeredSocket")
+        failure.assertHasCause("Could not GET '${server.uri}/repo1/my-group/my-module/1.0/")
     }
 
     private void setupBuildFile(String repoType, boolean withCredentials = false) {

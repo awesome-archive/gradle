@@ -16,16 +16,19 @@
 
 package org.gradle.internal.component.external.model
 
+import com.google.common.collect.ImmutableList
 import com.google.common.collect.ImmutableListMultimap
+import com.google.common.collect.ImmutableSet
 import com.google.common.collect.LinkedHashMultimap
 import org.gradle.api.artifacts.component.ComponentIdentifier
 import org.gradle.api.artifacts.component.ModuleComponentSelector
-import org.gradle.api.internal.artifacts.DefaultImmutableModuleIdentifierFactory
 import org.gradle.api.internal.artifacts.DefaultModuleIdentifier
-import org.gradle.api.internal.artifacts.ivyservice.resolveengine.excludes.ModuleExclusions
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.excludes.PatternMatchers
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.excludes.ModuleExclusions
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.excludes.specs.ExcludeSpec
 import org.gradle.internal.component.external.descriptor.Artifact
 import org.gradle.internal.component.external.descriptor.DefaultExclude
+import org.gradle.internal.component.external.model.ivy.IvyDependencyDescriptor
 import org.gradle.internal.component.model.ComponentResolveMetadata
 import org.gradle.internal.component.model.ConfigurationMetadata
 import org.gradle.internal.component.model.ConfigurationNotFoundException
@@ -35,6 +38,8 @@ import org.gradle.internal.component.model.Exclude
 import static com.google.common.collect.ImmutableList.copyOf
 
 class IvyDependencyDescriptorTest extends ExternalDependencyDescriptorTest {
+
+    private final static ExcludeSpec NOTHING = new ModuleExclusions().nothing()
 
     @Override
     ExternalDependencyDescriptor create(ModuleComponentSelector selector) {
@@ -90,7 +95,7 @@ class IvyDependencyDescriptorTest extends ExternalDependencyDescriptorTest {
         def fromConfiguration = Stub(ConfigurationMetadata)
 
         given:
-        fromConfiguration.hierarchy >> (['config', 'super'] as LinkedHashSet)
+        fromConfiguration.hierarchy >> ImmutableSet.of('config', 'super')
         def metadata = createWithArtifacts(requested, [artifact1, artifact2, artifact3])
 
         expect:
@@ -99,40 +104,40 @@ class IvyDependencyDescriptorTest extends ExternalDependencyDescriptorTest {
 
     def "excludes nothing when no exclude rules provided"() {
         def dep = createWithExcludes(requested, [])
-        def moduleExclusions = new ModuleExclusions(new DefaultImmutableModuleIdentifierFactory())
+        def moduleExclusions = new ModuleExclusions()
 
         expect:
-        moduleExclusions.excludeAny(copyOf(dep.getConfigurationExcludes(configuration("from").hierarchy))) == ModuleExclusions.excludeNone()
-        moduleExclusions.excludeAny(copyOf(dep.getConfigurationExcludes(configuration("anything").hierarchy))) == ModuleExclusions.excludeNone()
+        moduleExclusions.excludeAny(copyOf(dep.getConfigurationExcludes(configuration("from").hierarchy))) == NOTHING
+        moduleExclusions.excludeAny(copyOf(dep.getConfigurationExcludes(configuration("anything").hierarchy))) == NOTHING
     }
 
     def "excludes nothing when traversing a different configuration"() {
         def exclude = new DefaultExclude(DefaultModuleIdentifier.newId("group", "*"), ["from"] as String[], PatternMatchers.EXACT)
         def dep = createWithExcludes(requested, [exclude])
-        def moduleExclusions = new ModuleExclusions(new DefaultImmutableModuleIdentifierFactory())
+        def moduleExclusions = new ModuleExclusions()
 
         expect:
-        moduleExclusions.excludeAny(copyOf(dep.getConfigurationExcludes(configuration("anything").hierarchy))) == ModuleExclusions.excludeNone()
+        moduleExclusions.excludeAny(copyOf(dep.getConfigurationExcludes(configuration("anything").hierarchy))) == NOTHING
     }
 
     def "applies exclude rules when traversing a configuration"() {
         def exclude = new DefaultExclude(DefaultModuleIdentifier.newId("group", "*"), ["from"] as String[], PatternMatchers.EXACT)
         def dep = createWithExcludes(requested, [exclude])
         def configuration = configuration("from")
-        def moduleExclusions = new ModuleExclusions(new DefaultImmutableModuleIdentifierFactory())
+        def moduleExclusions = new ModuleExclusions()
 
         expect:
-        moduleExclusions.excludeAny(copyOf(dep.getConfigurationExcludes(configuration.hierarchy))) == moduleExclusions.excludeAny(exclude)
+        moduleExclusions.excludeAny(copyOf(dep.getConfigurationExcludes(configuration.hierarchy))) == moduleExclusions.excludeAny(ImmutableList.of(exclude))
     }
 
     def "applies rules when traversing a child of specified configuration"() {
         def exclude = new DefaultExclude(DefaultModuleIdentifier.newId("group", "*"), ["from"] as String[], PatternMatchers.EXACT)
         def dep = createWithExcludes(requested, [exclude])
         def configuration = configuration("child", "from")
-        def moduleExclusions = new ModuleExclusions(new DefaultImmutableModuleIdentifierFactory())
+        def moduleExclusions = new ModuleExclusions()
 
         expect:
-        moduleExclusions.excludeAny(copyOf(dep.getConfigurationExcludes(configuration.hierarchy))) == moduleExclusions.excludeAny(exclude)
+        moduleExclusions.excludeAny(copyOf(dep.getConfigurationExcludes(configuration.hierarchy))) == moduleExclusions.excludeAny(ImmutableList.of(exclude))
     }
 
     def "applies matching exclude rules"() {
@@ -141,10 +146,10 @@ class IvyDependencyDescriptorTest extends ExternalDependencyDescriptorTest {
         def exclude3 = new DefaultExclude(DefaultModuleIdentifier.newId("group3", "*"), ["other"] as String[], PatternMatchers.EXACT)
         def dep = createWithExcludes(requested, [exclude1, exclude2, exclude3])
         def configuration = configuration("from")
-        def moduleExclusions = new ModuleExclusions(new DefaultImmutableModuleIdentifierFactory())
+        def moduleExclusions = new ModuleExclusions()
 
         expect:
-        moduleExclusions.excludeAny(copyOf(dep.getConfigurationExcludes(configuration.hierarchy))) == moduleExclusions.excludeAny(exclude1, exclude2)
+        moduleExclusions.excludeAny(copyOf(dep.getConfigurationExcludes(configuration.hierarchy))) == moduleExclusions.excludeAny(ImmutableList.of(exclude1, exclude2))
     }
 
     def "selects no configurations when no configuration mappings provided"() {
@@ -164,7 +169,7 @@ class IvyDependencyDescriptorTest extends ExternalDependencyDescriptorTest {
         def fromConfig = Stub(ConfigurationMetadata)
         def toConfig1 = Stub(ConfigurationMetadata)
         def toConfig2 = Stub(ConfigurationMetadata)
-        fromConfig.hierarchy >> ["from"]
+        fromConfig.hierarchy >> ImmutableSet.of("from")
         toComponent.getConfiguration("to-1") >> toConfig1
         toComponent.getConfiguration("to-2") >> toConfig2
 
@@ -184,7 +189,7 @@ class IvyDependencyDescriptorTest extends ExternalDependencyDescriptorTest {
         def fromConfig = Stub(ConfigurationMetadata)
         def toConfig1 = Stub(ConfigurationMetadata)
         def toConfig2 = Stub(ConfigurationMetadata)
-        fromConfig.hierarchy >> ["from", "super"]
+        fromConfig.hierarchy >> ImmutableSet.of("from", "super")
         toComponent.getConfiguration("to-1") >> toConfig1
         toComponent.getConfiguration("to-2") >> toConfig2
 
@@ -205,8 +210,8 @@ class IvyDependencyDescriptorTest extends ExternalDependencyDescriptorTest {
         def fromConfig2 = Stub(ConfigurationMetadata)
         def toConfig1 = Stub(ConfigurationMetadata)
         def toConfig2 = Stub(ConfigurationMetadata)
-        fromConfig.hierarchy >> ["from"]
-        fromConfig2.hierarchy >> ["other"]
+        fromConfig.hierarchy >> ImmutableSet.of("from")
+        fromConfig2.hierarchy >> ImmutableSet.of("other")
         toComponent.getConfiguration("to-1") >> toConfig1
         toComponent.getConfiguration("to-2") >> toConfig2
 
@@ -224,7 +229,7 @@ class IvyDependencyDescriptorTest extends ExternalDependencyDescriptorTest {
         def fromComponent = Stub(ComponentIdentifier)
         def toComponent = Stub(ComponentResolveMetadata)
         def fromConfig = Stub(ConfigurationMetadata)
-        fromConfig.hierarchy >> ["from"]
+        fromConfig.hierarchy >> ImmutableSet.of("from")
         def toConfig1 = config('to-1', true)
         def toConfig2 = config('to-2', true)
         def toConfig3 = config('to-3', false)
@@ -247,7 +252,7 @@ class IvyDependencyDescriptorTest extends ExternalDependencyDescriptorTest {
         def toConfig1 = Stub(ConfigurationMetadata)
         toConfig1.visible >> visible
         toConfig1.name >> name
-        toConfig1.getHierarchy() >> [name]
+        toConfig1.getHierarchy() >> ImmutableSet.of(name)
         toConfig1
     }
 
@@ -259,9 +264,9 @@ class IvyDependencyDescriptorTest extends ExternalDependencyDescriptorTest {
         def fromConfig3 = Stub(ConfigurationMetadata)
         def toConfig1 = Stub(ConfigurationMetadata)
         def toConfig2 = Stub(ConfigurationMetadata)
-        fromConfig.hierarchy >> ["from"]
-        fromConfig2.hierarchy >> ["child", "from"]
-        fromConfig3.hierarchy >> ["other"]
+        fromConfig.hierarchy >> ImmutableSet.of("from")
+        fromConfig2.hierarchy >> ImmutableSet.of("child", "from")
+        fromConfig3.hierarchy >> ImmutableSet.of("other")
         toComponent.getConfiguration("to-1") >> toConfig1
         toComponent.getConfiguration("to-2") >> toConfig2
 
@@ -286,9 +291,9 @@ class IvyDependencyDescriptorTest extends ExternalDependencyDescriptorTest {
         def toConfig1 = Stub(ConfigurationMetadata)
         def toConfig2 = Stub(ConfigurationMetadata)
         def toConfig3 = Stub(ConfigurationMetadata)
-        fromConfig.hierarchy >> ["from"]
-        fromConfig2.hierarchy >> ["child", "from"]
-        fromConfig3.hierarchy >> ["other"]
+        fromConfig.hierarchy >> ImmutableSet.of("from")
+        fromConfig2.hierarchy >> ImmutableSet.of("child", "from")
+        fromConfig3.hierarchy >> ImmutableSet.of("other")
         toComponent.getConfiguration("to-1") >> toConfig1
         toComponent.getConfiguration("to-2") >> toConfig2
         toComponent.getConfiguration("to-3") >> toConfig3
@@ -313,9 +318,9 @@ class IvyDependencyDescriptorTest extends ExternalDependencyDescriptorTest {
         def fromConfig3 = Stub(ConfigurationMetadata)
         def toConfig1 = Stub(ConfigurationMetadata)
         def toConfig2 = Stub(ConfigurationMetadata)
-        fromConfig.hierarchy >> ["from"]
-        fromConfig2.hierarchy >> ["other"]
-        fromConfig3.hierarchy >> ["other2"]
+        fromConfig.hierarchy >> ImmutableSet.of("from")
+        fromConfig2.hierarchy >> ImmutableSet.of("other")
+        fromConfig3.hierarchy >> ImmutableSet.of("other2")
         toConfig1.visible >> true
         toConfig2.visible >> true
         toComponent.getConfigurationNames() >> ["to-1", "to-2"]
@@ -341,8 +346,8 @@ class IvyDependencyDescriptorTest extends ExternalDependencyDescriptorTest {
         def fromConfig = Stub(ConfigurationMetadata)
         def fromConfig2 = Stub(ConfigurationMetadata)
         def toConfig1 = Stub(ConfigurationMetadata)
-        fromConfig.hierarchy >> ["a"]
-        fromConfig2.hierarchy >> ["other", "a"]
+        fromConfig.hierarchy >> ImmutableSet.of("a")
+        fromConfig2.hierarchy >> ImmutableSet.of("other", "a")
         toComponent.getConfiguration("a") >> toConfig1
 
         def configMapping = LinkedHashMultimap.create()
@@ -363,8 +368,8 @@ class IvyDependencyDescriptorTest extends ExternalDependencyDescriptorTest {
         def toConfig2 = Stub(ConfigurationMetadata)
         fromConfig.name >> "a"
         fromConfig2.name >> "b"
-        fromConfig.hierarchy >> ["a"]
-        fromConfig2.hierarchy >> ["b", "a"]
+        fromConfig.hierarchy >> ImmutableSet.of("a")
+        fromConfig2.hierarchy >> ImmutableSet.of("b", "a")
         toComponent.getConfiguration("a") >> toConfig1
         toComponent.getConfiguration("b") >> toConfig2
 
@@ -386,8 +391,8 @@ class IvyDependencyDescriptorTest extends ExternalDependencyDescriptorTest {
         def toConfig2 = Stub(ConfigurationMetadata)
         fromConfig.name >> "a"
         fromConfig2.name >> "b"
-        fromConfig.hierarchy >> ["a"]
-        fromConfig2.hierarchy >> ["b", "a"]
+        fromConfig.hierarchy >> ImmutableSet.of("a")
+        fromConfig2.hierarchy >> ImmutableSet.of("b", "a")
         toComponent.getConfiguration("a") >> toConfig1
         toComponent.getConfiguration("b") >> toConfig2
 
@@ -416,9 +421,9 @@ class IvyDependencyDescriptorTest extends ExternalDependencyDescriptorTest {
             getDisplayName() >> "thing b"
         }
         def toComponent = Stub(ComponentResolveMetadata)
-        toComponent.componentId >> toId
+        toComponent.id >> toId
         def fromConfig = Stub(ConfigurationMetadata)
-        fromConfig.hierarchy >> ["from"]
+        fromConfig.hierarchy >> ImmutableSet.of("from")
         fromConfig.name >> "from"
         toComponent.getConfiguration(_) >> null
 

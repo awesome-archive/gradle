@@ -30,9 +30,9 @@ import java.util.List;
 public class GrammarDelegate {
     public static List<GrammarDelegate> extractGrammarDelegates(GrammarFile antlrGrammarFile) {
         List<GrammarDelegate> grammarDelegates = new ArrayList<GrammarDelegate>();
-        Enumeration grammarFileGramars = antlrGrammarFile.getGrammars().elements();
-        while (grammarFileGramars.hasMoreElements()) {
-            grammarDelegates.add(new GrammarDelegate(grammarFileGramars.nextElement()));
+        Enumeration<?> grammarFileGrammars = antlrGrammarFile.getGrammars().elements();
+        while (grammarFileGrammars.hasMoreElements()) {
+            grammarDelegates.add(new GrammarDelegate(grammarFileGrammars.nextElement()));
         }
         return grammarDelegates;
     }
@@ -82,7 +82,7 @@ public class GrammarDelegate {
     /**
      * Retrieves the name of this vocabulary imported by this grammar.
      *
-     * @return The gammar's imported vocabulary name.
+     * @return The grammar's imported vocabulary name.
      */
     public String getImportVocab() {
         return importVocab;
@@ -91,7 +91,7 @@ public class GrammarDelegate {
     /**
      * Retrieves the name of this vocabulary exported by this grammar.
      *
-     * @return The gammar's exported vocabulary name.
+     * @return The grammar's exported vocabulary name.
      */
     public String getExportVocab() {
         return exportVocab;
@@ -127,18 +127,18 @@ public class GrammarDelegate {
         return vocabName;
     }
 
-    private static final Class ANTLR_GRAMMAR_CLASS;
-    private static final Class ANTLR_OPTION_CLASS;
+    private static final Class<?> ANTLR_GRAMMAR_CLASS;
+    private static final Class<?> ANTLR_OPTION_CLASS;
 
     static {
         ANTLR_GRAMMAR_CLASS = loadAntlrClass("antlr.preprocessor.Grammar");
         ANTLR_OPTION_CLASS = loadAntlrClass("antlr.preprocessor.Option");
     }
 
-    public static final Class[] NO_ARG_SIGNATURE = new Class[0];
+    public static final Class<?>[] NO_ARG_SIGNATURE = new Class<?>[0];
     public static final Object[] NO_ARGS = new Object[0];
 
-    private static Class loadAntlrClass(String className) {
+    private static Class<?> loadAntlrClass(String className) {
         try {
             return Class.forName(className, true, GrammarDelegate.class.getClassLoader());
         } catch (ClassNotFoundException e) {

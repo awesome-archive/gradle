@@ -16,15 +16,15 @@
 
 package org.gradle.internal.resource.transport.http
 
+import org.gradle.api.internal.DocumentationRegistry
 import org.gradle.api.logging.LogLevel
 import org.gradle.internal.logging.CollectingTestOutputEventListener
 import org.gradle.internal.logging.ConfigureLogging
 import org.gradle.test.fixtures.server.http.HttpServer
-import org.gradle.testing.internal.util.Specification
 import org.junit.Rule
+import spock.lang.Specification
 import spock.lang.Unroll
 
-import javax.servlet.http.Cookie
 import javax.servlet.http.HttpServletRequest
 import javax.servlet.http.HttpServletResponse
 
@@ -40,13 +40,14 @@ class CookieHeaderTest extends Specification {
     HttpSettings settings = DefaultHttpSettings.builder()
         .withAuthenticationSettings([])
         .withSslContextFactory(sslContextFactory)
+        .withRedirectVerifier({})
         .build()
-    HttpClientHelper client = new HttpClientHelper(settings)
+    HttpClientHelper client = new HttpClientHelper(new DocumentationRegistry(), settings)
 
     def "cookie header with attributes #attributes can be parsed"() {
         httpServer.start()
         httpServer.expect("/cookie", ['GET'],
-            new RespondWithCookieAction("some; ${attributes}"))
+            new RespondWithCookieAction("some", attributes))
         when:
         client.performGet("${httpServer.address}/cookie", false)
 
@@ -66,15 +67,17 @@ class CookieHeaderTest extends Specification {
 
 class RespondWithCookieAction extends HttpServer.ActionSupport {
     private final String cookie
+    private final String attributes
 
-    RespondWithCookieAction(String cookie) {
+    RespondWithCookieAction(String cookie, String attributes) {
         super("Return cookie header ${cookie}")
         this.cookie = cookie
+        this.attributes = attributes
     }
 
     @Override
     void handle(HttpServletRequest request, HttpServletResponse response) {
-        response.addCookie(new Cookie("cookie_name", cookie))
+        response.addHeader("Set-Cookie", "cookie_name=$cookie; $attributes")
         String message = "Cookie sent"
         response.setContentLength(message.bytes.length)
         response.setContentType("text/html")

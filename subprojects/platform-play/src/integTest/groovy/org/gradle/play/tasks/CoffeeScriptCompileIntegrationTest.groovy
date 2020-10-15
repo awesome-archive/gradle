@@ -16,7 +16,10 @@
 
 package org.gradle.play.tasks
 
-import static org.gradle.play.integtest.fixtures.Repositories.*
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
+
+import static org.gradle.play.integtest.fixtures.Repositories.GRADLE_JS_REPOSITORY
+import static org.gradle.play.integtest.fixtures.Repositories.PLAY_REPOSITORIES
 
 class CoffeeScriptCompileIntegrationTest extends AbstractCoffeeScriptCompileIntegrationTest {
 
@@ -124,6 +127,7 @@ class CoffeeScriptCompileIntegrationTest extends AbstractCoffeeScriptCompileInte
         succeeds "assemble"
 
         when:
+        executer.noDeprecationChecks()
         succeeds "assemble"
 
         then:
@@ -134,12 +138,14 @@ class CoffeeScriptCompileIntegrationTest extends AbstractCoffeeScriptCompileInte
                 ":playBinary")
     }
 
+    @ToBeFixedForConfigurationCache
     def "recompiles when inputs are changed" () {
         given:
         withCoffeeScriptSource(assets("test.coffee"))
         succeeds "assemble"
 
         when:
+        executer.noDeprecationChecks()
         assets("test.coffee") << '\nalert "this is a change!"'
         succeeds "assemble"
 
@@ -151,12 +157,14 @@ class CoffeeScriptCompileIntegrationTest extends AbstractCoffeeScriptCompileInte
                 ":playBinary")
     }
 
+    @ToBeFixedForConfigurationCache
     def "recompiles when outputs are removed" () {
         given:
         withCoffeeScriptSource(assets("test.coffee"))
         succeeds "assemble"
 
         when:
+        executer.noDeprecationChecks()
         hasProcessedCoffeeScript("test")
         compiledCoffeeScript("test.js").delete()
         processedJavaScript("test.js").delete()
@@ -174,6 +182,7 @@ class CoffeeScriptCompileIntegrationTest extends AbstractCoffeeScriptCompileInte
         hasProcessedCoffeeScript("test")
     }
 
+    @ToBeFixedForConfigurationCache
     def "cleans removed source file on compile" () {
         given:
         withCoffeeScriptSource(assets("test1.coffee"))
@@ -191,6 +200,7 @@ class CoffeeScriptCompileIntegrationTest extends AbstractCoffeeScriptCompileInte
         )
 
         when:
+        executer.noDeprecationChecks()
         source2.delete()
         succeeds "assemble"
 

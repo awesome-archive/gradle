@@ -16,19 +16,28 @@
 
 package org.gradle.initialization.buildsrc
 
-import org.gradle.StartParameter
 import org.gradle.api.Action
+import org.gradle.api.file.FileCollection
 import org.gradle.api.internal.GradleInternal
+import org.gradle.api.internal.StartParameterInternal
 import org.gradle.api.internal.component.BuildableJavaComponent
 import org.gradle.api.internal.component.ComponentRegistry
 import org.gradle.api.internal.project.ProjectInternal
+import org.gradle.api.internal.project.ProjectState
 import org.gradle.internal.service.ServiceRegistry
 import spock.lang.Specification
 
+import java.util.function.Function
+
 class BuildSrcBuildListenerFactoryTest extends Specification {
 
-    def startParameter = Mock(StartParameter)
-    def component = Stub(BuildableJavaComponent)
+    def startParameter = Mock(StartParameterInternal)
+    def projectState = Mock(ProjectState) {
+        fromMutableState(_) >> { Function function -> function.apply(project) }
+    }
+    def component = Stub(BuildableJavaComponent) {
+        getRuntimeClasspath() >> Stub(FileCollection)
+    }
     def services = Mock(ServiceRegistry) {
         get(ComponentRegistry) >> Stub(ComponentRegistry) {
             getMainComponent() >> component
@@ -36,6 +45,7 @@ class BuildSrcBuildListenerFactoryTest extends Specification {
     }
     def project = Mock(ProjectInternal) {
         getServices() >> services
+        getMutationState() >> projectState
     }
     def gradle = Mock(GradleInternal) {
         getStartParameter() >> startParameter

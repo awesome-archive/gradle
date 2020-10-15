@@ -19,15 +19,24 @@ package org.gradle.performance.results;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
+import java.util.Arrays;
+import java.util.List;
 
 public class PerformanceDatabase {
+    private static final String PERFORMANCE_DB_URL_PROPERTY_NAME = "org.gradle.performance.db.url";
+    private static final int LOGIN_TIMEOUT_SECONDS = 60;
     private final String databaseName;
-    private final ConnectionAction<Void> schemaInitializer;
+    private final List<ConnectionAction<Void>> databaseInitializers;
     private Connection connection;
 
-    public PerformanceDatabase(String databaseName, ConnectionAction<Void> schemaInitializer) {
+    @SafeVarargs
+    public PerformanceDatabase(String databaseName, ConnectionAction<Void>... schemaInitializers) {
         this.databaseName = databaseName;
-        this.schemaInitializer = schemaInitializer;
+        this.databaseInitializers = Arrays.asList(schemaInitializers);
+    }
+
+    public static boolean isAvailable() {
+        return System.getProperty(PERFORMANCE_DB_URL_PROPERTY_NAME) != null;
     }
 
     public void close() {
@@ -44,25 +53,38 @@ public class PerformanceDatabase {
 
     public <T> T withConnection(ConnectionAction<T> action) throws SQLException {
         if (connection == null) {
+            DriverManager.setLoginTimeout(LOGIN_TIMEOUT_SECONDS);
             connection = DriverManager.getConnection(getUrl(), getUserName(), getPassword());
-            try {
-                schemaInitializer.execute(connection);
-            } catch (SQLException e) {
-                if (e.getErrorCode() == 90096) {
-                    System.out.println("Not enough permissions to migrate the performance database. This is okay if you are only trying to read.");
-                } else {
-                    connection.close();
-                    connection = null;
-                    throw e;
+            for (ConnectionAction<Void> initializer : databaseInitializers) {
+                try {
+                    initializer.execute(connection);
+                } catch (SQLException e) {
+                    if (e.getErrorCode() == 90096) {
+                        System.out.println("Not enough permissions to migrate the performance database. This is okay if you are only trying to read.");
+                    } else {
+                        connection.close();
+                        connection = null;
+                        throw e;
+                    }
                 }
             }
         }
         return action.execute(connection);
     }
 
+    public <T> T withConnection(String actionName, ConnectionAction<T> action) {
+        try {
+            return withConnection(action);
+        } catch (SQLException e) {
+            throw new RuntimeException(String.format("Could not %s from datastore '%s'.", actionName, getUrl()), e);
+        }
+    }
+
     public String getUrl() {
-        String defaultUrl = "jdbc:h2:" + System.getProperty("user.home") + "/.gradle-performance-test-data";
-        String baseUrl = System.getProperty("org.gradle.performance.db.url", defaultUrl);
+        String baseUrl = System.getProperty(PERFORMANCE_DB_URL_PROPERTY_NAME);
+        if (baseUrl == null) {
+            throw new RuntimeException("You need to specify a URL for the performance database");
+        }
         StringBuilder url = new StringBuilder(baseUrl);
         if (!baseUrl.endsWith("/")) {
             url.append('/');

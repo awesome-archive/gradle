@@ -21,16 +21,23 @@ import org.gradle.api.internal.file.RelativeFile;
 import org.gradle.plugins.javascript.base.SourceTransformationException;
 import org.gradle.plugins.javascript.coffeescript.compile.internal.CoffeeScriptCompileDestinationCalculator;
 import org.gradle.plugins.javascript.coffeescript.compile.internal.SerializableCoffeeScriptCompileSpec;
+import org.gradle.process.internal.worker.RequestHandler;
 import org.mozilla.javascript.Context;
 import org.mozilla.javascript.JavaScriptException;
 import org.mozilla.javascript.Scriptable;
 
-import static org.gradle.plugins.javascript.rhino.worker.internal.RhinoWorkerUtils.*;
+import static org.gradle.plugins.javascript.rhino.worker.internal.RhinoWorkerUtils.DefaultScopeOperation;
+import static org.gradle.plugins.javascript.rhino.worker.internal.RhinoWorkerUtils.childScope;
+import static org.gradle.plugins.javascript.rhino.worker.internal.RhinoWorkerUtils.parse;
+import static org.gradle.plugins.javascript.rhino.worker.internal.RhinoWorkerUtils.readFile;
+import static org.gradle.plugins.javascript.rhino.worker.internal.RhinoWorkerUtils.writeFile;
 
-public class CoffeeScriptCompilerWorker implements CoffeeScriptCompilerProtocol {
+public class CoffeeScriptCompilerWorker implements RequestHandler<SerializableCoffeeScriptCompileSpec, Void> {
 
-    public void process(SerializableCoffeeScriptCompileSpec spec) {
+    @Override
+    public Void run(SerializableCoffeeScriptCompileSpec spec) {
         Scriptable coffeeScriptScope = parse(spec.getCoffeeScriptJs(), "UTF-8", new Action<Context>() {
+            @Override
             public void execute(Context context) {
                 context.setOptimizationLevel(-1);
             }
@@ -45,10 +52,12 @@ public class CoffeeScriptCompilerWorker implements CoffeeScriptCompilerProtocol 
             String output = compile(coffeeScriptScope, source, target.getRelativePath().getPathString());
             writeFile(output, destinationCalculator.transform(target.getRelativePath()), encoding);
         }
+        return null;
     }
 
     private String compile(Scriptable rootScope, final String source, final String sourceName) {
         return childScope(rootScope, new DefaultScopeOperation<String>() {
+            @Override
             public String action(Scriptable compileScope, Context context) {
                 compileScope.put("coffeeScriptSource", compileScope, source);
                 try {

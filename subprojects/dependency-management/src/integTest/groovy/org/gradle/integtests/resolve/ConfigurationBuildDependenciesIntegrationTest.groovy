@@ -17,6 +17,7 @@
 package org.gradle.integtests.resolve
 
 import org.gradle.integtests.fixtures.AbstractHttpDependencyResolutionTest
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import spock.lang.Unroll
 
 class ConfigurationBuildDependenciesIntegrationTest extends AbstractHttpDependencyResolutionTest {
@@ -29,7 +30,7 @@ class ConfigurationBuildDependenciesIntegrationTest extends AbstractHttpDependen
                     create('default').extendsFrom compile
                 }
             }
-            task useCompileConfiguration { 
+            task useCompileConfiguration {
                 inputs.files configurations.compile
                 outputs.file file('output.txt')
                 doLast { }
@@ -43,16 +44,16 @@ class ConfigurationBuildDependenciesIntegrationTest extends AbstractHttpDependen
                 task lib
                 task jar
             }
-            dependencies { 
+            dependencies {
                 compile project(':child')
-                compile files('main-lib.jar') { builtBy lib } 
+                compile files('main-lib.jar') { builtBy lib }
             }
             project(':child') {
                 artifacts {
                     compile file: file('child.jar'), builtBy: jar
                 }
-                dependencies { 
-                    compile files('child-lib.jar') { builtBy lib } 
+                dependencies {
+                    compile files('child-lib.jar') { builtBy lib }
                 }
             }
             task direct { inputs.files configurations.compile }
@@ -90,8 +91,8 @@ class ConfigurationBuildDependenciesIntegrationTest extends AbstractHttpDependen
         // A graph from root compile -> child default -> root default, so not an actual cycle here
         // Graph includes artifact and file dependencies on each node, should build all of them
         buildFile << """
-            allprojects { 
-                task jar 
+            allprojects {
+                task jar
                 task lib
                 artifacts {
                     compile file: file("\${project.name}.jar"), builtBy: jar
@@ -127,8 +128,8 @@ class ConfigurationBuildDependenciesIntegrationTest extends AbstractHttpDependen
         // A graph from root compile -> child default -> root compile
         // Graph includes artifact and file dependencies on each node, should build all of them
         buildFile << """
-            allprojects { 
-                task jar 
+            allprojects {
+                task jar
                 task lib
                 artifacts {
                     compile file: file("\${project.name}.jar"), builtBy: jar
@@ -281,14 +282,14 @@ class ConfigurationBuildDependenciesIntegrationTest extends AbstractHttpDependen
                     maven { url '$mavenHttpRepo.uri' }
                 }
             }
-            
+
             dependencies {
                 compile project(':child')
             }
             project(':child') {
                 dependencies {
                     compile 'test:test:1.0'
-                }                
+                }
             }
 """
 
@@ -310,6 +311,7 @@ class ConfigurationBuildDependenciesIntegrationTest extends AbstractHttpDependen
         failure.assertHasCause("Could not get resource '${module.pom.uri}'")
     }
 
+    @ToBeFixedForConfigurationCache
     def "does not download anything when task dependencies are calculated for configuration that is used as a task input"() {
         def module = mavenHttpRepo.module("test", "test", "1.0").publish()
         buildFile << """
@@ -318,12 +320,12 @@ class ConfigurationBuildDependenciesIntegrationTest extends AbstractHttpDependen
                     maven { url '$mavenHttpRepo.uri' }
                 }
             }
-            
+
             dependencies {
                 compile project(':child')
             }
             project(':child') {
-                task jar { 
+                task jar {
                     outputs.files file('thing.jar')
                 }
                 artifacts {
@@ -331,7 +333,7 @@ class ConfigurationBuildDependenciesIntegrationTest extends AbstractHttpDependen
                 }
                 dependencies {
                     compile 'test:test:1.0'
-                }                
+                }
             }
 """
 
@@ -352,6 +354,7 @@ class ConfigurationBuildDependenciesIntegrationTest extends AbstractHttpDependen
         executed ":child:jar", ":useCompileConfiguration"
     }
 
+    @ToBeFixedForConfigurationCache
     def "does not download artifacts when task dependencies are calculated for configuration that is used as a task input when using fluid dependencies"() {
         def module = mavenHttpRepo.module("test", "test", "1.0").publish()
         makeFluid(true)
@@ -361,12 +364,12 @@ class ConfigurationBuildDependenciesIntegrationTest extends AbstractHttpDependen
                     maven { url '$mavenHttpRepo.uri' }
                 }
             }
-            
+
             dependencies {
                 compile project(':child')
             }
             project(':child') {
-                task jar { 
+                task jar {
                     outputs.files file('thing.jar')
                 }
                 artifacts {
@@ -374,7 +377,7 @@ class ConfigurationBuildDependenciesIntegrationTest extends AbstractHttpDependen
                 }
                 dependencies {
                     compile 'test:test:1.0'
-                }                
+                }
             }
 """
 

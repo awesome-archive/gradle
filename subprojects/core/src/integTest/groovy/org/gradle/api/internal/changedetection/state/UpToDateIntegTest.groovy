@@ -21,7 +21,6 @@ import spock.lang.Issue
 
 class UpToDateIntegTest extends AbstractIntegrationSpec {
 
-
     def "empty output directories created automatically are part of up-to-date checking"() {
         given:
         buildFile << '''
@@ -29,15 +28,20 @@ apply plugin: 'base'
 
 task checkCreated {
     dependsOn "createEmpty"
+    def createdDir = file('build/createdDirectory')
     doLast {
-        assert file('build/createdDirectory').exists()
+        assert createdDir.exists()
         println "Directory 'build/createdDirectory' exists"
     }
 }
 
 task("createEmpty", type: CreateEmptyDirectory)
 
-public class CreateEmptyDirectory extends DefaultTask {
+public abstract class CreateEmptyDirectory extends DefaultTask {
+
+    @Inject
+    abstract ProjectLayout getLayout()
+
     @TaskAction
     public void createDir() {
         println "did nothing: output dir is created automatically"
@@ -45,7 +49,7 @@ public class CreateEmptyDirectory extends DefaultTask {
 
     @OutputDirectory
     public File getDirectory() {
-        return new File(getProject().getBuildDir(), "createdDirectory")
+        return layout.buildDirectory.file('createdDirectory').get().asFile
     }
 }
 '''
@@ -60,6 +64,39 @@ public class CreateEmptyDirectory extends DefaultTask {
 
         succeeds("checkCreated")
         result.assertTaskSkipped(":createEmpty")
+    }
+
+    @Issue("https://github.com/gradle/gradle/issues/13554")
+    def "removing an empty output directory is detected even when it existed before the first task execution"() {
+        buildFile << """
+            task createEmptyDir {
+                outputs.dir("empty")
+                doLast {
+                    // do nothing, since Gradle does create the empty directory for us.
+                }
+            }
+        """
+        def emptyDir = file('empty').createDir()
+        def emptyDirTask = ':createEmptyDir'
+
+        when:
+        run emptyDirTask
+        then:
+        executedAndNotSkipped emptyDirTask
+        emptyDir.directory
+
+        when:
+        run emptyDirTask
+        then:
+        skipped emptyDirTask
+        emptyDir.directory
+
+        when:
+        emptyDir.deleteDir()
+        run emptyDirTask
+        then:
+        executedAndNotSkipped emptyDirTask
+        emptyDir.directory
     }
 
     @Issue("https://issues.gradle.org/browse/GRADLE-834")
@@ -84,21 +121,21 @@ public class CreateEmptyDirectory extends DefaultTask {
         buildFile << '''
             task customTask(type: CustomTask) {
                 outputFile = file("$buildDir/outputFile")
-                content = project.findProperty("content")
+                content = providers.gradleProperty('content').forUseAtConfigurationTime().getOrElse(null)
             }
 
             class CustomTask extends DefaultTask {
                 @OutputFile
                 File outputFile
-                
+
                 @Input
                 String content
-            
+
                 @TaskAction
                 public void doStuff() {
                     outputFile.text = content
                 }
-            }            
+            }
         '''
 
         def customTask = ':customTask'
@@ -108,14 +145,14 @@ public class CreateEmptyDirectory extends DefaultTask {
         then:
         executedAndNotSkipped customTask
         result.output =~ notUpToDateBecause
-        result.output.contains('No history is available')
+        outputContains('No history is available')
 
         when:
         run customTask, '-Pcontent=second', '--info'
         then:
         executedAndNotSkipped(customTask)
         result.output =~ notUpToDateBecause
-        result.output.contains("Value of input property 'content' has changed for task '${customTask}'")
+        outputContains("Value of input property 'content' has changed for task '${customTask}'")
 
         when:
         run customTask, '-Pcontent=second', '--info'

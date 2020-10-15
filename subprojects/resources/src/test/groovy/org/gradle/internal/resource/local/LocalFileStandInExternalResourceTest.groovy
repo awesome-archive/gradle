@@ -27,13 +27,9 @@ import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
 import org.junit.Rule
 import spock.lang.Specification
 
-import java.nio.file.Files
-import java.nio.file.LinkOption
-import java.nio.file.attribute.BasicFileAttributeView
-
 class LocalFileStandInExternalResourceTest extends Specification {
     @Rule
-    TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider()
+    TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider(getClass())
 
     def "can apply ContentAction to file contents"() {
         def file = tmpDir.createFile("content")
@@ -383,7 +379,7 @@ class LocalFileStandInExternalResourceTest extends Specification {
     }
 
     def lastModified(File file) {
-        return Files.getFileAttributeView(file.toPath(), BasicFileAttributeView, LinkOption.NOFOLLOW_LINKS).readAttributes().lastModifiedTime().toMillis()
+        TestFiles.fileSystem().stat(file).lastModified
     }
 
 }

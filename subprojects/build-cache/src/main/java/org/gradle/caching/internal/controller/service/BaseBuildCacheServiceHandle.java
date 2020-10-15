@@ -16,31 +16,39 @@
 
 package org.gradle.caching.internal.controller.service;
 
-import org.gradle.api.logging.Logger;
-import org.gradle.api.logging.Logging;
 import org.gradle.caching.BuildCacheEntryReader;
 import org.gradle.caching.BuildCacheKey;
 import org.gradle.caching.BuildCacheService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
 
 public class BaseBuildCacheServiceHandle implements BuildCacheServiceHandle {
 
-    private static final Logger LOGGER = Logging.getLogger(OpFiringBuildCacheServiceHandle.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(OpFiringBuildCacheServiceHandle.class);
 
     protected final BuildCacheService service;
 
     protected final BuildCacheServiceRole role;
     private final boolean pushEnabled;
     private final boolean logStackTraces;
+    private final boolean disableOnError;
 
     private boolean disabled;
 
-    public BaseBuildCacheServiceHandle(BuildCacheService service, boolean push, BuildCacheServiceRole role, boolean logStackTraces) {
+    public BaseBuildCacheServiceHandle(
+        BuildCacheService service,
+        boolean push,
+        BuildCacheServiceRole role,
+        boolean logStackTraces,
+        boolean disableOnError
+    ) {
         this.role = role;
         this.service = service;
         this.pushEnabled = push;
         this.logStackTraces = logStackTraces;
+        this.disableOnError = disableOnError;
     }
 
     @Nullable
@@ -56,7 +64,7 @@ public class BaseBuildCacheServiceHandle implements BuildCacheServiceHandle {
 
     @Override
     public final void load(BuildCacheKey key, LoadTarget loadTarget) {
-        String description = "Load entry " + key.getHashCode() + " from " + role.getDisplayName() + " build cache";
+        String description = "Load entry " + key.getDisplayName() + " from " + role.getDisplayName() + " build cache";
         LOGGER.debug(description);
         try {
             loadInner(description, key, loadTarget);
@@ -80,7 +88,7 @@ public class BaseBuildCacheServiceHandle implements BuildCacheServiceHandle {
 
     @Override
     public final void store(BuildCacheKey key, StoreTarget storeTarget) {
-        String description = "Store entry " + key.getHashCode() + " in " + role.getDisplayName() + " build cache";
+        String description = "Store entry " + key.getDisplayName() + " in " + role.getDisplayName() + " build cache";
         LOGGER.debug(description);
         try {
             storeInner(description, key, storeTarget);
@@ -94,7 +102,9 @@ public class BaseBuildCacheServiceHandle implements BuildCacheServiceHandle {
     }
 
     private void failure(String verb, String preposition, BuildCacheKey key, Throwable e) {
-        disabled = true;
+        if (disableOnError) {
+            disabled = true;
+        }
 
         String description = "Could not " + verb + " entry " + key.getDisplayName() + " " + preposition + " " + role.getDisplayName() + " build cache";
         if (LOGGER.isWarnEnabled()) {

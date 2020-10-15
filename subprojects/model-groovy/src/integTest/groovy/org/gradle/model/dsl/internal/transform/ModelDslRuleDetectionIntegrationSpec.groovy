@@ -17,10 +17,12 @@
 package org.gradle.model.dsl.internal.transform
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
 import spock.lang.Unroll
 
-import static org.hamcrest.Matchers.containsString
+import static org.hamcrest.CoreMatchers.containsString
 
+@UnsupportedWithConfigurationCache(because = "software model")
 class ModelDslRuleDetectionIntegrationSpec extends AbstractIntegrationSpec {
 
     @Unroll

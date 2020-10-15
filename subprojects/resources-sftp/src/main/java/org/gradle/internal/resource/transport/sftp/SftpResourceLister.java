@@ -17,7 +17,7 @@
 package org.gradle.internal.resource.transport.sftp;
 
 import com.jcraft.jsch.ChannelSftp;
-import org.gradle.api.artifacts.repositories.PasswordCredentials;
+import org.gradle.api.credentials.PasswordCredentials;
 import org.gradle.api.resources.ResourceException;
 import org.gradle.internal.resource.transfer.ExternalResourceLister;
 
@@ -35,6 +35,7 @@ public class SftpResourceLister implements ExternalResourceLister {
         this.credentials = credentials;
     }
 
+    @Override
     public List<String> list(URI directory) {
         LockableSftpClient client = sftpClientFactory.createSftpClient(directory, credentials);
 

@@ -17,6 +17,11 @@ package org.gradle.integtests
 
 import groovy.transform.NotYetImplemented
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
+import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
+import org.gradle.util.Requires
+import org.gradle.util.TestPrecondition
+import spock.lang.Issue
 
 class SyncTaskIntegrationTest extends AbstractIntegrationSpec {
 
@@ -45,12 +50,11 @@ class SyncTaskIntegrationTest extends AbstractIntegrationSpec {
 
         then:
         file('dest').assertHasDescendants(
-                'dir1/file1.txt',
-                'dir2/subdir/file2.txt',
-                'dir2/file3.txt'
+            'dir1/file1.txt',
+            'dir2/subdir/file2.txt',
+            'dir2/file3.txt',
+            'emptyDir'
         )
-        !file('dest/someOtherEmptyDir').exists()
-        file('dest/emptyDir').exists()
     }
 
     def 'preserve keeps specified files in destDir'() {
@@ -87,6 +91,7 @@ class SyncTaskIntegrationTest extends AbstractIntegrationSpec {
             'dir2/file3.txt',
             'extraDir/extra.txt',
             'dir1/extraDir/extra.txt',
+            'emptyDir'
         )
     }
 
@@ -119,13 +124,14 @@ class SyncTaskIntegrationTest extends AbstractIntegrationSpec {
         run 'sync'
 
         then:
-        file('dest').allDescendants() == [
+        file('dest').assertHasDescendants(
             'dir1/file1.txt',
             'dir2/subdir/file2.txt',
             'dir2/file3.txt',
             'someOtherDir/preserved.txt',
-            'somePreservedDir/preserved.txt'
-        ] as Set
+            'somePreservedDir/preserved.txt',
+            'emptyDir'
+        )
     }
 
     def 'sync is up to date when only changing preserved files'() {
@@ -153,21 +159,21 @@ class SyncTaskIntegrationTest extends AbstractIntegrationSpec {
 
         then:
         file('dest').allDescendants() == ['not-preserved.txt', 'preserved.txt'] as Set
-        skippedTasks.empty
+        noneSkipped()
 
         when:
         file('dest/preserved.txt').text = 'Changed!'
         run 'sync'
 
         then:
-        skippedTasks == [':sync'] as Set
+        skipped ':sync'
 
         when:
         file('dest/not-preserved.txt').text = 'Changed!'
         run 'sync'
 
         then:
-        skippedTasks.empty
+        executedAndNotSkipped ':sync'
     }
 
     @NotYetImplemented
@@ -187,14 +193,14 @@ class SyncTaskIntegrationTest extends AbstractIntegrationSpec {
         run 'sync'
 
         then:
-        skippedTasks.empty
+        noneSkipped()
 
         when:
         file('dest/new-file.txt').text = 'Created!'
         run 'sync'
 
         then:
-        skippedTasks.empty
+        noneSkipped()
     }
 
     @NotYetImplemented
@@ -219,7 +225,7 @@ class SyncTaskIntegrationTest extends AbstractIntegrationSpec {
         run 'sync'
 
         then:
-        skippedTasks.empty
+        noneSkipped()
         file('dest/preserved').exists()
 
         when:
@@ -232,7 +238,7 @@ class SyncTaskIntegrationTest extends AbstractIntegrationSpec {
         run 'sync'
 
         then:
-        skippedTasks.empty
+        noneSkipped()
         !file('dest/preserved').exists()
     }
 
@@ -241,7 +247,7 @@ class SyncTaskIntegrationTest extends AbstractIntegrationSpec {
         defaultSourceFileTree()
         file('dest').create {
             some {
-                '.git' { }
+                '.git' {}
             }
             out {
                 '.git' {
@@ -276,8 +282,8 @@ class SyncTaskIntegrationTest extends AbstractIntegrationSpec {
         given:
         defaultSourceFileTree()
         file('dest').create {
-            preservedDir { }
-            nonPreservedDir { }
+            preservedDir {}
+            nonPreservedDir {}
         }
 
         buildScript '''
@@ -299,6 +305,7 @@ class SyncTaskIntegrationTest extends AbstractIntegrationSpec {
         !file('dest/nonPreservedDir').isDirectory()
     }
 
+    @UnsupportedWithConfigurationCache(because = "Task.getProject() during execution")
     def "sync action"() {
         given:
         defaultSourceFileTree()
@@ -324,13 +331,15 @@ class SyncTaskIntegrationTest extends AbstractIntegrationSpec {
         file('dest').assertHasDescendants(
             'dir1/file1.txt',
             'dir2/subdir/file2.txt',
-            'dir2/file3.txt'
+            'dir2/file3.txt',
+            'emptyDir'
         )
         file('dest/emptyDir').exists()
         !file('dest/extra1.txt').exists()
         !file('dest/extraDir/extra2.txt').exists()
     }
 
+    @ToBeFixedForConfigurationCache(because = "Task.getProject() during execution")
     def "sync single files"() {
         given:
         file('source').create {
@@ -362,6 +371,111 @@ class SyncTaskIntegrationTest extends AbstractIntegrationSpec {
         !file('dest/extra.txt').exists()
     }
 
+    @Requires(TestPrecondition.WINDOWS)
+    @ToBeFixedForConfigurationCache(because = "Task.getProject() during execution")
+    def "sync fails when unable to clean-up files"() {
+        given:
+        file('source').create {
+            file 'file1.txt'
+            file 'file2.txt'
+        }
+        file('dest').create {
+            file 'extra.txt'
+        }
+        // Intentionally hold open a file
+        def ins = new FileInputStream(file("dest/extra.txt"))
+        buildScript '''
+            task syncIt {
+                doLast {
+                    project.sync {
+                        from 'source'
+                        into 'dest'
+                    }
+                }
+            }
+        '''.stripIndent()
+
+        expect:
+        fails 'syncIt'
+
+        cleanup:
+        ins.close()
+    }
+
+    @Issue("https://github.com/gradle/gradle/issues/9586")
+    def "change in case of input file will sync properly"() {
+        given:
+        def uppercaseFile = file('FILE.TXT')
+        def lowercaseFile = file('file.txt').createFile()
+        buildFile << '''
+            task syncIt(type: Sync) {
+                from providers.systemProperty("capitalize").map { "FILE.TXT" }.orElse("file.txt")
+                into buildDir
+            }
+        '''
+        and:
+        run 'syncIt'
+        file('build/file.txt').assertExists()
+
+        and:
+        lowercaseFile.renameTo(uppercaseFile)
+        assert uppercaseFile.canonicalFile.name == 'FILE.TXT'
+
+        when:
+        succeeds('syncIt', '-Dcapitalize')
+        then:
+        executedAndNotSkipped ':syncIt'
+        file('build/FILE.TXT').with {
+            assert it.parentFile.list() != [].toArray()
+            assert it.assertExists()
+            assert it.canonicalFile.name == 'FILE.TXT'
+        }
+    }
+
+    @ToBeFixedForConfigurationCache(skip = ToBeFixedForConfigurationCache.Skip.FLAKY)
+    @Issue("https://github.com/gradle/gradle/issues/9586")
+    def "change in case of input folder will sync properly"() {
+        given:
+        def uppercaseDir = file('DIR')
+        def lowercaseDir = file('dir').create {
+            file('file.txt').createFile()
+            nestedDir {
+                file('nestedDirFile1.txt').createFile()
+                file('nestedDirFile2.txt').createFile()
+            }
+        }
+        buildFile << '''
+            task syncIt(type: Sync) {
+                from providers.systemProperty("capitalize").map { "DIR" }.orElse("dir")
+                into buildDir
+            }
+        '''
+        and:
+        run 'syncIt'
+        file('build').assertHasDescendants(
+            'file.txt',
+            'nestedDir/nestedDirFile1.txt',
+            'nestedDir/nestedDirFile2.txt'
+        )
+        and:
+        lowercaseDir.renameTo(uppercaseDir)
+
+        def uppercaseNestedDir = new File(uppercaseDir, 'NESTEDDIR')
+        new File(uppercaseDir, 'nestedDir').renameTo(uppercaseNestedDir)
+        new File(uppercaseNestedDir, 'nestedDirFile2.txt').renameTo(new File(uppercaseNestedDir, 'NESTEDDIRFILE2.TXT'))
+
+        when:
+        succeeds('syncIt', '-Dcapitalize')
+        then:
+        executedAndNotSkipped ':syncIt'
+        file('build').assertHasDescendants(
+            'file.txt',
+            'NESTEDDIR/nestedDirFile1.txt',
+            'NESTEDDIR/NESTEDDIRFILE2.TXT'
+        )
+    }
+
+    @ToBeFixedForConfigurationCache(because = "Task.getProject() during execution")
     def "sync from file tree"() {
         given:
         file('source').create {
@@ -399,6 +513,7 @@ class SyncTaskIntegrationTest extends AbstractIntegrationSpec {
         !file('dest/dir2/extra3.txt').exists()
     }
 
+    @ToBeFixedForConfigurationCache(because = "Task.getProject() during execution")
     def "sync from file collection"() {
         given:
         file('source').create {
@@ -438,6 +553,7 @@ class SyncTaskIntegrationTest extends AbstractIntegrationSpec {
         !file('dest/dir2/extra3.txt').exists()
     }
 
+    @ToBeFixedForConfigurationCache(because = "Task.getProject() during execution")
     def "sync from composite file collection"() {
         given:
         file('source').create {
@@ -461,7 +577,7 @@ class SyncTaskIntegrationTest extends AbstractIntegrationSpec {
                 doLast {
                     project.sync {
                         from files('source')
-                        from fileTree('source2') { exclude '**/ignore/**' } 
+                        from fileTree('source2') { exclude '**/ignore/**' }
                         from configurations.compile
                         into 'dest'
                         include { fte -> fte.relativePath.segments.length < 3 && (fte.file.directory || fte.file.name.contains('f')) }

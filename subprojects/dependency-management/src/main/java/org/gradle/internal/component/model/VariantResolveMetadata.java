@@ -16,10 +16,12 @@
 
 package org.gradle.internal.component.model;
 
+import com.google.common.collect.ImmutableList;
+import org.gradle.api.capabilities.CapabilitiesMetadata;
 import org.gradle.api.internal.attributes.AttributeContainerInternal;
 import org.gradle.internal.DisplayName;
 
-import java.util.List;
+import javax.annotation.Nullable;
 
 /**
  * Metadata for a basic variant of a component, that defines only artifacts and no dependencies.
@@ -27,9 +29,22 @@ import java.util.List;
 public interface VariantResolveMetadata {
     String getName();
 
+    /**
+     * An identifier for this variant, if available. A variant may not necessarily have an identifier associated with it, for example if it represents some ad hoc variant.
+     */
+    @Nullable
+    Identifier getIdentifier();
+
     DisplayName asDescribable();
 
     AttributeContainerInternal getAttributes();
 
-    List<? extends ComponentArtifactMetadata> getArtifacts();
+    ImmutableList<? extends ComponentArtifactMetadata> getArtifacts();
+
+    CapabilitiesMetadata getCapabilities();
+
+    boolean isExternalVariant();
+
+    interface Identifier {
+    }
 }

@@ -18,10 +18,11 @@ package org.gradle.nativeplatform.toolchain.internal.msvcpp
 
 import net.rubygrapefruit.platform.MissingRegistryEntryException
 import net.rubygrapefruit.platform.WindowsRegistry
-import org.gradle.internal.text.TreeFormatter
+import org.gradle.internal.logging.text.TreeFormatter
 import org.gradle.nativeplatform.platform.internal.ArchitectureInternal
 import org.gradle.nativeplatform.platform.internal.NativePlatformInternal
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
+import org.gradle.util.TextUtil
 import org.gradle.util.VersionNumber
 import org.junit.Rule
 import spock.lang.Specification
@@ -29,7 +30,7 @@ import spock.lang.Specification
 import static org.gradle.nativeplatform.toolchain.internal.msvcpp.AbstractWindowsKitComponentLocator.PLATFORMS
 
 class WindowsKitWindowsSdkLocatorTest extends Specification {
-    @Rule TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider()
+    @Rule TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider(getClass())
     final WindowsRegistry windowsRegistry = Stub(WindowsRegistry)
     final WindowsComponentLocator<WindowsKitSdkInstall> windowsSdkLocator = new WindowsKitWindowsSdkLocator(windowsRegistry)
 
@@ -118,7 +119,8 @@ class WindowsKitWindowsSdkLocatorTest extends Specification {
         result.explain(visitor)
 
         then:
-        visitor.toString() == "Could not locate a Windows SDK installation. None of the following locations contain a valid installation: ${dir1}"
+        visitor.toString() == TextUtil.toPlatformLineSeparators("""Could not locate a Windows SDK installation. None of the following locations contain a valid installation:
+  - ${dir1}""")
     }
 
     def "SDK not available when registry dir does not contain any versions that look like an SDK"() {
@@ -140,7 +142,8 @@ class WindowsKitWindowsSdkLocatorTest extends Specification {
         result.explain(visitor)
 
         then:
-        visitor.toString() == "Could not locate a Windows SDK installation. None of the following locations contain a valid installation: ${dir1}"
+        visitor.toString() == TextUtil.toPlatformLineSeparators("""Could not locate a Windows SDK installation. None of the following locations contain a valid installation:
+  - ${dir1}""")
     }
 
     def "does not use registry dir versions that do not look like an SDK"() {

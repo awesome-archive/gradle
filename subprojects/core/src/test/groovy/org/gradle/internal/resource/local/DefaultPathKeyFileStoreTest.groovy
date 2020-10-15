@@ -19,13 +19,14 @@ package org.gradle.internal.resource.local
 import org.gradle.api.Action
 import org.gradle.test.fixtures.file.TestFile
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
+import org.gradle.util.TestUtil
 import org.gradle.util.UsesNativeServices
 import org.junit.Rule
 import spock.lang.Specification
 
 @UsesNativeServices
 class DefaultPathKeyFileStoreTest extends Specification {
-    @Rule TestNameTestDirectoryProvider dir = new TestNameTestDirectoryProvider()
+    @Rule TestNameTestDirectoryProvider dir = new TestNameTestDirectoryProvider(getClass())
     TestFile fsBase
     PathKeyFileStore store
 
@@ -33,7 +34,7 @@ class DefaultPathKeyFileStoreTest extends Specification {
 
     def setup() {
         fsBase = dir.file("fs")
-        store = new DefaultPathKeyFileStore(fsBase)
+        store = new DefaultPathKeyFileStore(TestUtil.checksumService, fsBase)
     }
 
     def "can move file to filestore"() {

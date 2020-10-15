@@ -16,11 +16,13 @@
 
 package org.gradle.play.plugins
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.util.TextUtil
 
 class PlayJavaScriptPluginIntegrationTest extends AbstractIntegrationSpec {
 
     def setup() {
+        executer.noDeprecationChecks()
         buildFile << """
             plugins {
                 id 'play-application'
@@ -39,6 +41,7 @@ class PlayJavaScriptPluginIntegrationTest extends AbstractIntegrationSpec {
         """
     }
 
+    @ToBeFixedForConfigurationCache(because = ":components")
     def "javascript source sets appear in component listing"() {
         when:
         succeeds "components"

@@ -25,7 +25,21 @@ import java.util.Map;
 public interface ScalaCompileSpec extends JvmLanguageCompileSpec {
     BaseScalaCompileOptions getScalaCompileOptions();
 
+    Iterable<File> getScalaCompilerPlugins();
+
+    void setScalaCompilerPlugins(Iterable<File> plugins);
+
+    File getClassfileBackupDir();
+
+    void setClassfileBackupDir(File classfileBackupDir);
+
+    File getAnalysisFile();
+
+    void setAnalysisFile(File analysisFile);
+
     Map<File, File> getAnalysisMap();
 
     void setAnalysisMap(Map<File, File> analysisMap);
+
+    long getBuildStartTimestamp();
 }

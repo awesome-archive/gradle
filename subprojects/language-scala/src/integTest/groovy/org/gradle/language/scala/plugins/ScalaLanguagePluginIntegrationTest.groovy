@@ -16,9 +16,11 @@
 
 package org.gradle.language.scala.plugins
 
+import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
 import org.gradle.integtests.language.AbstractJvmPluginLanguageIntegrationTest
 import org.gradle.language.scala.ScalaLanguageSourceSet
 
+@UnsupportedWithConfigurationCache(because = "software model")
 class ScalaLanguagePluginIntegrationTest extends AbstractJvmPluginLanguageIntegrationTest {
     String sourceSetTypeName = ScalaLanguageSourceSet.class.simpleName
 }

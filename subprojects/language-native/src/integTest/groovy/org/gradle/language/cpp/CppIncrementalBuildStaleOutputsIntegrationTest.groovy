@@ -16,6 +16,7 @@
 
 package org.gradle.language.cpp
 
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.integtests.fixtures.SourceFile
 import org.gradle.nativeplatform.fixtures.AbstractInstalledToolChainIntegrationSpec
 import org.gradle.nativeplatform.fixtures.app.IncrementalCppStaleCompileOutputApp
@@ -27,6 +28,7 @@ import org.gradle.nativeplatform.fixtures.app.SourceElement
 
 class CppIncrementalBuildStaleOutputsIntegrationTest extends AbstractInstalledToolChainIntegrationSpec implements CppTaskNames {
 
+    @ToBeFixedForConfigurationCache
     def "removes stale object files for executable"() {
         settingsFile << "rootProject.name = 'app'"
         def app = new IncrementalCppStaleCompileOutputApp()
@@ -53,6 +55,7 @@ class CppIncrementalBuildStaleOutputsIntegrationTest extends AbstractInstalledTo
         installation("build/install/main/debug").exec().out == app.expectedOutput
     }
 
+    @ToBeFixedForConfigurationCache
     def "removes stale object files for library"() {
         def lib = new IncrementalCppStaleCompileOutputLib()
         settingsFile << "rootProject.name = 'hello'"
@@ -78,6 +81,7 @@ class CppIncrementalBuildStaleOutputsIntegrationTest extends AbstractInstalledTo
         sharedLibrary("build/lib/main/debug/hello").assertExists()
     }
 
+    @ToBeFixedForConfigurationCache
     def "removes stale installed executable and library file when all source files for executable are removed"() {
         settingsFile << "include 'app', 'greeter'"
         def app = new IncrementalCppStaleLinkOutputAppWithLib()
@@ -122,13 +126,14 @@ class CppIncrementalBuildStaleOutputsIntegrationTest extends AbstractInstalledTo
 
         executable("app/build/exe/main/debug/app").assertDoesNotExist()
         file("app/build/exe/main/debug").assertDoesNotExist()
-        file("app/build/obj/main/debug").assertHasDescendants()
+        file("app/build/obj/main/debug").assertDoesNotExist()
         installation("app/build/install/main/debug").assertNotInstalled()
 
         sharedLibrary("greeter/build/lib/main/debug/greeter").assertExists()
         file("greeter/build/obj/main/debug").assertHasDescendants(expectIntermediateDescendants(app.library.alternate))
     }
 
+    @ToBeFixedForConfigurationCache
     def "removes stale executable file when all source files are removed"() {
         settingsFile << "rootProject.name = 'app'"
         def app = new IncrementalCppStaleLinkOutputApp()
@@ -159,10 +164,11 @@ class CppIncrementalBuildStaleOutputsIntegrationTest extends AbstractInstalledTo
 
         executable("build/exe/main/debug/app").assertDoesNotExist()
         file("build/exe/main/debug").assertDoesNotExist()
-        file("build/obj/main/debug").assertHasDescendants()
+        file("build/obj/main/debug").assertDoesNotExist()
         installation("build/install/main/debug").assertNotInstalled()
     }
 
+    @ToBeFixedForConfigurationCache
     def "removes stale library file when all source files are removed"() {
         def lib = new IncrementalCppStaleLinkOutputLib()
         settingsFile << "rootProject.name = 'hello'"
@@ -192,7 +198,7 @@ class CppIncrementalBuildStaleOutputsIntegrationTest extends AbstractInstalledTo
 
         sharedLibrary("build/lib/main/debug/hello").assertDoesNotExist()
         file("build/lib/main/debug").assertDoesNotExist()
-        file("build/obj/main/debug").assertHasDescendants()
+        file("build/obj/main/debug").assertDoesNotExist()
     }
 
     private List<String> expectIntermediateDescendants(SourceElement sourceElement) {

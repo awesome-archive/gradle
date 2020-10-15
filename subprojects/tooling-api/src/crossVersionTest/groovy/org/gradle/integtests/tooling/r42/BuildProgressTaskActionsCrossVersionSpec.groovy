@@ -19,13 +19,8 @@ package org.gradle.integtests.tooling.r42
 import org.gradle.integtests.tooling.fixture.ProgressEvents
 import org.gradle.integtests.tooling.fixture.TargetGradleVersion
 import org.gradle.integtests.tooling.fixture.ToolingApiSpecification
-import org.gradle.integtests.tooling.fixture.ToolingApiVersion
 import org.gradle.tooling.ProjectConnection
-import org.gradle.util.Requires
 
-import static org.gradle.util.TestPrecondition.KOTLIN_SCRIPT
-
-@ToolingApiVersion(">=2.5")
 @TargetGradleVersion(">=4.2")
 class BuildProgressTaskActionsCrossVersionSpec extends ToolingApiSpecification {
 
@@ -39,9 +34,9 @@ class BuildProgressTaskActionsCrossVersionSpec extends ToolingApiSpecification {
     //This is not a task action, but it is logged on the same level as the actions
     def "clean stale output action has an informative name"() {
         given:
-        buildFile << """              
+        buildFile << """
             apply plugin: 'base'
-    
+
             task custom {
                 outputs.dir 'build/outputs'
                 doLast {} }
@@ -57,7 +52,8 @@ class BuildProgressTaskActionsCrossVersionSpec extends ToolingApiSpecification {
         task.child('Clean stale outputs')
     }
 
-    //This is the current behavior. Snapshoting might become not-a-task-action in the future.
+    //This is the current behavior. Snapshotting might become not-a-task-action in the future.
+    // NOTE: This operation captures more than just snapshotting, and will be removed in a later release in favor of separate snapshotting operations
     def "snapshot task inputs action has an informative name"() {
         given:
         buildFile << "task custom { doLast {} }"
@@ -71,14 +67,38 @@ class BuildProgressTaskActionsCrossVersionSpec extends ToolingApiSpecification {
         task.child('Snapshot task inputs for :custom')
     }
 
+    @TargetGradleVersion(">=6.0")
+    def "snapshot task inputs and outputs operations have an informative names"() {
+        given:
+        file("input.txt").createFile()
+        buildFile << """
+            task custom {
+                inputs.file("input.txt")
+                outputs.file("output.txt")
+                doLast {
+                    file("output.txt").text = "output"
+                }
+            }
+        """
+        file("gradle.properties") << "org.gradle.caching=true"
+
+        when:
+        runCustomTask()
+
+        then:
+        def task = events.operation("Task :custom")
+        task.descendant("Snapshot inputs and outputs before executing task ':custom'")
+        task.descendant("Snapshot outputs after executing task ':custom'")
+    }
+
     def "task actions implemented in annotated methods are named after the method"() {
         given:
         buildFile << """
         task custom(type: CustomTask)
-        
+
         class CustomTask extends DefaultTask {
             @TaskAction void doSomethingAmazing() { }
-        }    
+        }
         """
 
         when:
@@ -86,13 +106,13 @@ class BuildProgressTaskActionsCrossVersionSpec extends ToolingApiSpecification {
 
         then:
         def task = events.operation("Task :custom")
-        task.child('Execute doSomethingAmazing for :custom')
+        task.descendant('Execute doSomethingAmazing for :custom')
     }
 
     def "task actions defined in doFirst and doLast blocks of Groovy build scripts have informative names"() {
         given:
         buildFile << """
-            task custom { 
+            task custom {
                 doFirst {}
                 doLast {}
             }
@@ -103,15 +123,14 @@ class BuildProgressTaskActionsCrossVersionSpec extends ToolingApiSpecification {
 
         then:
         def task = events.operation("Task :custom")
-        task.child('Execute doFirst {} action for :custom')
-        task.child('Execute doLast {} action for :custom')
+        task.descendant('Execute doFirst {} action for :custom')
+        task.descendant('Execute doLast {} action for :custom')
     }
 
-    @Requires([KOTLIN_SCRIPT])
     def "task actions defined in doFirst and doLast blocks of Kotlin build scripts have informative names"() {
         given:
         buildFileKts << """
-            tasks { "custom" { 
+            tasks { create("custom") {
                 doFirst {}
                 doLast {}
             }}
@@ -122,14 +141,14 @@ class BuildProgressTaskActionsCrossVersionSpec extends ToolingApiSpecification {
 
         then:
         def task = events.operation("Task :custom")
-        task.child('Execute doFirst {} action for :custom')
-        task.child('Execute doLast {} action for :custom')
+        task.descendant('Execute doFirst {} action for :custom')
+        task.descendant('Execute doLast {} action for :custom')
     }
 
     def "task actions defined in doFirst and doLast blocks of Groovy build scripts can be named"() {
         given:
         buildFile << """
-            task custom { 
+            task custom {
                 doFirst("A first step") {}
                 doLast("One last thing...") {}
             }
@@ -140,15 +159,14 @@ class BuildProgressTaskActionsCrossVersionSpec extends ToolingApiSpecification {
 
         then:
         def task = events.operation("Task :custom")
-        task.child('Execute A first step for :custom')
-        task.child('Execute One last thing... for :custom')
+        task.descendant('Execute A first step for :custom')
+        task.descendant('Execute One last thing... for :custom')
     }
 
-    @Requires([KOTLIN_SCRIPT])
     def "task actions defined in doFirst and doLast blocks of Kotlin build scripts can be named"() {
         given:
         buildFileKts << """
-            tasks { "custom" { 
+            tasks { create("custom") {
                 doFirst("A first step") {}
                 doLast("One last thing...") {}
             }}
@@ -159,8 +177,8 @@ class BuildProgressTaskActionsCrossVersionSpec extends ToolingApiSpecification {
 
         then:
         def task = events.operation("Task :custom")
-        task.child('Execute A first step for :custom')
-        task.child('Execute One last thing... for :custom')
+        task.descendant('Execute A first step for :custom')
+        task.descendant('Execute One last thing... for :custom')
     }
 
     private runCustomTask() {

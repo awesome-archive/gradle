@@ -18,6 +18,7 @@ package org.gradle.launcher.daemon
 
 import org.gradle.integtests.fixtures.KillProcessAvailability
 import org.gradle.integtests.fixtures.daemon.DaemonIntegrationSpec
+import org.gradle.internal.remote.internal.inet.InetAddressFactory
 import org.gradle.launcher.daemon.logging.DaemonMessages
 import org.junit.Rule
 import org.junit.rules.ExternalResource
@@ -52,7 +53,7 @@ class DaemonInitialCommunicationFailureIntegrationSpec extends DaemonIntegration
 
         and:
         //starting some service on the daemon port
-        poll {
+        poll(60) {
             server.tryStart(daemon.port)
         }
 
@@ -83,7 +84,7 @@ class DaemonInitialCommunicationFailureIntegrationSpec extends DaemonIntegration
         when:
         daemon.assertIdle()
         daemon.kill()
-        poll {
+        poll(60) {
             server.tryStart(daemon.port)
         }
 
@@ -157,7 +158,7 @@ class DaemonInitialCommunicationFailureIntegrationSpec extends DaemonIntegration
         daemon.assertIdle()
 
         when:
-        def socket = new Socket(InetAddress.getByName(null), daemon.port)
+        def socket = new Socket(new InetAddressFactory().localBindingAddress, daemon.port)
         socket.outputStream.write("GET / HTTP/1.0\n\n".getBytes())
         socket.outputStream.flush()
 

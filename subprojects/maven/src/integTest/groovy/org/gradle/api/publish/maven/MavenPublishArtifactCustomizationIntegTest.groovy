@@ -16,18 +16,26 @@
 
 package org.gradle.api.publish.maven
 
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.integtests.fixtures.publish.maven.AbstractMavenPublishIntegTest
+import spock.lang.Issue
 
 class MavenPublishArtifactCustomizationIntegTest extends AbstractMavenPublishIntegTest {
 
+    @ToBeFixedForConfigurationCache
     def "can attach custom artifacts"() {
         given:
         createBuildScripts("""
+            file("customFile.foo") << 'some foo'
+            file("customFile.bar") << 'some bar'
+
             publications {
                 mavenCustom(MavenPublication) {
                     artifact "customFile.txt"
                     artifact customJar
                     artifact regularFileTask.outputFile
+                    artifact provider { file("customFile.foo") }
+                    artifact provider { "customFile.bar" }
                 }
             }
 """)
@@ -37,7 +45,8 @@ class MavenPublishArtifactCustomizationIntegTest extends AbstractMavenPublishInt
         then:
         def module = mavenRepo.module("group", "projectText", "1.0")
         module.assertPublished()
-        module.assertArtifactsPublished("projectText-1.0.pom", "projectText-1.0.txt", "projectText-1.0-customjar.jar", "projectText-1.0.reg")
+        module.assertArtifactsPublished("projectText-1.0.pom", "projectText-1.0.txt", "projectText-1.0.foo", "projectText-1.0.bar", "projectText-1.0-customjar.jar", "projectText-1.0.reg")
+        result.assertTasksExecuted(":customJar", ":regularFileTask", ":generatePomFileForMavenCustomPublication", ":publishMavenCustomPublicationToMavenRepository", ":publish")
 
         and:
         resolveArtifacts(module) {
@@ -47,6 +56,24 @@ class MavenPublishArtifactCustomizationIntegTest extends AbstractMavenPublishInt
             }
             withoutModuleMetadata {
                 expectFiles "projectText-1.0.txt"
+            }
+        }
+        resolveArtifacts(module) {
+            ext = 'foo'
+            withModuleMetadata {
+                noComponentPublished()
+            }
+            withoutModuleMetadata {
+                expectFiles "projectText-1.0.foo"
+            }
+        }
+        resolveArtifacts(module) {
+            ext = 'bar'
+            withModuleMetadata {
+                noComponentPublished()
+            }
+            withoutModuleMetadata {
+                expectFiles "projectText-1.0.bar"
             }
         }
         resolveArtifacts(module) {
@@ -71,12 +98,11 @@ class MavenPublishArtifactCustomizationIntegTest extends AbstractMavenPublishInt
     }
 
     /**
-     * Not enabled with module metadata.
+     * Fails with module metadata.
      * @see org.gradle.api.publish.maven.internal.publication.DefaultMavenPublication#checkThatArtifactIsPublishedUnmodified
      */
+    @ToBeFixedForConfigurationCache
     def "can modify artifacts added from component"() {
-        disableModuleMetadataPublishing()
-
         given:
         createBuildScripts("""
             publications {
@@ -89,7 +115,7 @@ class MavenPublishArtifactCustomizationIntegTest extends AbstractMavenPublishInt
                     it.classifier = 'classified'
                 }
             }
-""")
+""", 'generateMetadataFileForMavenPublication.enabled = false')
 
         when:
         run "publish"
@@ -115,12 +141,11 @@ class MavenPublishArtifactCustomizationIntegTest extends AbstractMavenPublishInt
     }
 
     /**
-     * Not enabled with module metadata.
+     * Fails with module metadata.
      * @see org.gradle.api.publish.maven.internal.publication.DefaultMavenPublication#checkThatArtifactIsPublishedUnmodified
      */
+    @ToBeFixedForConfigurationCache
     def "can override artifacts added from component"() {
-        disableModuleMetadataPublishing()
-
         given:
         createBuildScripts("""
             publications {
@@ -129,8 +154,7 @@ class MavenPublishArtifactCustomizationIntegTest extends AbstractMavenPublishInt
                     artifacts = ["customFile.txt", customJar]
                 }
             }
-
-""")
+""", 'generateMetadataFileForMavenCustomPublication.enabled = false')
         when:
         succeeds 'publish'
 
@@ -146,7 +170,7 @@ class MavenPublishArtifactCustomizationIntegTest extends AbstractMavenPublishInt
             withModuleMetadata {
                 shouldFail {
                     // We have a publication but artifacts have been modified, which currently disables publication
-                    assertHasDescription 'Could not resolve all files'
+                    assertHasCause 'Could not resolve all files'
                     assertHasCause 'Could not find group:projectText:1.0.'
                 }
             }
@@ -178,6 +202,7 @@ class MavenPublishArtifactCustomizationIntegTest extends AbstractMavenPublishInt
         failure.assertHasCause("Cannot publish module metadata where component artifacts are modified.")
     }
 
+    @ToBeFixedForConfigurationCache
     def "can configure custom artifacts when creating"() {
         given:
         createBuildScripts("""
@@ -196,8 +221,8 @@ class MavenPublishArtifactCustomizationIntegTest extends AbstractMavenPublishInt
                         extension "txt"
                     }
                     artifact customJar {
-                        classifier null
-                        extension "war"
+                        archiveClassifier = null
+                        archiveExtension = "war"
                     }
                 }
             }
@@ -248,6 +273,7 @@ class MavenPublishArtifactCustomizationIntegTest extends AbstractMavenPublishInt
         }
     }
 
+    @ToBeFixedForConfigurationCache
     def "can attach custom file artifacts with map notation"() {
         given:
         createBuildScripts("""
@@ -376,6 +402,22 @@ class MavenPublishArtifactCustomizationIntegTest extends AbstractMavenPublishInt
         failure.assertHasCause("Invalid publication 'mavenCustom': artifact file is a directory")
     }
 
+    def "artifact coordinates are evaluated lazily"() {
+        given:
+        createBuildScripts("""
+            publications.create("mavenCustom", MavenPublication) {
+                artifact customJar
+            }
+        """, "version = 2.0")
+        when:
+        succeeds 'publish'
+
+        then:
+        def module = mavenRepo.module("group", "projectText", "2.0")
+        module.assertPublished()
+        module.assertArtifactsPublished("projectText-2.0.pom", "projectText-2.0-customjar.jar")
+    }
+
     private createBuildScripts(def publications, def append = "") {
         settingsFile << "rootProject.name = 'projectText'"
         buildFile << """
@@ -395,7 +437,8 @@ class MavenPublishArtifactCustomizationIntegTest extends AbstractMavenPublishInt
             }
 
             task regularFileTask {
-                ext.outputFile = newOutputFile()
+                ext.outputFile = project.objects.fileProperty()
+                outputs.file(outputFile)
                 outputFile.set(file('regularFile-1.0.reg'))
                 doLast {
                     outputFile.get().getAsFile() << 'foo'
@@ -404,7 +447,7 @@ class MavenPublishArtifactCustomizationIntegTest extends AbstractMavenPublishInt
 
             task customJar(type: Jar) {
                 from file("customFile.txt")
-                classifier "customjar"
+                archiveClassifier = "customjar"
             }
 
             publishing {
@@ -417,4 +460,139 @@ class MavenPublishArtifactCustomizationIntegTest extends AbstractMavenPublishInt
             $append
         """
     }
+
+    def "can attach a task provider as an artifact"() {
+        createBuildScripts("""
+            def customJar = tasks.register("myJar", Jar) {
+                classifier = 'classy'
+            }
+            publications {
+                mavenCustom(MavenPublication) {
+                    artifact(customJar)
+                }
+            }
+        """)
+
+        when:
+        succeeds(":publish")
+
+        then:
+        executedAndNotSkipped ":myJar", ":publish"
+    }
+
+    def "can attach an arbitrary task provider as an artifact if it has a single output file"() {
+        createBuildScripts("""
+            def customTask = tasks.register("myTask") {
+                outputs.file("\${buildDir}/output.txt")
+                doLast {
+                    file("\${buildDir}/output.txt") << 'custom task'
+                }
+            }
+            publications {
+                mavenCustom(MavenPublication) {
+                    artifact(customTask)
+                }
+            }
+        """)
+
+        when:
+        succeeds(":publish")
+
+        then:
+        executedAndNotSkipped ":myTask", ":publish"
+    }
+
+    @ToBeFixedForConfigurationCache
+    def "reasonable error message when an arbitrary task provider as an artifact has more than one output file"() {
+        createBuildScripts("""
+            def customTask = tasks.register("myTask") {
+                outputs.file("\${buildDir}/output.txt")
+                outputs.file("\${buildDir}/output2.txt")
+                doLast {
+                    file("\${buildDir}/output.txt") << 'custom task'
+                    file("\${buildDir}/output2.txt") << 'custom task'
+                }
+            }
+            publications {
+                mavenCustom(MavenPublication) {
+                    artifact(customTask)
+                }
+            }
+        """)
+
+        when:
+        fails(":publish")
+
+        then:
+        failure.assertHasCause "Expected task 'myTask' output files to contain exactly one file, however, it contains more than one file."
+    }
+
+    def "can attach a mapped task provider output as an artifact"() {
+        createBuildScripts("""
+            def customJar = tasks.register("myJar", Jar) {
+                classifier = 'classy'
+            }
+            publications {
+                mavenCustom(MavenPublication) {
+                    artifact(customJar.flatMap { it.archiveFile })
+                }
+            }
+        """)
+
+        when:
+        succeeds(":publish")
+
+        then:
+        executedAndNotSkipped ":myJar", ":publish"
+    }
+
+    @Issue("https://github.com/gradle/gradle/issues/10960")
+    def "can consume an arbitrary output from another project using the artifact notation"() {
+        settingsFile << """
+            rootProject.name = 'repro'
+            include 'lib'
+        """
+
+        file('lib/build.gradle') << '''
+            plugins {
+                id 'java'
+            }
+
+            configurations.create("srcLicense") {
+                canBeResolved = false
+                canBeConsumed = true
+            }
+
+            def srcLicenseDir = tasks.register("srcLicenseDir", Sync) {
+                into("$buildDir/$name")
+                from("$rootDir/gradle")
+            }
+
+            artifacts {
+                srcLicense(srcLicenseDir)
+            }
+        '''
+
+        file("build.gradle") << """
+            configurations {
+                foo
+            }
+            dependencies {
+                foo(project(path: ':lib', configuration: 'srcLicense'))
+            }
+
+            task resolve {
+                doLast {
+                    println "Output: \${configurations.foo.files.name}"
+                }
+            }
+        """
+
+        when:
+        succeeds ':resolve'
+
+        then:
+        outputContains('Output: [srcLicenseDir]')
+    }
+
 }

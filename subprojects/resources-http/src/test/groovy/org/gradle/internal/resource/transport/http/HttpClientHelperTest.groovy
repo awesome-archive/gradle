@@ -16,11 +16,11 @@
 
 package org.gradle.internal.resource.transport.http
 
-import org.apache.http.client.methods.CloseableHttpResponse
 import org.apache.http.client.methods.HttpGet
 import org.apache.http.client.methods.HttpRequestBase
 import org.apache.http.impl.client.CloseableHttpClient
 import org.apache.http.ssl.SSLContexts
+import org.gradle.api.internal.DocumentationRegistry
 import org.gradle.util.SetSystemProperties
 import org.junit.Rule
 
@@ -28,9 +28,9 @@ class HttpClientHelperTest extends AbstractHttpClientTest {
     @Rule SetSystemProperties sysProp = new SetSystemProperties()
 
     def "throws HttpRequestException if an IO error occurs during a request"() {
-        def client = new HttpClientHelper(httpSettings) {
+        def client = new HttpClientHelper(new DocumentationRegistry(), httpSettings) {
             @Override
-            protected CloseableHttpResponse executeGetOrHead(HttpRequestBase method) {
+            protected HttpClientResponse executeGetOrHead(HttpRequestBase method) {
                 throw new IOException("ouch")
             }
         }
@@ -44,7 +44,7 @@ class HttpClientHelperTest extends AbstractHttpClientTest {
     }
 
     def "response is closed if an error occurs during a request"() {
-        def client = new HttpClientHelper(httpSettings)
+        def client = new HttpClientHelper(new DocumentationRegistry(), httpSettings)
         CloseableHttpClient httpClient = Mock()
         client.client = httpClient
         MockedHttpResponse mockedHttpResponse = mockedHttpResponse()
@@ -60,9 +60,9 @@ class HttpClientHelperTest extends AbstractHttpClientTest {
     }
 
     def "request with revalidate adds Cache-Control header"() {
-        def client = new HttpClientHelper(httpSettings) {
+        def client = new HttpClientHelper(new DocumentationRegistry(), httpSettings) {
             @Override
-            protected CloseableHttpResponse executeGetOrHead(HttpRequestBase method) {
+            protected HttpClientResponse executeGetOrHead(HttpRequestBase method) {
                 return null
             }
         }
@@ -73,6 +73,19 @@ class HttpClientHelperTest extends AbstractHttpClientTest {
 
         then:
         request.getHeaders("Cache-Control")[0].value == "max-age=0"
+    }
+
+    def "stripping user credentials removes username and password"() {
+        given:
+        def uri = new URI("https", "admin:password", "foo.example", 80, null, null, null)
+
+        when:
+        def strippedUri = HttpClientHelper.stripUserCredentials(uri)
+
+        then:
+        strippedUri.userInfo == null
+        strippedUri.scheme == "https"
+        strippedUri.host == "foo.example"
     }
 
     private HttpSettings getHttpSettings() {

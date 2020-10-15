@@ -22,7 +22,9 @@ import org.gradle.api.component.SoftwareComponent;
 import org.gradle.api.internal.artifacts.DefaultModuleVersionIdentifier;
 import org.gradle.api.internal.project.ProjectInternal;
 import org.gradle.execution.ProjectConfigurer;
-import org.gradle.internal.text.TreeFormatter;
+import org.gradle.internal.logging.text.TreeFormatter;
+import org.gradle.internal.service.scopes.Scopes;
+import org.gradle.internal.service.scopes.ServiceScope;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -35,6 +37,7 @@ import java.util.Set;
  * A service that will resolve a ProjectDependency into publication coordinates, to use for publishing.
  * For now is a simple implementation, but at some point could utilise components in the dependency project, usage in the referencing project, etc.
  */
+@ServiceScope(Scopes.Build.class)
 public class DefaultProjectDependencyPublicationResolver implements ProjectDependencyPublicationResolver {
     private final ProjectPublicationRegistry publicationRegistry;
     private final ProjectConfigurer projectConfigurer;
@@ -52,8 +55,8 @@ public class DefaultProjectDependencyPublicationResolver implements ProjectDepen
         // Ensure target project is configured
         projectConfigurer.configureFully(dependencyProject);
 
-        List<ProjectPublication> publications = new ArrayList<ProjectPublication>();
-        for (ProjectPublication publication : publicationRegistry.getPublications(dependencyProject.getPath())) {
+        List<ProjectComponentPublication> publications = new ArrayList<>();
+        for (ProjectComponentPublication publication : publicationRegistry.getPublications(ProjectComponentPublication.class, dependencyProject.getIdentityPath())) {
             if (!publication.isLegacy() && publication.getCoordinates(coordsType) != null) {
                 publications.add(publication);
             }
@@ -62,28 +65,36 @@ public class DefaultProjectDependencyPublicationResolver implements ProjectDepen
         if (publications.isEmpty()) {
             // Project has no publications: simply use the project name in place of the dependency name
             if (coordsType.isAssignableFrom(ModuleVersionIdentifier.class)) {
-                return coordsType.cast(new DefaultModuleVersionIdentifier(dependency.getGroup(), dependencyProject.getName(), dependency.getVersion()));
+                return coordsType.cast(DefaultModuleVersionIdentifier.newId(dependency.getGroup(), dependencyProject.getName(), dependency.getVersion()));
             }
             throw new UnsupportedOperationException(String.format("Could not find any publications of type %s in %s.", coordsType.getSimpleName(), dependencyProject.getDisplayName()));
         }
 
         // Select all entry points. An entry point is a publication that does not contain a component whose parent is also published
-        Set<SoftwareComponent> ignored = new HashSet<SoftwareComponent>();
-        for (ProjectPublication publication : publications) {
+        Set<SoftwareComponent> ignored = new HashSet<>();
+        for (ProjectComponentPublication publication : publications) {
             if (publication.getComponent() != null && publication.getComponent() instanceof ComponentWithVariants) {
                 ComponentWithVariants parent = (ComponentWithVariants) publication.getComponent();
                 ignored.addAll(parent.getVariants());
             }
         }
-        Set<ProjectPublication> topLevel = new LinkedHashSet<ProjectPublication>();
-        for (ProjectPublication publication : publications) {
+        Set<ProjectComponentPublication> topLevel = new LinkedHashSet<>();
+        Set<ProjectComponentPublication> topLevelWithComponent = new LinkedHashSet<>();
+        for (ProjectComponentPublication publication : publications) {
             if (!publication.isAlias() && (publication.getComponent() == null || !ignored.contains(publication.getComponent()))) {
                 topLevel.add(publication);
+                if (publication.getComponent() != null) {
+                    topLevelWithComponent.add(publication);
+                }
             }
         }
 
+        if (topLevelWithComponent.size() == 1) {
+            return topLevelWithComponent.iterator().next().getCoordinates(coordsType);
+        }
+
         // See if all entry points have the same identifier
-        Iterator<ProjectPublication> iterator = topLevel.iterator();
+        Iterator<ProjectComponentPublication> iterator = topLevel.iterator();
         T candidate = iterator.next().getCoordinates(coordsType);
         while (iterator.hasNext()) {
             T alternative = iterator.next().getCoordinates(coordsType);
@@ -92,7 +103,7 @@ public class DefaultProjectDependencyPublicationResolver implements ProjectDepen
                 formatter.node("Publishing is not able to resolve a dependency on a project with multiple publications that have different coordinates.");
                 formatter.node("Found the following publications in " + dependencyProject.getDisplayName());
                 formatter.startChildren();
-                for (ProjectPublication publication : topLevel) {
+                for (ProjectComponentPublication publication : topLevel) {
                     formatter.node(publication.getDisplayName().getCapitalizedDisplayName() + " with coordinates " + publication.getCoordinates(coordsType));
                 }
                 formatter.endChildren();

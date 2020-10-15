@@ -16,7 +16,7 @@
 
 package org.gradle.api.internal.tasks.compile.incremental.asm;
 
-import com.google.common.base.Predicate;
+import java.util.function.Predicate;
 import com.google.common.collect.ImmutableSet;
 
 import java.util.Set;
@@ -41,7 +41,8 @@ class ClassRelevancyFilter implements Predicate<String> {
         this.excludedClassName = excludedClassName;
     }
 
-    public boolean apply(String className) {
+    @Override
+    public boolean test(String className) {
         return !className.startsWith("java.")
             && !excludedClassName.equals(className)
             && !PRIMITIVES.contains(className);

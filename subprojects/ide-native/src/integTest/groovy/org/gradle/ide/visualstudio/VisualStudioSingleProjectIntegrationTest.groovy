@@ -18,6 +18,7 @@ package org.gradle.ide.visualstudio
 
 import groovy.transform.NotYetImplemented
 import org.gradle.ide.visualstudio.fixtures.AbstractVisualStudioIntegrationSpec
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.internal.os.OperatingSystem
 import org.gradle.nativeplatform.fixtures.app.CppHelloWorldApp
 import org.gradle.util.Requires
@@ -33,6 +34,7 @@ class VisualStudioSingleProjectIntegrationTest extends AbstractVisualStudioInteg
         """
     }
 
+    @ToBeFixedForConfigurationCache
     def "create visual studio solution for project without C++ component"() {
         when:
         settingsFile << """
@@ -50,6 +52,33 @@ class VisualStudioSingleProjectIntegrationTest extends AbstractVisualStudioInteg
         mainSolution.assertHasProjects()
     }
 
+    @ToBeFixedForConfigurationCache
+    def "create empty solution when component does not target current OS"() {
+        when:
+        settingsFile << """
+            rootProject.name = 'app'
+        """
+
+        buildFile << """
+            apply plugin: 'cpp-application'
+
+            application {
+                targetMachines = [machines.os('os-family')]
+            }
+        """
+
+        and:
+        run "visualStudio"
+
+        then:
+        executedAndNotSkipped(":visualStudio", ":appVisualStudioSolution", *getProjectTasks("app"))
+
+        and:
+        final mainSolution = solutionFile("app.sln")
+        mainSolution.assertHasProjects("app")
+    }
+
+    @ToBeFixedForConfigurationCache
     def "create visual studio solution for single executable"() {
         when:
         app.writeSources(file("src/main"))
@@ -58,7 +87,7 @@ class VisualStudioSingleProjectIntegrationTest extends AbstractVisualStudioInteg
         """
         buildFile << """
             apply plugin: 'cpp-application'
-            
+
             application {
                 binaries.configureEach { binary ->
                     binary.compileTask.get().macros["TEST"] = null
@@ -90,6 +119,7 @@ class VisualStudioSingleProjectIntegrationTest extends AbstractVisualStudioInteg
         mainSolution.assertReferencesProject(projectFile, projectConfigurations)
     }
 
+    @ToBeFixedForConfigurationCache
     def "create visual studio solution for single shared library"() {
         when:
         app.library.writeSources(file("src/main"))
@@ -98,7 +128,7 @@ class VisualStudioSingleProjectIntegrationTest extends AbstractVisualStudioInteg
         """
         buildFile << """
             apply plugin: 'cpp-library'
-            
+
             library {
                 binaries.configureEach { binary ->
                     binary.compileTask.get().macros["TEST"] = null
@@ -130,6 +160,7 @@ class VisualStudioSingleProjectIntegrationTest extends AbstractVisualStudioInteg
         mainSolution.assertReferencesProject(projectFile, projectConfigurations)
     }
 
+    @ToBeFixedForConfigurationCache
     def "create visual studio solution for single static library"() {
         when:
         app.library.writeSources(file("src/main"))
@@ -138,7 +169,7 @@ class VisualStudioSingleProjectIntegrationTest extends AbstractVisualStudioInteg
         """
         buildFile << """
             apply plugin: 'cpp-library'
-            
+
             library {
                 linkage = [Linkage.STATIC]
                 binaries.configureEach { binary ->
@@ -171,6 +202,7 @@ class VisualStudioSingleProjectIntegrationTest extends AbstractVisualStudioInteg
         mainSolution.assertReferencesProject(projectFile, projectConfigurations)
     }
 
+    @ToBeFixedForConfigurationCache
     def "create visual studio solution for single library with both static and shared linkages"() {
         when:
         app.library.writeSources(file("src/main"))
@@ -179,7 +211,7 @@ class VisualStudioSingleProjectIntegrationTest extends AbstractVisualStudioInteg
         """
         buildFile << """
             apply plugin: 'cpp-library'
-            
+
             library {
                 linkage = [Linkage.STATIC, Linkage.SHARED]
                 binaries.configureEach { binary ->
@@ -248,8 +280,7 @@ class VisualStudioSingleProjectIntegrationTest extends AbstractVisualStudioInteg
             .succeeds()
 
         then:
-        resultDebug.assertTasksExecuted(':compileDebugCpp', ':linkDebug', ':installDebug')
-        resultDebug.assertTasksNotSkipped(':compileDebugCpp', ':linkDebug', ':installDebug')
+        resultDebug.size() == 1
         debugBinary.assertExists()
         installation('build/install/main/debug').assertInstalled()
     }
@@ -267,7 +298,7 @@ class VisualStudioSingleProjectIntegrationTest extends AbstractVisualStudioInteg
         """
         buildFile << """
             apply plugin: 'cpp-library'
-            
+
             library {
                 linkage = [Linkage.STATIC, Linkage.SHARED]
             }
@@ -285,12 +316,12 @@ class VisualStudioSingleProjectIntegrationTest extends AbstractVisualStudioInteg
             .succeeds()
 
         then:
-        resultDebug.assertTasksExecuted(':compileDebugStaticCpp', ':compileDebugSharedCpp', ':createDebugStatic', ':linkDebugShared')
-        resultDebug.assertTasksNotSkipped(':compileDebugStaticCpp', ':compileDebugSharedCpp', ':createDebugStatic', ':linkDebugShared')
+        resultDebug.size() == 2
         debugBinaryLib.assertExists()
         debugBinaryDll.assertExists()
     }
 
+    @ToBeFixedForConfigurationCache
     def "builds solution for component with no source"() {
         given:
         settingsFile << """
@@ -353,7 +384,7 @@ class VisualStudioSingleProjectIntegrationTest extends AbstractVisualStudioInteg
         if (toolChain.visualCpp) {
             return ""
         } else {
-            return configurationName == "release" ? "stripped/" : ""
+            return configurationName.startsWith("release") ? "stripped/" : ""
         }
     }
 }

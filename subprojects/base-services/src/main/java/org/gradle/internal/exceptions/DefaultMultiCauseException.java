@@ -16,6 +16,8 @@
 package org.gradle.internal.exceptions;
 
 import org.gradle.api.GradleException;
+import org.gradle.internal.Factory;
+
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.PrintStream;
@@ -27,24 +29,48 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public class DefaultMultiCauseException extends GradleException implements MultiCauseException {
     private final List<Throwable> causes = new CopyOnWriteArrayList<Throwable>();
     private transient ThreadLocal<Boolean> hideCause = threadLocal();
+    private transient Factory<String> messageFactory;
+    private String message;
 
     public DefaultMultiCauseException(String message) {
         super(message);
+        this.message = message;
     }
 
     public DefaultMultiCauseException(String message, Throwable... causes) {
         super(message);
+        this.message = message;
         this.causes.addAll(Arrays.asList(causes));
     }
 
     public DefaultMultiCauseException(String message, Iterable<? extends Throwable> causes) {
         super(message);
+        this.message = message;
+        initCauses(causes);
+    }
+
+    public DefaultMultiCauseException(Factory<String> messageFactory) {
+        this.messageFactory = messageFactory;
+    }
+
+    public DefaultMultiCauseException(Factory<String> messageFactory, Throwable... causes) {
+        this(messageFactory);
+        this.causes.addAll(Arrays.asList(causes));
+    }
+
+    public DefaultMultiCauseException(Factory<String> messageFactory, Iterable<? extends Throwable> causes) {
+        this(messageFactory);
         initCauses(causes);
     }
 
     private void readObject(ObjectInputStream inputStream) throws IOException, ClassNotFoundException {
         inputStream.defaultReadObject();
         hideCause = threadLocal();
+    }
+
+    private void writeObject(java.io.ObjectOutputStream out) throws IOException {
+        getMessage();
+        out.defaultWriteObject();
     }
 
     private ThreadLocal<Boolean> threadLocal() {
@@ -56,6 +82,7 @@ public class DefaultMultiCauseException extends GradleException implements Multi
         };
     }
 
+    @Override
     public List<? extends Throwable> getCauses() {
         return causes;
     }
@@ -91,7 +118,7 @@ public class DefaultMultiCauseException extends GradleException implements Multi
 
     @Override
     public void printStackTrace(PrintWriter printWriter) {
-        if (causes.size() <= 1) {
+        if (causes.isEmpty()) {
             super.printStackTrace(printWriter);
             return;
         }
@@ -99,13 +126,38 @@ public class DefaultMultiCauseException extends GradleException implements Multi
         hideCause.set(true);
         try {
             super.printStackTrace(printWriter);
-            for (int i = 0; i < causes.size(); i++) {
-                Throwable cause = causes.get(i);
-                printWriter.format("Cause %s: ", i + 1);
-                cause.printStackTrace(printWriter);
+
+            if (causes.size() == 1) {
+                printSingleCauseStackTrace(printWriter);
+            } else {
+                printMultiCauseStackTrace(printWriter);
             }
         } finally {
             hideCause.set(false);
         }
+    }
+
+    private void printSingleCauseStackTrace(PrintWriter printWriter) {
+        Throwable cause = causes.get(0);
+        printWriter.print("Caused by: ");
+        cause.printStackTrace(printWriter);
+    }
+
+    private void printMultiCauseStackTrace(PrintWriter printWriter) {
+        for (int i = 0; i < causes.size(); i++) {
+            Throwable cause = causes.get(i);
+            printWriter.format("Cause %s: ", i + 1);
+            cause.printStackTrace(printWriter);
+        }
+    }
+
+    @Override
+    public String getMessage() {
+        if (messageFactory != null) {
+            message = messageFactory.create();
+            messageFactory = null;
+            return message;
+        }
+        return message;
     }
 }

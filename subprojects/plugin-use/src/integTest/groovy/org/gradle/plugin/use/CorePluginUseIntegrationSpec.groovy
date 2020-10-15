@@ -18,7 +18,7 @@ package org.gradle.plugin.use
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 
-import static org.hamcrest.Matchers.startsWith
+import static org.hamcrest.CoreMatchers.startsWith
 
 class CorePluginUseIntegrationSpec extends AbstractIntegrationSpec {
 
@@ -58,7 +58,7 @@ class CorePluginUseIntegrationSpec extends AbstractIntegrationSpec {
         """
 
         when:
-        fails "tasks"
+        fails "help"
 
         then:
         failure.assertHasDescription("Error resolving plugin [id: 'java', version: '1.0']")
@@ -76,7 +76,7 @@ class CorePluginUseIntegrationSpec extends AbstractIntegrationSpec {
         """
 
         when:
-        fails "tasks"
+        fails "help"
 
         then:
         failure.assertHasDescription("Error resolving plugin [id: 'org.gradle.java', version: '1.0']")
@@ -94,7 +94,7 @@ class CorePluginUseIntegrationSpec extends AbstractIntegrationSpec {
         """
 
         when:
-        fails "tasks"
+        fails "help"
 
         then:
         failure.assertHasDescription("Error resolving plugin [id: 'java', apply: false]")
@@ -113,7 +113,7 @@ class CorePluginUseIntegrationSpec extends AbstractIntegrationSpec {
         """
 
         when:
-        fails "tasks"
+        fails "help"
 
         then:
         failure.assertThatDescription(startsWith("Plugin with id 'java' was already requested at line 3"))
@@ -132,7 +132,7 @@ class CorePluginUseIntegrationSpec extends AbstractIntegrationSpec {
         """
 
         when:
-        fails "tasks"
+        fails "help"
 
         then:
         failure.assertThatDescription(startsWith("Plugin with id 'java' was already requested at line 4"))
@@ -153,7 +153,7 @@ class CorePluginUseIntegrationSpec extends AbstractIntegrationSpec {
         """
 
         then:
-        succeeds "tasks"
+        succeeds "help"
     }
 
     def "can reapply core plugin applied via qualified id in plugins block"() {
@@ -169,7 +169,7 @@ class CorePluginUseIntegrationSpec extends AbstractIntegrationSpec {
         """
 
         then:
-        succeeds "tasks"
+        succeeds "help"
     }
 
     def "can use qualified and unqualified ids to detect core plugins"() {
@@ -193,7 +193,7 @@ class CorePluginUseIntegrationSpec extends AbstractIntegrationSpec {
         """
 
         then:
-        succeeds "tasks"
+        succeeds "help"
 
         where:
         pluginId << [QUALIFIED_JAVA, UNQUALIFIED_JAVA]

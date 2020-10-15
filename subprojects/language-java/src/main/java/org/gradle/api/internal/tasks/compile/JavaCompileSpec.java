@@ -38,4 +38,16 @@ public interface JavaCompileSpec extends JvmLanguageCompileSpec {
     void setEffectiveAnnotationProcessors(Set<AnnotationProcessorDeclaration> annotationProcessors);
 
     Set<AnnotationProcessorDeclaration> getEffectiveAnnotationProcessors();
+
+    void setClasses(Set<String> classes);
+
+    Set<String> getClasses();
+
+    List<File> getModulePath();
+
+    void setModulePath(List<File> modulePath);
+
+    default boolean annotationProcessingConfigured() {
+        return !getAnnotationProcessorPath().isEmpty() && !getCompileOptions().getCompilerArgs().contains("-proc:none");
+    }
 }

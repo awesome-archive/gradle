@@ -19,18 +19,38 @@ package org.gradle.api.internal.tasks.properties
 import groovy.transform.EqualsAndHashCode
 import org.gradle.api.DefaultTask
 import org.gradle.api.Named
+import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.FileCollection
 import org.gradle.api.internal.TaskInternal
 import org.gradle.api.internal.file.TestFiles
-import org.gradle.api.internal.file.collections.SimpleFileCollection
-import org.gradle.api.internal.tasks.DefaultPropertySpecFactory
 import org.gradle.api.internal.tasks.properties.annotations.PropertyAnnotationHandler
-import org.gradle.api.tasks.*
+import org.gradle.api.provider.Property
+import org.gradle.api.tasks.Destroys
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.InputDirectory
+import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.InputFiles
+import org.gradle.api.tasks.Internal
+import org.gradle.api.tasks.LocalState
+import org.gradle.api.tasks.Nested
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.OutputFile
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
+import org.gradle.cache.internal.TestCrossBuildInMemoryCacheFactory
+import org.gradle.internal.reflect.TypeValidationContext
+import org.gradle.internal.reflect.annotations.impl.DefaultTypeAnnotationMetadataStore
+import org.gradle.internal.service.ServiceRegistryBuilder
+import org.gradle.internal.service.scopes.ExecutionGlobalServices
 import org.gradle.test.fixtures.AbstractProjectBuilderSpec
 
-class DefaultPropertyWalkerTest extends AbstractProjectBuilderSpec {
+import static org.gradle.internal.service.scopes.ExecutionGlobalServices.IGNORED_METHOD_ANNOTATIONS
+import static org.gradle.internal.service.scopes.ExecutionGlobalServices.PROPERTY_TYPE_ANNOTATIONS
 
+class DefaultPropertyWalkerTest extends AbstractProjectBuilderSpec {
+    def services = ServiceRegistryBuilder.builder().provider(new ExecutionGlobalServices()).build()
     def visitor = Mock(PropertyVisitor)
+    def validationContext = Mock(TypeValidationContext)
 
     def "visits properties"() {
         def task = project.tasks.create("myTask", MyTask)
@@ -39,19 +59,20 @@ class DefaultPropertyWalkerTest extends AbstractProjectBuilderSpec {
         visitProperties(task)
 
         then:
-        1 * visitor.visitInputProperty({ it.propertyName == 'myProperty' && it.value == 'myValue' })
-        1 * visitor.visitInputFileProperty({ it.propertyName == 'inputFile' })
-        1 * visitor.visitInputFileProperty({ it.propertyName == 'inputFiles' })
-        1 * visitor.visitInputProperty({ it.propertyName == 'bean' && it.value == NestedBean })
-        1 * visitor.visitInputProperty({ it.propertyName == 'bean.nestedInput' && it.value == 'nested' })
-        1 * visitor.visitInputFileProperty({ it.propertyName == 'bean.inputDir' })
+        _ * visitor.visitOutputFilePropertiesOnly() >> false
+        1 * visitor.visitInputProperty('myProperty', { it.call() == 'myValue' }, false)
+        1 * visitor.visitInputFileProperty('inputFile', _, _, _, _, _, InputFilePropertyType.FILE)
+        1 * visitor.visitInputFileProperty('inputFiles', _, _, _, _, _, InputFilePropertyType.FILES)
+        1 * visitor.visitInputProperty('bean', { it.call() == NestedBean }, false)
+        1 * visitor.visitInputProperty('bean.nestedInput', { it.call() == 'nested' }, false)
+        1 * visitor.visitInputFileProperty('bean.inputDir', _, _, _, _, _, InputFilePropertyType.DIRECTORY)
 
-        1 * visitor.visitOutputFileProperty({ it.propertyName == 'outputFile' && it.value.value.path == 'output' })
-        1 * visitor.visitOutputFileProperty({ it.propertyName == 'bean.outputDir' && it.value.value.path == 'outputDir' })
+        1 * visitor.visitOutputFileProperty('outputFile', false, { it.call().path == 'output' }, OutputFilePropertyType.FILE)
+        1 * visitor.visitOutputFileProperty('bean.outputDir', false, { it.call().path == 'outputDir' }, OutputFilePropertyType.DIRECTORY)
 
-        1 * visitor.visitDestroyableProperty({ it.propertyName == 'destroyed' && it.value.value.path == 'destroyed' })
+        1 * visitor.visitDestroyableProperty({ it.call().path == 'destroyed' })
 
-        1 * visitor.visitLocalStateProperty({ it.propertyName == 'someLocalState' && it.value.value.path == 'localState' })
+        1 * visitor.visitLocalStateProperty({ it.call().path == 'localState' })
 
         0 * _
     }
@@ -62,10 +83,12 @@ class DefaultPropertyWalkerTest extends AbstractProjectBuilderSpec {
         String myProperty = "myValue"
 
         @InputFile
+        @PathSensitive(PathSensitivity.NONE)
         File inputFile = new File("some-location")
 
         @InputFiles
-        FileCollection inputFiles = new SimpleFileCollection([new File("files")])
+        @PathSensitive(PathSensitivity.NONE)
+        FileCollection inputFiles = TestFiles.fixed(new File("files"))
 
         @OutputFile
         File outputFile = new File("output")
@@ -86,6 +109,7 @@ class DefaultPropertyWalkerTest extends AbstractProjectBuilderSpec {
         String nestedInput = 'nested'
 
         @InputDirectory
+        @PathSensitive(PathSensitivity.NONE)
         File inputDir
 
         @OutputDirectory
@@ -100,7 +124,8 @@ class DefaultPropertyWalkerTest extends AbstractProjectBuilderSpec {
         visitProperties(task)
 
         then:
-        1 * visitor.visitInputProperty({ it.propertyName == 'bean' && it.value == null })
+        _ * visitor.visitNested() >> true
+        1 * visitor.visitInputProperty('bean', { it.call() == null }, false)
     }
 
     def "cycle in nested inputs is detected"() {
@@ -113,6 +138,7 @@ class DefaultPropertyWalkerTest extends AbstractProjectBuilderSpec {
         visitProperties(task)
 
         then:
+        _ * visitor.visitNested() >> true
         IllegalStateException e = thrown(IllegalStateException)
         e.message == "Cycles between nested beans are not allowed. Cycle detected between: 'nested.right.left' and 'nested.right.left.right'."
     }
@@ -125,6 +151,7 @@ class DefaultPropertyWalkerTest extends AbstractProjectBuilderSpec {
         visitProperties(task)
 
         then:
+        _ * visitor.visitNested() >> true
         IllegalStateException e = thrown(IllegalStateException)
         e.message == "Cycles between nested beans are not allowed. Cycle detected between: '<root>' and 'nested.left'."
     }
@@ -137,6 +164,7 @@ class DefaultPropertyWalkerTest extends AbstractProjectBuilderSpec {
         visitProperties(task)
 
         then:
+        _ * visitor.visitNested() >> true
         noExceptionThrown()
         task.nested.right == task.nested.right.right
     }
@@ -150,6 +178,7 @@ class DefaultPropertyWalkerTest extends AbstractProjectBuilderSpec {
         visitProperties(task)
 
         then:
+        _ * visitor.visitNested() >> true
         noExceptionThrown()
     }
 
@@ -161,8 +190,26 @@ class DefaultPropertyWalkerTest extends AbstractProjectBuilderSpec {
         visitProperties(task)
 
         then:
-        1 * visitor.visitInputProperty({ it.propertyName == 'nested.name$0'})
-        1 * visitor.visitInputProperty({ it.propertyName == 'nested.name$1'})
+        _ * visitor.visitNested() >> true
+        1 * visitor.visitInputProperty('nested.name$0', _, false)
+        1 * visitor.visitInputProperty('nested.name$1', _, false)
+    }
+
+    def "providers are unpacked"() {
+        def task = project.tasks.create("myTask", TaskWithNestedObject)
+        task.nested = project.provider { new NestedBean() }
+
+        when:
+        visitProperties(task)
+
+        then:
+        _ * visitor.visitOutputFilePropertiesOnly() >> false
+        1 * visitor.visitInputProperty("nested" , _, false)
+        1 * visitor.visitInputProperty("nested.nestedInput", _, false)
+        1 * visitor.visitInputFileProperty("nested.inputDir", _, _, _, _, _, InputFilePropertyType.DIRECTORY)
+        1 * visitor.visitOutputFileProperty("nested.outputDir", false, _, OutputFilePropertyType.DIRECTORY)
+
+        0 * _
     }
 
     static class NamedNestedBean implements Named {
@@ -191,8 +238,20 @@ class DefaultPropertyWalkerTest extends AbstractProjectBuilderSpec {
         @Nested Object right
     }
 
-    private visitProperties(TaskInternal task, PropertyAnnotationHandler... annotationHandlers) {
-        def specFactory = new DefaultPropertySpecFactory(task, TestFiles.resolver())
-        new DefaultPropertyWalker(new DefaultPropertyMetadataStore(annotationHandlers as List)).visitProperties(specFactory, visitor, task)
+    private visitProperties(TaskInternal task) {
+        def cacheFactory = new TestCrossBuildInMemoryCacheFactory()
+        def typeAnnotationMetadataStore = new DefaultTypeAnnotationMetadataStore(
+            [],
+            ModifierAnnotationCategory.asMap(PROPERTY_TYPE_ANNOTATIONS),
+            ["java", "groovy"],
+            [],
+            [Object, GroovyObject],
+            [ConfigurableFileCollection, Property],
+            IGNORED_METHOD_ANNOTATIONS,
+            { false },
+            cacheFactory
+        )
+        def typeMetadataStore = new DefaultTypeMetadataStore([], services.getAll(PropertyAnnotationHandler), [PathSensitive], typeAnnotationMetadataStore, cacheFactory)
+        new DefaultPropertyWalker(typeMetadataStore).visitProperties(task, validationContext, visitor)
     }
 }

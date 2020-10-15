@@ -16,6 +16,7 @@
 
 package org.gradle.api.internal.tasks.testing.junitplatform;
 
+import com.google.common.collect.ImmutableList;
 import org.gradle.api.Action;
 import org.gradle.api.JavaVersion;
 import org.gradle.api.internal.tasks.testing.TestClassProcessor;
@@ -32,8 +33,10 @@ import org.gradle.internal.service.ServiceRegistry;
 import org.gradle.internal.time.Clock;
 import org.gradle.process.internal.worker.WorkerProcessBuilder;
 
+import javax.annotation.Nonnull;
 import java.io.Serializable;
 import java.lang.reflect.Constructor;
+import java.util.List;
 
 public class JUnitPlatformTestFramework implements TestFramework {
     private final JUnitPlatformOptions options;
@@ -47,18 +50,26 @@ public class JUnitPlatformTestFramework implements TestFramework {
     @Override
     public WorkerTestClassProcessorFactory getProcessorFactory() {
         if (!JavaVersion.current().isJava8Compatible()) {
-            throw new UnsupportedJavaRuntimeException("Running JUnit platform requires Java 8+, please configure your test java executable with Java 8 or higher.");
+            throw new UnsupportedJavaRuntimeException("Running JUnit Platform requires Java 8+, please configure your test java executable with Java 8 or higher.");
         }
-        return new JUnitPlatformTestClassProcessorFactory(new JUnitPlatformSpec(options, filter.getIncludePatterns(), filter.getCommandLineIncludePatterns()));
+        return new JUnitPlatformTestClassProcessorFactory(new JUnitPlatformSpec(options,
+            filter.getIncludePatterns(), filter.getExcludePatterns(),
+            filter.getCommandLineIncludePatterns()));
     }
 
     @Override
     public Action<WorkerProcessBuilder> getWorkerConfigurationAction() {
         return new Action<WorkerProcessBuilder>() {
-            public void execute(WorkerProcessBuilder workerProcessBuilder) {
+            @Override
+            public void execute(@Nonnull WorkerProcessBuilder workerProcessBuilder) {
                 workerProcessBuilder.sharedPackages("org.junit");
             }
         };
+    }
+
+    @Override
+    public List<String> getTestWorkerImplementationModules() {
+        return ImmutableList.of("junit-platform-engine", "junit-platform-launcher", "junit-platform-commons");
     }
 
     @Override
@@ -71,21 +82,21 @@ public class JUnitPlatformTestFramework implements TestFramework {
         return null;
     }
 
-    public static class JUnitPlatformTestClassProcessorFactory implements WorkerTestClassProcessorFactory, Serializable {
+    static class JUnitPlatformTestClassProcessorFactory implements WorkerTestClassProcessorFactory, Serializable {
         private final JUnitPlatformSpec spec;
 
-        public JUnitPlatformTestClassProcessorFactory(JUnitPlatformSpec spec) {
+        JUnitPlatformTestClassProcessorFactory(JUnitPlatformSpec spec) {
             this.spec = spec;
         }
 
         @Override
         public TestClassProcessor create(ServiceRegistry serviceRegistry) {
             try {
-                IdGenerator idGenerator = serviceRegistry.get(IdGenerator.class);
+                IdGenerator<?> idGenerator = serviceRegistry.get(IdGenerator.class);
                 Clock clock = serviceRegistry.get(Clock.class);
                 ActorFactory actorFactory = serviceRegistry.get(ActorFactory.class);
-                Class clazz = getClass().getClassLoader().loadClass("org.gradle.api.internal.tasks.testing.junitplatform.JUnitPlatformTestClassProcessor");
-                Constructor constructor = clazz.getConstructor(JUnitPlatformSpec.class, IdGenerator.class, ActorFactory.class, Clock.class);
+                Class<?> clazz = getClass().getClassLoader().loadClass("org.gradle.api.internal.tasks.testing.junitplatform.JUnitPlatformTestClassProcessor");
+                Constructor<?> constructor = clazz.getConstructor(JUnitPlatformSpec.class, IdGenerator.class, ActorFactory.class, Clock.class);
                 return (TestClassProcessor) constructor.newInstance(spec, idGenerator, actorFactory, clock);
             } catch (Exception e) {
                 throw UncheckedException.throwAsUncheckedException(e);

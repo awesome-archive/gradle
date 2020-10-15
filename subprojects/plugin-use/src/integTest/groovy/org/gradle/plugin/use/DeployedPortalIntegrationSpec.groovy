@@ -16,17 +16,17 @@
 
 package org.gradle.plugin.use
 
-import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.AbstractPluginIntegrationTest
 import org.gradle.test.fixtures.file.LeaksFileHandles
 import org.gradle.util.Requires
 import org.gradle.util.TestPrecondition
 
-import static org.hamcrest.Matchers.startsWith
+import static org.hamcrest.CoreMatchers.startsWith
 
 //These tests depend on https://plugins.gradle.org
 @Requires(TestPrecondition.ONLINE)
 @LeaksFileHandles
-class DeployedPortalIntegrationSpec extends AbstractIntegrationSpec {
+class DeployedPortalIntegrationSpec extends AbstractPluginIntegrationTest {
 
     private final static String HELLO_WORLD_PLUGIN_ID = "org.gradle.hello-world"
     private final static String HELLO_WORLD_PLUGIN_VERSION = "0.2"
@@ -110,7 +110,7 @@ class DeployedPortalIntegrationSpec extends AbstractIntegrationSpec {
             - Plugin Repositories (could not resolve plugin artifact 'org.gradle.non-existing:org.gradle.non-existing.gradle.plugin:1.0')
               Searched in the following repositories:
                 Gradle Central Plugin Repository
-        """.stripIndent().trim())
+            """.stripIndent().trim())
     }
 
     def "can resolve and plugin from portal with buildscript notation"() {
@@ -153,5 +153,111 @@ class DeployedPortalIntegrationSpec extends AbstractIntegrationSpec {
 
         then:
         failure.assertThatDescription(startsWith("Plugin [id: '$HELLO_WORLD_PLUGIN_ID', version: '$HELLO_WORLD_PLUGIN_VERSION'] was not found"))
+    }
+
+    def "can resolve plugin from portal with repository filters present"() {
+        given:
+        mavenRepo.module('com.android.tools', 'r8', '1.5.70').publish()
+
+        when:
+        buildScript """
+            buildscript {
+                repositories {
+                    exclusiveContent {
+                      forRepository {
+                        maven {
+                          url = "${mavenRepo.uri}"
+                          metadataSources {
+                            artifact()
+                          }
+                        }
+                      }
+                      filter {
+                        includeModule("com.android.tools", "r8")
+                      }
+                    }
+                }
+            }
+
+            plugins {
+                id "$HELLO_WORLD_PLUGIN_ID" version "$HELLO_WORLD_PLUGIN_VERSION"
+            }
+        """
+
+        then:
+        succeeds("helloWorld")
+
+        and:
+        output.contains("Hello World!")
+    }
+
+    def "resolution fails from portal with repository filters present"() {
+        given:
+        mavenRepo.module('com.android.tools', 'r8', '1.5.70').publish()
+
+        buildScript """
+            buildscript {
+                repositories {
+                    exclusiveContent {
+                        forRepository {
+                            ${mavenCentralRepository()}
+                        }
+                        filter {
+                            includeModule("com.android.tools", "r8") // force resolving r8 from wrong repo
+                        }
+                    }
+                    maven {
+                        url = "${mavenRepo.uri}"
+                        metadataSources {
+                            artifact()
+                        }
+                    }
+                }
+
+                dependencies {
+                    classpath group: 'com.android.tools', name: 'r8', version: '1.5.70'
+                }
+
+            }
+
+            plugins {
+                id "$HELLO_WORLD_PLUGIN_ID" version "$HELLO_WORLD_PLUGIN_VERSION"
+            }
+        """
+
+        expect:
+        fails("helloWorld")
+        failureCauseContains("Could not find com.android.tools:r8")
+    }
+
+    def "can resolve plugin from portal with repository filters and settings plugins"() {
+        given:
+        mavenRepo.module('com.android.tools', 'r8', '1.5.70').publish()
+        when:
+        buildFile << """
+            buildscript {
+              repositories {
+                exclusiveContent {
+                  forRepository {
+                    // For R8/D8 releases
+                    maven {
+                        url = "${mavenRepo.uri}"
+                    }
+                  }
+                  filter {
+                    includeModule("com.android.tools", "r8")
+                  }
+                }
+              }
+            }
+
+            plugins {
+              id("$HELLO_WORLD_PLUGIN_ID") version "$HELLO_WORLD_PLUGIN_VERSION"
+            }
+        """
+        then:
+        succeeds("helloWorld")
+        and:
+        output.contains("Hello World!")
     }
 }

@@ -24,17 +24,19 @@ import org.gradle.test.fixtures.file.TestFile
 import org.gradle.util.TextUtil
 import spock.lang.IgnoreIf
 
-import static org.hamcrest.Matchers.startsWith
+import static org.hamcrest.CoreMatchers.startsWith
 
 @TestReproducibleArchives
-class ApplicationIntegrationSpec extends AbstractIntegrationSpec{
+class ApplicationIntegrationSpec extends AbstractIntegrationSpec {
 
     def setup() {
         file('settings.gradle') << 'rootProject.name = "application"'
 
         buildFile << """
             apply plugin: 'application'
-            mainClassName = 'org.gradle.test.Main'
+            application {
+               mainClass = 'org.gradle.test.Main'
+            }
         """
     }
 
@@ -186,27 +188,27 @@ class Main {
     }
 
     def canUseDefaultJvmArgsInRunTask() {
-            file("build.gradle") << '''
-    applicationDefaultJvmArgs = ['-Dvar1=value1', '-Dvar2=value2']
-    '''
-            file('src/main/java/org/gradle/test/Main.java') << '''
-    package org.gradle.test;
+        file("build.gradle") << '''
+        applicationDefaultJvmArgs = ['-Dvar1=value1', '-Dvar2=value2']
+        '''
+        file('src/main/java/org/gradle/test/Main.java') << '''
+        package org.gradle.test;
 
-    class Main {
-        public static void main(String[] args) {
-            if (!"value1".equals(System.getProperty("var1"))) {
-                throw new RuntimeException("Expected system property not specified (var1)");
-            }
-            if (!"value2".equals(System.getProperty("var2"))) {
-                throw new RuntimeException("Expected system property not specified (var2)");
+        class Main {
+            public static void main(String[] args) {
+                if (!"value1".equals(System.getProperty("var1"))) {
+                    throw new RuntimeException("Expected system property not specified (var1)");
+                }
+                if (!"value2".equals(System.getProperty("var2"))) {
+                    throw new RuntimeException("Expected system property not specified (var2)");
+                }
             }
         }
+        '''
+
+        expect:
+        run 'run'
     }
-    '''
-
-            expect:
-            run 'run'
-        }
 
 
     def "can customize application name"() {
@@ -305,11 +307,11 @@ installDist.destinationDir = buildDir
         then:
         File generatedWindowsStartScript = file("build/scripts/application.bat")
         generatedWindowsStartScript.exists()
-        assertLineSeparators(generatedWindowsStartScript, TextUtil.windowsLineSeparator, 84)
+        assertLineSeparators(generatedWindowsStartScript, TextUtil.windowsLineSeparator, 89)
 
         File generatedLinuxStartScript = file("build/scripts/application")
         generatedLinuxStartScript.exists()
-        assertLineSeparators(generatedLinuxStartScript, TextUtil.unixLineSeparator, 172)
+        assertLineSeparators(generatedLinuxStartScript, TextUtil.unixLineSeparator, 185)
         assertLineSeparators(generatedLinuxStartScript, TextUtil.windowsLineSeparator, 1)
 
         file("build/scripts/application").exists()
@@ -388,7 +390,7 @@ class Main {
         distBase.file("dir/r2.txt").text == "r2"
     }
 
-    @IgnoreIf({GradleContextualExecuter.parallel})
+    @IgnoreIf({ GradleContextualExecuter.parallel })
     def "distribution file producing tasks are run automatically"() {
         when:
         buildFile << """
@@ -413,7 +415,7 @@ class Main {
         succeeds "installDist"
 
         and:
-        ":createDocs" in nonSkippedTasks
+        executedAndNotSkipped(":createDocs")
 
         and:
         def distBase = file("build/install/application")
@@ -471,8 +473,8 @@ class Main {
         testResources.zipTo(file("libs/foo.jar"))
         buildFile << """
             dependencies {
-                compile files("libs/bar.jar")
-                compile files("libs/foo.jar")
+                implementation files("libs/bar.jar")
+                implementation files("libs/foo.jar")
             }
         """
 

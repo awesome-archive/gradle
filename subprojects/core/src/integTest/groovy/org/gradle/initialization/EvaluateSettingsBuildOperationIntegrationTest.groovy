@@ -45,7 +45,6 @@ class EvaluateSettingsBuildOperationIntegrationTest extends AbstractIntegrationS
         def projectDirectory = testDirectory.createDir("a")
 
         when:
-        executer.withSearchUpwards()
         projectDir(projectDirectory)
         succeeds('help')
 
@@ -59,7 +58,7 @@ class EvaluateSettingsBuildOperationIntegrationTest extends AbstractIntegrationS
         customSettingsDir.mkdirs()
         def customSettingsFile = new File(customSettingsDir, "settings.gradle")
         customSettingsFile << """
-        
+
         include "a"
         """
 
@@ -76,15 +75,15 @@ class EvaluateSettingsBuildOperationIntegrationTest extends AbstractIntegrationS
         settingsFile << """
             include "a"
             includeBuild "nested"
-            
+
             rootProject.name = "root"
             rootProject.buildFileName = 'root.gradle'
-            
+
         """
 
         def nestedSettingsFile = file("nested/settings.gradle")
         nestedSettingsFile << """
-            rootProject.name = "nested"    
+            rootProject.name = "nested"
         """
         file("nested/build.gradle") << """
         group = "org.acme"
@@ -105,7 +104,7 @@ class EvaluateSettingsBuildOperationIntegrationTest extends AbstractIntegrationS
     def 'can configure feature preview in settings'() {
         given:
         settingsFile << '''
-enableFeaturePreview('IMPROVED_POM_SUPPORT')
+enableFeaturePreview('GROOVY_COMPILATION_AVOIDANCE')
 '''
         expect:
         succeeds('help')

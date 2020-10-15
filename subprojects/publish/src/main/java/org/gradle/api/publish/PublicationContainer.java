@@ -16,7 +16,7 @@
 
 package org.gradle.api.publish;
 
-import org.gradle.api.*;
+import org.gradle.api.ExtensiblePolymorphicDomainObjectContainer;
 
 /**
  * A {@code PublicationContainer} is responsible for creating and managing {@link Publication} instances.
@@ -29,7 +29,9 @@ import org.gradle.api.*;
  *
  *
  * <pre class='autoTested'>
- * apply plugin: 'ivy-publish'
+ * plugins {
+ *     id 'ivy-publish'
+ * }
  *
  * publishing.publications.create('publication-name', IvyPublication) {
  *     // Configure the ivy publication here
@@ -43,6 +45,5 @@ import org.gradle.api.*;
  * @see Publication
  * @see PublishingExtension
  */
-@Incubating
 public interface PublicationContainer extends ExtensiblePolymorphicDomainObjectContainer<Publication> {
 }

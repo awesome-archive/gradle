@@ -15,29 +15,29 @@
  */
 package org.gradle.api.plugins.quality;
 
-import com.google.common.util.concurrent.Callables;
-import org.gradle.api.Action;
 import org.gradle.api.Plugin;
 import org.gradle.api.artifacts.Configuration;
-import org.gradle.api.artifacts.DependencySet;
+import org.gradle.api.file.ProjectLayout;
+import org.gradle.api.file.RegularFile;
 import org.gradle.api.internal.ConventionMapping;
 import org.gradle.api.internal.plugins.DslObject;
 import org.gradle.api.plugins.GroovyBasePlugin;
 import org.gradle.api.plugins.quality.internal.AbstractCodeQualityPlugin;
-import org.gradle.api.reporting.SingleFileReport;
-import org.gradle.api.resources.TextResource;
+import org.gradle.api.provider.Provider;
+import org.gradle.api.provider.ProviderFactory;
 import org.gradle.api.tasks.SourceSet;
 import org.gradle.internal.metaobject.DynamicObject;
 
 import java.io.File;
-import java.util.concurrent.Callable;
+
+import static org.gradle.api.internal.lambdas.SerializableLambdas.action;
 
 /**
  * CodeNarc Plugin.
  */
 public class CodeNarcPlugin extends AbstractCodeQualityPlugin<CodeNarc> {
 
-    public static final String DEFAULT_CODENARC_VERSION = "1.0";
+    public static final String DEFAULT_CODENARC_VERSION = "1.6.1";
     private CodeNarcExtension extension;
 
     @Override
@@ -68,77 +68,45 @@ public class CodeNarcPlugin extends AbstractCodeQualityPlugin<CodeNarc> {
     }
 
     @Override
-    protected void configureTaskDefaults(CodeNarc task, String baseName) {
-        Configuration configuration = project.getConfigurations().getAt("codenarc");
+    protected void configureConfiguration(Configuration configuration) {
         configureDefaultDependencies(configuration);
+    }
+
+    @Override
+    protected void configureTaskDefaults(CodeNarc task, String baseName) {
+        Configuration configuration = project.getConfigurations().getAt(getConfigurationName());
         configureTaskConventionMapping(configuration, task);
         configureReportsConventionMapping(task, baseName);
     }
 
     private void configureDefaultDependencies(Configuration configuration) {
-        configuration.defaultDependencies(new Action<DependencySet>() {
-            @Override
-            public void execute(DependencySet dependencies) {
-                dependencies.add(project.getDependencies().create("org.codenarc:CodeNarc:" + extension.getToolVersion()));
-            }
-        });
+        configuration.defaultDependencies(dependencies ->
+            dependencies.add(project.getDependencies().create("org.codenarc:CodeNarc:" + extension.getToolVersion()))
+        );
     }
 
     private void configureTaskConventionMapping(Configuration configuration, CodeNarc task) {
         ConventionMapping taskMapping = task.getConventionMapping();
-        taskMapping.map("codenarcClasspath", Callables.returning(configuration));
-        taskMapping.map("config", new Callable<TextResource>() {
-            @Override
-            public TextResource call() {
-                return extension.getConfig();
-            }
-        });
-        taskMapping.map("maxPriority1Violations", new Callable<Integer>() {
-            @Override
-            public Integer call() {
-                return extension.getMaxPriority1Violations();
-            }
-        });
-        taskMapping.map("maxPriority2Violations", new Callable<Integer>() {
-            @Override
-            public Integer call() {
-                return extension.getMaxPriority2Violations();
-            }
-        });
-        taskMapping.map("maxPriority3Violations", new Callable<Integer>() {
-            @Override
-            public Integer call() {
-                return extension.getMaxPriority3Violations();
-            }
-        });
-        taskMapping.map("ignoreFailures", new Callable<Boolean>() {
-            @Override
-            public Boolean call() {
-                return extension.isIgnoreFailures();
-            }
-        });
+        taskMapping.map("codenarcClasspath", () -> configuration);
+        taskMapping.map("config", () -> extension.getConfig());
+        taskMapping.map("maxPriority1Violations", () -> extension.getMaxPriority1Violations());
+        taskMapping.map("maxPriority2Violations", () -> extension.getMaxPriority2Violations());
+        taskMapping.map("maxPriority3Violations", () -> extension.getMaxPriority3Violations());
+        taskMapping.map("ignoreFailures", () -> extension.isIgnoreFailures());
     }
 
     private void configureReportsConventionMapping(CodeNarc task, final String baseName) {
-        task.getReports().all(new Action<SingleFileReport>() {
-            @Override
-            public void execute(final SingleFileReport report) {
-                ConventionMapping reportMapping = AbstractCodeQualityPlugin.conventionMappingOf(report);
-                reportMapping.map("enabled", new Callable<Boolean>() {
-                    @Override
-                    public Boolean call() {
-                        return report.getName().equals(extension.getReportFormat());
-                    }
-                });
-                reportMapping.map("destination", new Callable<File>() {
-                    @Override
-                    public File call() {
-                        String fileSuffix = report.getName().equals("text") ? "txt" : report.getName();
-                        return new File(extension.getReportsDir(), baseName + "." + fileSuffix);
-                    }
-                });
-            }
-        });
+        ProjectLayout layout = project.getLayout();
+        ProviderFactory providers = project.getProviders();
+        Provider<String> reportFormat = providers.provider(() -> extension.getReportFormat());
+        Provider<RegularFile> reportsDir = layout.file(providers.provider(() -> extension.getReportsDir()));
+        task.getReports().all(action(report -> {
+            report.getRequired().convention(providers.provider(() -> report.getName().equals(reportFormat.get())));
+            report.getOutputLocation().convention(layout.getProjectDirectory().file(providers.provider(() -> {
+                String fileSuffix = report.getName().equals("text") ? "txt" : report.getName();
+                return new File(reportsDir.get().getAsFile(), baseName + "." + fileSuffix).getAbsolutePath();
+            })));
+        }));
     }
 
     @Override

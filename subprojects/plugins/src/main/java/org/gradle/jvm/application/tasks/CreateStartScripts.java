@@ -16,25 +16,34 @@
 
 package org.gradle.jvm.application.tasks;
 
-import com.google.common.base.Function;
-import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
+import org.apache.commons.lang.StringUtils;
 import org.gradle.api.Incubating;
 import org.gradle.api.file.FileCollection;
 import org.gradle.api.internal.ConventionTask;
 import org.gradle.api.internal.plugins.StartScriptGenerator;
 import org.gradle.api.internal.plugins.UnixStartScriptGenerator;
 import org.gradle.api.internal.plugins.WindowsStartScriptGenerator;
+import org.gradle.api.jvm.ModularitySpec;
+import org.gradle.api.model.ObjectFactory;
+import org.gradle.api.provider.Property;
+import org.gradle.api.tasks.Classpath;
 import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.Internal;
+import org.gradle.api.tasks.Nested;
 import org.gradle.api.tasks.Optional;
 import org.gradle.api.tasks.OutputDirectory;
 import org.gradle.api.tasks.TaskAction;
+import org.gradle.internal.jvm.DefaultModularitySpec;
+import org.gradle.internal.jvm.JavaModuleDetector;
 import org.gradle.jvm.application.scripts.ScriptGenerator;
 import org.gradle.util.GUtil;
 
 import javax.annotation.Nullable;
+import javax.inject.Inject;
 import java.io.File;
+import java.util.Collections;
+import java.util.stream.Collectors;
 
 /**
  * Creates start scripts for launching JVM applications.
@@ -43,7 +52,7 @@ import java.io.File;
  * <pre class='autoTested'>
  * task createStartScripts(type: CreateStartScripts) {
  *   outputDir = file('build/sample')
- *   mainClassName = 'org.gradle.test.Main'
+ *   mainClass = 'org.gradle.test.Main'
  *   applicationName = 'myApp'
  *   classpath = files('path/to/some.jar')
  * }
@@ -77,14 +86,15 @@ import java.io.File;
  * The default generators are of the type {@link org.gradle.jvm.application.scripts.TemplateBasedScriptGenerator}, with default templates.
  * This templates can be changed via the {@link org.gradle.jvm.application.scripts.TemplateBasedScriptGenerator#setTemplate(org.gradle.api.resources.TextResource)} method.
  * <p>
- * The default implementations used by this task use <a href="http://docs.groovy-lang.org/latest/html/documentation/template-engines.html#_simpletemplateengine">Groovy's SimpleTemplateEngine</a>
+ * The default implementations used by this task use <a href="https://docs.groovy-lang.org/latest/html/documentation/template-engines.html#_simpletemplateengine">Groovy's SimpleTemplateEngine</a>
  * to parse the template, with the following variables available:
  *
  * <ul>
  * <li>{@code applicationName}</li>
  * <li>{@code optsEnvironmentVar}</li>
  * <li>{@code exitEnvironmentVar}</li>
- * <li>{@code mainClassName}</li>
+ * <li>{@code mainModule}</li>
+ * <li>{@code mainClass}</li>
  * <li>{@code executableDir}</li>
  * <li>{@code defaultJvmOpts}</li>
  * <li>{@code appNameSystemProperty}</li>
@@ -104,14 +114,32 @@ public class CreateStartScripts extends ConventionTask {
 
     private File outputDir;
     private String executableDir = "bin";
-    private String mainClassName;
+    private final Property<String> mainModule;
+    private final Property<String> mainClass;
     private Iterable<String> defaultJvmOpts = Lists.newLinkedList();
     private String applicationName;
     private String optsEnvironmentVar;
     private String exitEnvironmentVar;
     private FileCollection classpath;
+    private final ModularitySpec modularity;
     private ScriptGenerator unixStartScriptGenerator = new UnixStartScriptGenerator();
     private ScriptGenerator windowsStartScriptGenerator = new WindowsStartScriptGenerator();
+
+    public CreateStartScripts() {
+        this.mainModule = getObjectFactory().property(String.class);
+        this.mainClass = getObjectFactory().property(String.class);
+        this.modularity = getObjectFactory().newInstance(DefaultModularitySpec.class);
+    }
+
+    @Inject
+    protected ObjectFactory getObjectFactory() {
+        throw new UnsupportedOperationException();
+    }
+
+    @Inject
+    protected JavaModuleDetector getJavaModuleDetector() {
+        throw new UnsupportedOperationException();
+    }
 
     /**
      * The environment variable to use to provide additional options to the JVM.
@@ -169,11 +197,12 @@ public class CreateStartScripts extends ConventionTask {
      * The directory to write the scripts into.
      */
     @OutputDirectory
+    @Nullable
     public File getOutputDir() {
         return outputDir;
     }
 
-    public void setOutputDir(File outputDir) {
+    public void setOutputDir(@Nullable File outputDir) {
         this.outputDir = outputDir;
     }
 
@@ -181,7 +210,6 @@ public class CreateStartScripts extends ConventionTask {
      * The directory to write the scripts into in the distribution.
      * @since 4.5
      */
-    @Incubating
     @Input
     public String getExecutableDir() {
         return executableDir;
@@ -191,21 +219,47 @@ public class CreateStartScripts extends ConventionTask {
      * The directory to write the scripts into in the distribution.
      * @since 4.5
      */
-    @Incubating
     public void setExecutableDir(String executableDir) {
         this.executableDir = executableDir;
     }
 
     /**
-     * The main classname used to start the Java application.
+     * The main module name used to start the modular Java application.
+     *
+     * @since 6.4
      */
+    @Incubating
+    @Optional
     @Input
-    public String getMainClassName() {
-        return mainClassName;
+    public Property<String> getMainModule() {
+        return mainModule;
     }
 
-    public void setMainClassName(String mainClassName) {
-        this.mainClassName = mainClassName;
+    /**
+     * The main class name used to start the Java application.
+     *
+     * Use this property instead of {@link #getMainClassName()} and {@link #setMainClassName(String)}.
+     *
+     * @since 6.4
+     */
+    @Incubating
+    @Optional
+    @Input
+    public Property<String> getMainClass() {
+        return mainClass;
+    }
+
+    /**
+     * The main class name used to start the Java application.
+     */
+    @Internal
+    @Nullable
+    public String getMainClassName() {
+        return mainClass.getOrNull();
+    }
+
+    public void setMainClassName(@Nullable String mainClassName) {
+        this.mainClass.set(mainClassName);
     }
 
     /**
@@ -225,12 +279,13 @@ public class CreateStartScripts extends ConventionTask {
     /**
      * The application's name.
      */
+    @Nullable
     @Input
     public String getApplicationName() {
         return applicationName;
     }
 
-    public void setApplicationName(String applicationName) {
+    public void setApplicationName(@Nullable String applicationName) {
         this.applicationName = applicationName;
     }
 
@@ -245,12 +300,25 @@ public class CreateStartScripts extends ConventionTask {
     /**
      * The class path for the application.
      */
-    @Internal
+    @Nullable
+    @Classpath
+    @Optional
     public FileCollection getClasspath() {
         return classpath;
     }
 
-    public void setClasspath(FileCollection classpath) {
+    /**
+     * Returns the module path handling for executing the main class.
+     *
+     * @since 6.4
+     */
+    @Incubating
+    @Nested
+    public ModularitySpec getModularity() {
+        return modularity;
+    }
+
+    public void setClasspath(@Nullable FileCollection classpath) {
         this.classpath = classpath;
     }
 
@@ -259,7 +327,6 @@ public class CreateStartScripts extends ConventionTask {
      * <p>
      * Defaults to an implementation of {@link org.gradle.jvm.application.scripts.TemplateBasedScriptGenerator}.
      */
-    @Incubating
     @Internal
     public ScriptGenerator getUnixStartScriptGenerator() {
         return unixStartScriptGenerator;
@@ -274,7 +341,6 @@ public class CreateStartScripts extends ConventionTask {
      * <p>
      * Defaults to an implementation of {@link org.gradle.jvm.application.scripts.TemplateBasedScriptGenerator}.
      */
-    @Incubating
     @Internal
     public ScriptGenerator getWindowsStartScriptGenerator() {
         return windowsStartScriptGenerator;
@@ -287,27 +353,51 @@ public class CreateStartScripts extends ConventionTask {
     @TaskAction
     public void generate() {
         StartScriptGenerator generator = new StartScriptGenerator(unixStartScriptGenerator, windowsStartScriptGenerator);
+        JavaModuleDetector javaModuleDetector = getJavaModuleDetector();
         generator.setApplicationName(getApplicationName());
-        generator.setMainClassName(getMainClassName());
+        generator.setMainClassName(fullMainArgument());
         generator.setDefaultJvmOpts(getDefaultJvmOpts());
         generator.setOptsEnvironmentVar(getOptsEnvironmentVar());
         generator.setExitEnvironmentVar(getExitEnvironmentVar());
-        generator.setClasspath(getRelativeClasspath());
-        generator.setScriptRelPath(getExecutableDir() + "/" + getUnixScript().getName());
+        generator.setClasspath(getRelativePath(javaModuleDetector.inferClasspath(mainModule.isPresent(), getClasspath())));
+        generator.setModulePath(getRelativePath(javaModuleDetector.inferModulePath(mainModule.isPresent(), getClasspath())));
+        if (StringUtils.isEmpty(getExecutableDir())) {
+            generator.setScriptRelPath(getUnixScript().getName());
+        } else {
+            generator.setScriptRelPath(getExecutableDir() + "/" + getUnixScript().getName());
+        }
         generator.generateUnixScript(getUnixScript());
         generator.generateWindowsScript(getWindowsScript());
     }
 
+    private String fullMainArgument() {
+        String main = "";
+        if (mainModule.isPresent()) {
+            main += "--module ";
+            main += mainModule.get();
+            if (mainClass.isPresent()) {
+                main += "/";
+            }
+        }
+        if (mainClass.isPresent()) {
+            main += mainClass.get();
+        }
+        return main;
+    }
+
     @Input
     protected Iterable<String> getRelativeClasspath() {
-        //a list instance is needed here, as org.gradle.api.internal.changedetection.state.ValueSnapshotter.processValue() does not support
+        //a list instance is needed here, as org.gradle.internal.snapshot.ValueSnapshotter.processValue() does not support
         //serializing Iterators directly
-        return Lists.newArrayList(Iterables.transform(getClasspath().getFiles(), new Function<File, String>() {
-            @Override
-            public String apply(File input) {
-                return "lib/" + input.getName();
-            }
-        }));
+        final FileCollection classpathNullable = getClasspath();
+        if (classpathNullable == null) {
+            return Collections.emptyList();
+        }
+        return getRelativePath(classpathNullable);
+    }
+
+    private Iterable<String> getRelativePath(FileCollection path) {
+        return path.getFiles().stream().map(input -> "lib/" + input.getName()).collect(Collectors.toCollection(Lists::newArrayList));
     }
 
 }

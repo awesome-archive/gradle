@@ -38,7 +38,7 @@ class ResolvingWithPluginManagementSpec extends AbstractDependencyResolutionTest
         def taskName = "pluginTask"
 
         pluginBuilder.addPluginWithPrintlnTask(taskName, message, "org.example.plugin")
-        if(repository instanceof  MavenRepository) {
+        if (repository instanceof MavenRepository) {
             pluginBuilder.publishAs("org.example.plugin:plugin:1.0", repository, executer)
         } else if (repository instanceof IvyRepository) {
             pluginBuilder.publishAs("org.example.plugin:plugin:1.0", repository, executer)
@@ -57,6 +57,7 @@ class ResolvingWithPluginManagementSpec extends AbstractDependencyResolutionTest
           }
         """
     }
+
     def 'setting different version in resolutionStrategy will affect plugin choice'() {
         given:
         publishTestPlugin()
@@ -110,7 +111,7 @@ class ResolvingWithPluginManagementSpec extends AbstractDependencyResolutionTest
         fails("pluginTask")
 
         then:
-        errorOutput.contains("Plugin [id: 'org.example.plugin']")
+        failure.assertHasDescription("Plugin [id: 'org.example.plugin'] was not found")
     }
 
     def 'when invalid version is specified, resolution fails'() {
@@ -138,7 +139,7 @@ class ResolvingWithPluginManagementSpec extends AbstractDependencyResolutionTest
         fails("pluginTask")
 
         then:
-        errorOutput.contains("Plugin [id: 'org.example.plugin', version: '+']")
+        failure.assertHasDescription("Plugin [id: 'org.example.plugin', version: '+'] was not found")
     }
 
     def 'when invalid artifact version is specified, resolution fails'() {
@@ -166,7 +167,7 @@ class ResolvingWithPluginManagementSpec extends AbstractDependencyResolutionTest
         fails("pluginTask")
 
         then:
-        errorOutput.contains("Plugin [id: 'org.example.plugin', version: '1.2', artifact: 'org.example.plugin:plugin:+']")
+        failure.assertHasDescription("Plugin [id: 'org.example.plugin', version: '1.2', artifact: 'org.example.plugin:plugin:+'] was not found")
     }
 
     def 'can specify an artifact to use'() {
@@ -294,7 +295,7 @@ class ResolvingWithPluginManagementSpec extends AbstractDependencyResolutionTest
           settingsEvaluated { settings ->
               mySettings = settings
           }
-          projectsLoaded { 
+          projectsLoaded {
             mySettings.pluginManagement.resolutionStrategy.eachPlugin {}
           }
         """
@@ -328,7 +329,7 @@ class ResolvingWithPluginManagementSpec extends AbstractDependencyResolutionTest
         fails("helloWorld")
 
         then:
-        errorOutput.contains("could not resolve plugin artifact 'foo:bar:1.0'")
+        failureDescriptionContains("could not resolve plugin artifact 'foo:bar:1.0'")
     }
 
     def "succeeds build for resolvable custom artifact"() {
@@ -371,7 +372,7 @@ class ResolvingWithPluginManagementSpec extends AbstractDependencyResolutionTest
                 repositories {
                     ivy {
                         url "${repo.uri}"
-                        layout("pattern") {
+                        patternLayout {
                             ivy '[organisation]/[module]/[revision]/[module]-[revision].ivy'
                             artifact '[organisation]/[module]/[revision]/[artifact]-[revision](-[classifier]).[ext]'
                             m2compatible true

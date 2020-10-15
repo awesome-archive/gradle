@@ -73,7 +73,7 @@ class BuildControllerAdapter extends AbstractBuildController implements BuildCon
         validateParameters(parameterType, parameterInitializer);
         if (parameterType != null) {
             // TODO: move this to ObjectFactory
-            P parameter = parameterType.cast(Proxy.newProxyInstance(parameterType.getClassLoader(), new Class[]{parameterType}, new ToolingParameterProxy()));
+            P parameter = parameterType.cast(Proxy.newProxyInstance(parameterType.getClassLoader(), new Class<?>[]{parameterType}, new ToolingParameterProxy()));
             parameterInitializer.execute(parameter);
             return parameter;
         } else {
@@ -83,7 +83,7 @@ class BuildControllerAdapter extends AbstractBuildController implements BuildCon
 
     private <P> void validateParameters(Class<P> parameterType, Action<? super P> parameterInitializer) {
         if ((parameterType == null && parameterInitializer != null) || (parameterType != null && parameterInitializer == null)) {
-            throw new NullPointerException("parameterType and parameterInitializer both need to be set for a parametrized model request.");
+            throw new NullPointerException("parameterType and parameterInitializer both need to be set for a parameterized model request.");
         }
 
         if (parameterType != null) {

@@ -18,6 +18,7 @@ package org.gradle.cache.internal
 
 import org.gradle.api.Action
 import org.gradle.cache.CacheRepository
+import org.gradle.internal.logging.services.LoggingServiceRegistry
 import org.gradle.internal.service.DefaultServiceRegistry
 import org.gradle.internal.service.ServiceRegistryBuilder
 import org.gradle.internal.service.scopes.GlobalScopeServices
@@ -39,7 +40,7 @@ class DefaultGeneratedGradleJarCacheIntegrationTest extends Specification {
     private final static long JAR_GENERATION_TIME_MS = 2000L
 
     @Rule
-    TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider()
+    TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider(getClass())
 
     @Rule
     RedirectStdOutAndErr stdout = new RedirectStdOutAndErr()
@@ -49,6 +50,7 @@ class DefaultGeneratedGradleJarCacheIntegrationTest extends Specification {
 
     def DefaultServiceRegistry services = (DefaultServiceRegistry) ServiceRegistryBuilder.builder()
             .parent(NativeServicesTestFixture.getInstance())
+            .provider(LoggingServiceRegistry.NO_OP)
             .provider(new GlobalScopeServices(false))
             .build()
 

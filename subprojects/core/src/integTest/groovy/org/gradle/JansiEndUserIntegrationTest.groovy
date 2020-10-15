@@ -17,12 +17,10 @@
 package org.gradle
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.util.Requires
 import spock.lang.Ignore
 import spock.lang.Issue
 
 import static org.gradle.internal.nativeintegration.jansi.JansiBootPathConfigurer.JANSI_LIBRARY_PATH_SYS_PROP
-import static org.gradle.util.TestPrecondition.JDK8_OR_EARLIER
 
 class JansiEndUserIntegrationTest extends AbstractIntegrationSpec {
 
@@ -34,8 +32,8 @@ class JansiEndUserIntegrationTest extends AbstractIntegrationSpec {
         buildFile << basicJavaProject()
         buildFile << """
             dependencies {
-                testCompile 'org.fusesource.jansi:jansi:$JANSI_VERSION'
-                testCompile 'junit:junit:4.12'
+                testImplementation 'org.fusesource.jansi:jansi:$JANSI_VERSION'
+                testImplementation 'junit:junit:4.13'
             }
         """
 
@@ -112,7 +110,7 @@ class JansiEndUserIntegrationTest extends AbstractIntegrationSpec {
             apply plugin: 'groovy'
 
             dependencies {
-                compile localGroovy()
+                implementation localGroovy()
             }
 
             compileGroovy {
@@ -131,51 +129,6 @@ class JansiEndUserIntegrationTest extends AbstractIntegrationSpec {
         outputContains('Hello World')
     }
 
-    @Requires(JDK8_OR_EARLIER)
-    def "kotlin compiler bundles different version of Jansi than initialized by Gradle's native services"() {
-        given:
-        def kotlinVersion = '1.0.4'
-
-        buildFile << """
-            buildscript {
-                ${mavenCentralRepository()}
-                dependencies {
-                    classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion'
-                }
-            }
-
-            apply plugin: 'kotlin'
-
-            ${mavenCentralRepository()}
-
-            dependencies {
-                compile 'org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion'
-            }
-        """
-
-        when:
-        file('src/main/kotlin/MyClass.kt') << """
-            class MyClass {}
-        """
-
-        succeeds 'compileKotlin'
-
-        then:
-        executedAndNotSkipped(':compileKotlin')
-
-        when:
-        file('src/main/kotlin/FailingClass.kt') << """
-            class FailingClass { < }
-        """
-
-        def result = fails 'compileKotlin'
-
-        then:
-        executedAndNotSkipped(':compileKotlin')
-        result.error.contains('> Compilation error. See log for more details')
-        result.error.contains('FailingClass.kt: (2, 34): Expecting member declaration')
-    }
-
     static String basicJavaProject() {
         """
             apply plugin: 'java'
@@ -186,7 +139,7 @@ class JansiEndUserIntegrationTest extends AbstractIntegrationSpec {
 
     static String annotationProcessorDependency(File repoDir, String processorDependency) {
         """
-            sourceCompatibility = '1.6'
+            sourceCompatibility = '1.7'
 
             repositories {
                 maven {
@@ -247,10 +200,10 @@ class JansiEndUserIntegrationTest extends AbstractIntegrationSpec {
 
                 group = '$group'
                 version = '$version'
-                sourceCompatibility = '1.6'
+                sourceCompatibility = '1.7'
 
                 dependencies {
-                    compile 'org.fusesource.jansi:jansi:$JANSI_VERSION'
+                    implementation 'org.fusesource.jansi:jansi:$JANSI_VERSION'
                 }
 
                 publishing {
@@ -282,7 +235,7 @@ class JansiEndUserIntegrationTest extends AbstractIntegrationSpec {
                 import org.fusesource.jansi.AnsiConsole;
 
                 @SupportedAnnotationTypes({"org.gradle.Custom"})
-                @SupportedSourceVersion(SourceVersion.RELEASE_6)
+                @SupportedSourceVersion(SourceVersion.RELEASE_7)
                 public class MyProcessor extends AbstractProcessor {
                     @Override
                     public synchronized void init(ProcessingEnvironment processingEnv) {

@@ -37,7 +37,7 @@ class InstallTest extends Specification {
     PathAssembler pathAssembler = Mock()
     PathAssembler.LocalDistribution localDistribution = Mock()
     @Rule
-    public TestNameTestDirectoryProvider temporaryFolder = new TestNameTestDirectoryProvider();
+    public TestNameTestDirectoryProvider temporaryFolder = new TestNameTestDirectoryProvider(getClass());
 
     public void setup() {
         downloadCalled = false
@@ -59,6 +59,9 @@ class InstallTest extends Specification {
         TestFile gradleScript = explodedZipDir.file('gradle-0.9/bin/gradle')
         gradleScript.parentFile.createDir()
         gradleScript.write('something')
+        TestFile gradleLauncherJar = explodedZipDir.file('gradle-0.9/lib/gradle-launcher-0.9.jar')
+        gradleLauncherJar.parentFile.createDir()
+        gradleLauncherJar.write('something')
         explodedZipDir.zipTo(new TestFile(zipDestination))
     }
 

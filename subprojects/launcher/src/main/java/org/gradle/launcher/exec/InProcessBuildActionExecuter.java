@@ -16,51 +16,52 @@
 
 package org.gradle.launcher.exec;
 
-import org.gradle.StartParameter;
-import org.gradle.api.internal.StartParameterInternal;
-import org.gradle.initialization.BuildRequestContext;
-import org.gradle.initialization.GradleLauncher;
-import org.gradle.initialization.GradleLauncherFactory;
-import org.gradle.initialization.RootBuildLifecycleListener;
-import org.gradle.internal.event.ListenerManager;
+import org.gradle.api.internal.BuildDefinition;
+import org.gradle.initialization.BuildCancellationToken;
+import org.gradle.internal.build.BuildStateRegistry;
+import org.gradle.internal.build.RootBuildState;
+import org.gradle.internal.buildtree.BuildTreeContext;
 import org.gradle.internal.invocation.BuildAction;
 import org.gradle.internal.invocation.BuildActionRunner;
-import org.gradle.internal.invocation.GradleBuildController;
-import org.gradle.internal.jvm.UnsupportedJavaRuntimeException;
-import org.gradle.internal.service.ServiceRegistry;
+import org.gradle.internal.operations.notify.BuildOperationNotificationValve;
+import org.gradle.tooling.internal.provider.serialization.PayloadSerializer;
 
-public class InProcessBuildActionExecuter implements BuildActionExecuter<BuildActionParameters> {
+public class InProcessBuildActionExecuter implements BuildTreeBuildActionExecutor {
     private final BuildActionRunner buildActionRunner;
+    private final BuildStateRegistry buildStateRegistry;
+    private final PayloadSerializer payloadSerializer;
+    private final BuildOperationNotificationValve buildOperationNotificationValve;
+    private final BuildCancellationToken buildCancellationToken;
 
-    public InProcessBuildActionExecuter(BuildActionRunner buildActionRunner) {
+    public InProcessBuildActionExecuter(BuildStateRegistry buildStateRegistry,
+                                        PayloadSerializer payloadSerializer,
+                                        BuildOperationNotificationValve buildOperationNotificationValve,
+                                        BuildCancellationToken buildCancellationToken,
+                                        BuildActionRunner buildActionRunner) {
         this.buildActionRunner = buildActionRunner;
+        this.buildStateRegistry = buildStateRegistry;
+        this.payloadSerializer = payloadSerializer;
+        this.buildOperationNotificationValve = buildOperationNotificationValve;
+        this.buildCancellationToken = buildCancellationToken;
     }
 
-    public Object execute(BuildAction action, BuildRequestContext buildRequestContext, BuildActionParameters actionParameters, ServiceRegistry contextServices) {
-        GradleLauncherFactory gradleLauncherFactory = contextServices.get(GradleLauncherFactory.class);
-        GradleLauncher gradleLauncher = gradleLauncherFactory.newInstance(action.getStartParameter(), buildRequestContext, contextServices);
-        GradleBuildController buildController = new GradleBuildController(gradleLauncher);
-        checkDeprecations(action.getStartParameter());
+    @Override
+    public BuildActionResult execute(BuildAction action, BuildActionParameters actionParameters, BuildTreeContext buildTree) {
+        buildOperationNotificationValve.start();
         try {
-            RootBuildLifecycleListener buildLifecycleListener = contextServices.get(ListenerManager.class).getBroadcaster(RootBuildLifecycleListener.class);
-            buildLifecycleListener.afterStart();
-            try {
-                buildActionRunner.run(action, buildController);
-                return buildController.getResult();
-            } finally {
-                buildLifecycleListener.beforeComplete();
-            }
+            RootBuildState rootBuild = buildStateRegistry.createRootBuild(BuildDefinition.fromStartParameter(action.getStartParameter(), null));
+            return rootBuild.run(buildController -> {
+                BuildActionRunner.Result result = buildActionRunner.run(action, buildController);
+                if (result.getBuildFailure() == null) {
+                    return BuildActionResult.of(payloadSerializer.serialize(result.getClientResult()));
+                }
+                if (buildCancellationToken.isCancellationRequested()) {
+                    return BuildActionResult.cancelled(payloadSerializer.serialize(result.getBuildFailure()));
+                }
+                return BuildActionResult.failed(payloadSerializer.serialize(result.getClientFailure()));
+            });
         } finally {
-            buildController.stop();
-        }
-    }
-
-    private void checkDeprecations(StartParameter startParameter) {
-        UnsupportedJavaRuntimeException.javaDeprecationWarning();
-
-        // This must be done here because DeprecationLogger needs to be initialized properly
-        if (startParameter instanceof StartParameterInternal) {
-            StartParameterInternal.class.cast(startParameter).checkDeprecation();
+            buildOperationNotificationValve.stop();
         }
     }
 }

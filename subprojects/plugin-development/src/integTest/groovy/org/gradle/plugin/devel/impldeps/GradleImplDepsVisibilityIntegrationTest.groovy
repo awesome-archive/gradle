@@ -17,8 +17,11 @@
 package org.gradle.plugin.devel.impldeps
 
 import com.google.common.collect.Maps
+import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
 import org.gradle.testfixtures.ProjectBuilder
+import spock.lang.IgnoreIf
 
+@IgnoreIf({ GradleContextualExecuter.embedded }) // This tests class loader isolation which is not given in embedded mode
 class GradleImplDepsVisibilityIntegrationTest extends BaseGradleImplDepsIntegrationTest {
 
     def "cannot compile against classes that are not part of Gradle's public API"() {
@@ -48,7 +51,7 @@ class GradleImplDepsVisibilityIntegrationTest extends BaseGradleImplDepsIntegrat
         buildFile << testablePluginProject()
         buildFile << """
             dependencies {
-                compile 'com.google.guava:guava:19.0'
+                implementation 'com.google.guava:guava:19.0'
             }
         """
 

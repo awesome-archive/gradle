@@ -16,55 +16,31 @@
 
 package org.gradle.resolve
 
+import org.eclipse.jetty.http.HttpHeader
+import org.eclipse.jetty.server.Request
+import org.eclipse.jetty.server.Server
+import org.eclipse.jetty.server.ServerConnector
+import org.eclipse.jetty.server.handler.AbstractHandler
+import org.eclipse.jetty.server.handler.HandlerCollection
+import org.gradle.integtests.fixtures.daemon.DaemonLogsAnalyzer
 import org.gradle.integtests.fixtures.executer.GradleDistribution
 import org.gradle.integtests.fixtures.executer.GradleExecuter
 import org.gradle.integtests.fixtures.executer.IntegrationTestBuildContext
 import org.gradle.integtests.fixtures.executer.UnderDevelopmentGradleDistribution
-import org.gradle.soak.categories.SoakTest
 import org.gradle.test.fixtures.ConcurrentTestUtil
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
-import org.gradle.util.Requires
-import org.gradle.util.TestPrecondition
 import org.junit.Rule
-import org.junit.experimental.categories.Category
 import org.junit.rules.ExternalResource
-import org.mortbay.jetty.Connector
-import org.mortbay.jetty.HttpHeaders
-import org.mortbay.jetty.Server
-import org.mortbay.jetty.handler.AbstractHandler
-import org.mortbay.jetty.nio.SelectChannelConnector
 import spock.lang.Specification
 
+import javax.servlet.ServletException
 import javax.servlet.http.HttpServletRequest
 import javax.servlet.http.HttpServletResponse
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
-@Category(SoakTest)
-@Requires(TestPrecondition.NOT_WINDOWS) //TODO this test leaves behind files on Windows: Execution failed for task ':soak:verifyTestFilesCleanup'.
-// - handles_concurrent_...artifacts\64jeg\2\.gradle\4.2-20170814004107+0000\fileChanges\last-build.bin
-// - handles_concurrent_...artifacts\64jeg\2\.gradle\4.2-20170814004107+0000\fileHashes\fileHashes.bin;
-// - handles_concurrent_...artifacts\64jeg\2\.gradle\4.2-20170814004107+0000\fileHashes\fileHashes.lock;
-// - handles_concurrent_...artifacts\64jeg\2\.gradle\4.2-20170814004107+0000\taskHistory\taskHistory.lock
-// - handles_concurrent_...artifacts\64jeg\2\.gradle\buildOutputCleanup\buildOutputCleanup.lock
-// - handles_concurrent_...artifacts\64jeg\2\.gradle\buildOutputCleanup\cache.properties
-// - handles_concurrent_...artifacts\64jeg\2\build.gradle
-// - handles_concurrent_...artifacts\ogsj2\1\.gradle\4.2-20170814004107+0000\fileChanges\last-build.bin
-// - handles_concurrent_...artifacts\ogsj2\1\.gradle\4.2-20170814004107+0000\fileHashes\fileHashes.bin
-// - handles_concurrent_...artifacts\ogsj2\1\.gradle\4.2-20170814004107+0000\fileHashes\fileHashes.lock
-// - handles_concurrent_...artifacts\ogsj2\1\.gradle\4.2-20170814004107+0000\taskHistory\taskHistory.lock
-// - handles_concurrent_...artifacts\ogsj2\1\.gradle\buildOutputCleanup\buildOutputCleanup.lock
-// - handles_concurrent_...artifacts\ogsj2\1\.gradle\buildOutputCleanup\cache.properties
-// - handles_concurrent_...artifacts\ogsj2\1\build.gradle
-// - handles_concurrent_...artifacts\oq65h\0\.gradle\4.2-20170814004107+0000\fileChanges\last-build.bin
-// - handles_concurrent_...artifacts\oq65h\0\.gradle\4.2-20170814004107+0000\fileHashes\fileHashes.bin
-// - handles_concurrent_...artifacts\oq65h\0\.gradle\4.2-20170814004107+0000\fileHashes\fileHashes.lock
-// - handles_concurrent_...artifacts\oq65h\0\.gradle\4.2-20170814004107+0000\taskHistory\taskHistory.lock
-// - handles_concurrent_...artifacts\oq65h\0\.gradle\buildOutputCleanup\buildOutputCleanup.lock
-// - handles_concurrent_...artifacts\oq65h\0\.gradle\buildOutputCleanup\cache.properties
-// - handles_concurrent_...artifacts\oq65h\0\build.gradle
 class DependencyResolutionStressTest extends Specification {
-    @Rule TestNameTestDirectoryProvider workspace = new TestNameTestDirectoryProvider()
+    @Rule TestNameTestDirectoryProvider workspace = new TestNameTestDirectoryProvider(getClass())
     GradleDistribution distribution = new UnderDevelopmentGradleDistribution()
     @Rule StressHttpServer server = new StressHttpServer()
     @Rule ConcurrentTestUtil concurrent = new ConcurrentTestUtil()
@@ -73,11 +49,15 @@ class DependencyResolutionStressTest extends Specification {
         concurrent.shortTimeout = 180000
     }
 
+    def cleanup() {
+        new DaemonLogsAnalyzer(workspace.file("daemon")).daemons.each { it.kill() }
+    }
+
     def "handles concurrent access to changing artifacts"() {
         expect:
         4.times { count ->
+            def buildDir = workspace.file(count)
             concurrent.start {
-                def buildDir = workspace.file(count)
                 buildDir.file('build.gradle') << """
 import java.util.zip.*
 
@@ -112,7 +92,7 @@ task check {
         """
 
                 GradleExecuter executer = distribution.executer(workspace, IntegrationTestBuildContext.INSTANCE).
-                        requireGradleDistribution().
+                        requireDaemon().requireIsolatedDaemons().
                         withGradleUserHomeDir(workspace.file("user-home"))
                 8.times {
                     executer.inDirectory(buildDir).withArgument("--refresh-dependencies").withTasks('check').run()
@@ -128,14 +108,15 @@ task check {
         private static final String METADATA_FILE_PATH = '/org.gradle/changing/1.0/ivy-1.0.xml'
         private static final String JAR_FILE_PATH = '/org.gradle/changing/1.0/changing-1.0.jar'
         private final Server server = new Server(0)
-        private final SelectChannelConnector connector = new SelectChannelConnector()
+        private final ServerConnector connector = new ServerConnector(server)
         private final Resources resources = new Resources()
 
         @Override
         protected void before() {
-            server.setConnectors([connector] as Connector[])
-            server.addHandler(new AbstractHandler() {
-                void handle(String target, HttpServletRequest request, HttpServletResponse response, int dispatch) {
+            server.addConnector(connector)
+            def handler = new AbstractHandler() {
+                @Override
+                void handle(String target, Request baseRequest, HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
                     println "* Handling $request.method $request.pathInfo"
                     if (request.method == GET_METHOD && request.pathInfo == METADATA_FILE_PATH) {
                         handleGetIvy(response)
@@ -151,7 +132,8 @@ task check {
                         request.handled = true
                     }
                 }
-            })
+            }
+            server.setHandler(new HandlerCollection(false, handler))
             server.start()
         }
 
@@ -184,14 +166,14 @@ task check {
             provideHeadersForResource(response, resources.jar)
         }
 
-        private void provideHeadersForResource(HttpServletResponse response, Resource resource) {
-            response.setDateHeader(HttpHeaders.LAST_MODIFIED, resource.lastModified)
+        private static void provideHeadersForResource(HttpServletResponse response, Resource resource) {
+            response.setDateHeader(HttpHeader.LAST_MODIFIED.asString(), resource.lastModified)
             response.setContentLength(resource.contentLength)
             response.setContentType(resource.contentType)
         }
 
         URI getUri() {
-            return new URI("http://localhost:${connector.localPort}/")
+            return new URI("http://127.0.0.1:${connector.localPort}/")
         }
     }
 

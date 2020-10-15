@@ -17,18 +17,25 @@ package org.gradle.testing.jacoco.plugins;
 
 import com.google.common.collect.ImmutableList;
 import org.gradle.api.Action;
-import org.gradle.api.Incubating;
+import org.gradle.api.GradleException;
 import org.gradle.api.Named;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
+import org.gradle.api.file.DirectoryProperty;
+import org.gradle.api.file.FileSystemOperations;
+import org.gradle.api.file.ProjectLayout;
+import org.gradle.api.file.RegularFile;
+import org.gradle.api.internal.project.ProjectInternal;
 import org.gradle.api.logging.Logger;
 import org.gradle.api.logging.Logging;
-import org.gradle.api.provider.Property;
+import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.provider.Provider;
-import org.gradle.api.specs.Spec;
+import org.gradle.api.provider.ProviderFactory;
+import org.gradle.api.tasks.Internal;
 import org.gradle.api.tasks.Nested;
 import org.gradle.api.tasks.Optional;
 import org.gradle.api.tasks.TaskCollection;
+import org.gradle.internal.deprecation.DeprecationLogger;
 import org.gradle.internal.jacoco.JacocoAgentJar;
 import org.gradle.process.CommandLineArgumentProvider;
 import org.gradle.process.JavaForkOptions;
@@ -36,22 +43,29 @@ import org.gradle.process.JavaForkOptions;
 import javax.annotation.Nullable;
 import java.io.File;
 import java.util.Collections;
-import java.util.concurrent.Callable;
+
+import static org.gradle.api.internal.lambdas.SerializableLambdas.spec;
 
 /**
  * Extension including common properties and methods for Jacoco.
  */
-@Incubating
 public class JacocoPluginExtension {
 
     public static final String TASK_EXTENSION_NAME = "jacoco";
 
     private static final Logger LOGGER = Logging.getLogger(JacocoPluginExtension.class);
+
+    @Deprecated
     protected final Project project;
+
+    private final ProviderFactory providers;
+    private final ObjectFactory objects;
+    private final ProjectLayout layout;
+    private final FileSystemOperations fs;
     private final JacocoAgentJar agent;
 
     private String toolVersion;
-    private final Property<File> reportsDir;
+    private final DirectoryProperty reportsDirectory;
 
     /**
      * Creates a Jacoco plugin extension.
@@ -62,7 +76,11 @@ public class JacocoPluginExtension {
     public JacocoPluginExtension(Project project, JacocoAgentJar agent) {
         this.project = project;
         this.agent = agent;
-        reportsDir = project.getObjects().property(File.class);
+        this.providers = project.getProviders();
+        this.objects = project.getObjects();
+        this.layout = project.getLayout();
+        this.fs = ((ProjectInternal) project).getServices().get(FileSystemOperations.class);
+        reportsDirectory = project.getObjects().directoryProperty();
     }
 
     /**
@@ -78,9 +96,20 @@ public class JacocoPluginExtension {
 
     /**
      * The directory where reports will be generated.
+     *
+     * @since 6.8
      */
+    public DirectoryProperty getReportsDirectory() {
+        return reportsDirectory;
+    }
+
+    /**
+     * The directory where reports will be generated.
+     */
+    @Deprecated
     public File getReportsDir() {
-        return reportsDir.get();
+        nagReportsDirDeprecation();
+        return reportsDirectory.get().getAsFile();
     }
 
     /**
@@ -88,13 +117,32 @@ public class JacocoPluginExtension {
      *
      * @param reportsDir Reports directory provider
      * @since 4.0
+     * @deprecated See {@link #getReportsDirectory()}
      */
+    @Deprecated
     public void setReportsDir(Provider<File> reportsDir) {
-        this.reportsDir.set(reportsDir);
+        nagReportsDirDeprecation();
+        this.reportsDirectory.set(layout.dir(reportsDir));
     }
 
+    /**
+     * Set the provider for calculating the report directory.
+     *
+     * @param reportsDir Reports directory
+     * @deprecated See {@link #getReportsDirectory()}
+     */
+    @Deprecated
     public void setReportsDir(File reportsDir) {
-        this.reportsDir.set(reportsDir);
+        nagReportsDirDeprecation();
+        this.reportsDirectory.set(reportsDir);
+    }
+
+    private void nagReportsDirDeprecation() {
+        DeprecationLogger.deprecateProperty(JacocoPluginExtension.class, "reportsDir")
+            .replaceWith("reportsDirectory")
+            .willBeRemovedInGradle8()
+            .withDslReference()
+            .nagUser();
     }
 
     /**
@@ -108,32 +156,51 @@ public class JacocoPluginExtension {
     public <T extends Task & JavaForkOptions> void applyTo(final T task) {
         final String taskName = task.getName();
         LOGGER.debug("Applying Jacoco to " + taskName);
-        final JacocoTaskExtension extension = task.getExtensions().create(TASK_EXTENSION_NAME, JacocoTaskExtension.class, project, agent, task);
-        extension.setDestinationFile(project.provider(new Callable<File>() {
-            @Override
-            public File call() throws Exception {
-                return project.file(String.valueOf(project.getBuildDir()) + "/jacoco/" + taskName + ".exec");
-            }
-        }));
+        final JacocoTaskExtension extension = task.getExtensions().create(TASK_EXTENSION_NAME, JacocoTaskExtension.class, objects, agent, task);
+        extension.setDestinationFile(layout.getBuildDirectory().file("jacoco/" + taskName + ".exec").map(RegularFile::getAsFile));
 
         task.getJvmArgumentProviders().add(new JacocoAgent(extension));
+        task.doFirst(new JacocoOutputCleanupTestTaskAction(
+            fs,
+            providers.provider(() -> extension.isEnabled() && extension.getOutput() == JacocoTaskExtension.Output.FILE),
+            providers.provider(extension::getDestinationFile)
+        ));
 
         // Do not cache the task if we are not writing execution data to a file
-        task.getOutputs().doNotCacheIf("JaCoCo configured to not produce its output as a file", new Spec<Task>() {
-            @Override
-            public boolean isSatisfiedBy(Task element) {
-                // Do not cache Test task if Jacoco doesn't produce its output as files
-                return extension.isEnabled() && extension.getOutput() != JacocoTaskExtension.Output.FILE;
-            }
-        });
+        Provider<Boolean> doNotCachePredicate = providers.provider(() ->
+            // Do not cache Test task if Jacoco doesn't produce its output as files
+            extension.isEnabled() && extension.getOutput() != JacocoTaskExtension.Output.FILE
+        );
+        task.getOutputs().doNotCacheIf(
+            "JaCoCo configured to not produce its output as a file",
+            spec(targetTask -> doNotCachePredicate.get())
+        );
+    }
 
-        // Do not cache the Test task if we are appending to the Jacoco output
-        task.getOutputs().doNotCacheIf("JaCoCo agent configured with `append = true`", new Spec<Task>() {
-            @Override
-            public boolean isSatisfiedBy(Task element) {
-                return extension.isEnabled() && extension.isAppend();
+    private static class JacocoOutputCleanupTestTaskAction implements Action<Task> {
+        private final FileSystemOperations fs;
+        private final Provider<Boolean> hasFileOutput;
+        private final Provider<File> destinationFile;
+
+        private JacocoOutputCleanupTestTaskAction(FileSystemOperations fs, Provider<Boolean> hasFileOutput, Provider<File> destinationFile) {
+            this.fs = fs;
+            this.hasFileOutput = hasFileOutput;
+            this.destinationFile = destinationFile;
+        }
+
+        @Override
+        public void execute(Task task) {
+            if (hasFileOutput.get()) {
+                // Delete the coverage file before the task executes, so we don't append to a leftover file from the last execution.
+                // This makes the task cacheable even if multiple JVMs write to same destination file, e.g. when executing tests in parallel.
+                // The JaCoCo agent supports writing in parallel to the same file, see https://github.com/jacoco/jacoco/pull/52.
+                File coverageFile = destinationFile.getOrNull();
+                if (coverageFile == null) {
+                    throw new GradleException("JaCoCo destination file must not be null if output type is FILE");
+                }
+                fs.delete(spec -> spec.delete(coverageFile));
             }
-        });
+        }
     }
 
     private static class JacocoAgent implements CommandLineArgumentProvider, Named {
@@ -153,9 +220,10 @@ public class JacocoPluginExtension {
 
         @Override
         public Iterable<String> asArguments() {
-            return jacoco.isEnabled() ? ImmutableList.of(jacoco.getAsJvmArg()) : Collections.<String>emptyList();
+            return jacoco.isEnabled() ? ImmutableList.of(jacoco.getAsJvmArg()) : Collections.emptyList();
         }
 
+        @Internal
         @Override
         public String getName() {
             return "jacocoAgent";
@@ -167,12 +235,8 @@ public class JacocoPluginExtension {
      *
      * @param tasks the tasks to apply Jacoco to
      */
+    @SuppressWarnings("unchecked")
     public <T extends Task & JavaForkOptions> void applyTo(TaskCollection<T> tasks) {
-        ((TaskCollection) tasks).withType(JavaForkOptions.class, new Action<T>() {
-            @Override
-            public void execute(T task) {
-                applyTo(task);
-            }
-        });
+        ((TaskCollection) tasks).withType(JavaForkOptions.class, (Action<T>) this::applyTo);
     }
 }

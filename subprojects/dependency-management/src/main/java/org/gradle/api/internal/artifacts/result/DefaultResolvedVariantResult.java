@@ -16,16 +16,41 @@
 
 package org.gradle.api.internal.artifacts.result;
 
+import org.gradle.api.artifacts.component.ComponentIdentifier;
 import org.gradle.api.artifacts.result.ResolvedVariantResult;
 import org.gradle.api.attributes.AttributeContainer;
+import org.gradle.api.capabilities.Capability;
+import org.gradle.internal.DisplayName;
+
+import javax.annotation.Nullable;
+import java.util.List;
+import java.util.Optional;
 
 public class DefaultResolvedVariantResult implements ResolvedVariantResult {
-    private final String displayName;
-    private final AttributeContainer attributes;
 
-    public DefaultResolvedVariantResult(String displayName, AttributeContainer attributes) {
+    private final ComponentIdentifier owner;
+    private final DisplayName displayName;
+    private final AttributeContainer attributes;
+    private final List<Capability> capabilities;
+    private final ResolvedVariantResult externalVariant;
+    private final int hashCode;
+
+    public DefaultResolvedVariantResult(ComponentIdentifier owner,
+                                        DisplayName displayName,
+                                        AttributeContainer attributes,
+                                        List<Capability> capabilities,
+                                        @Nullable ResolvedVariantResult externalVariant) {
+        this.owner = owner;
         this.displayName = displayName;
         this.attributes = attributes;
+        this.capabilities = capabilities;
+        this.externalVariant = externalVariant;
+        this.hashCode = computeHashCode();
+    }
+
+    @Override
+    public ComponentIdentifier getOwner() {
+        return owner;
     }
 
     @Override
@@ -35,6 +60,63 @@ public class DefaultResolvedVariantResult implements ResolvedVariantResult {
 
     @Override
     public String getDisplayName() {
-        return displayName;
+        return displayName.getDisplayName();
+    }
+
+    @Override
+    public List<Capability> getCapabilities() {
+        return capabilities;
+    }
+
+    @Override
+    public Optional<ResolvedVariantResult> getExternalVariant() {
+        return Optional.ofNullable(externalVariant);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+
+        DefaultResolvedVariantResult that = (DefaultResolvedVariantResult) o;
+
+        if (!owner.equals(that.owner)) {
+            return false;
+        }
+        if (!displayName.equals(that.displayName)) {
+            return false;
+        }
+        if (!attributes.equals(that.attributes)) {
+            return false;
+        }
+        if (!capabilities.equals(that.capabilities)) {
+            return false;
+        }
+        return externalVariant == null ? that.externalVariant == null : externalVariant.equals(that.externalVariant);
+    }
+
+    @Override
+    public int hashCode() {
+        return hashCode;
+    }
+
+    private int computeHashCode() {
+        int result = owner.hashCode();
+        result = 31 * result + displayName.hashCode();
+        result = 31 * result + attributes.hashCode();
+        result = 31 * result + capabilities.hashCode();
+        if (externalVariant != null) {
+            result = 31 * externalVariant.hashCode();
+        }
+        return result;
+    }
+
+    @Override
+    public String toString() {
+        return displayName.toString();
     }
 }

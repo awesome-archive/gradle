@@ -19,11 +19,17 @@ package org.gradle.plugins.javascript.coffeescript;
 import groovy.lang.Closure;
 import org.gradle.api.Action;
 import org.gradle.api.file.FileCollection;
+import org.gradle.api.file.FileTree;
+import org.gradle.api.file.ProjectLayout;
+import org.gradle.api.internal.file.FileOperations;
 import org.gradle.api.logging.LogLevel;
+import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.tasks.Classpath;
 import org.gradle.api.tasks.InputFiles;
 import org.gradle.api.tasks.Nested;
 import org.gradle.api.tasks.OutputDirectory;
+import org.gradle.api.tasks.PathSensitive;
+import org.gradle.api.tasks.PathSensitivity;
 import org.gradle.api.tasks.SourceTask;
 import org.gradle.api.tasks.TaskAction;
 import org.gradle.plugins.javascript.coffeescript.compile.internal.DefaultCoffeeScriptCompileSpec;
@@ -41,19 +47,40 @@ public class CoffeeScriptCompile extends SourceTask {
     private Object destinationDir;
     private Object rhinoClasspath;
     private CoffeeScriptCompileOptions options = new CoffeeScriptCompileOptions();
+    private LogLevel logLevel = getProject().getGradle().getStartParameter().getLogLevel();
 
     @Inject
     protected WorkerProcessFactory getWorkerProcessBuilderFactory() {
         throw new UnsupportedOperationException();
     }
 
-    @InputFiles
-    public FileCollection getCoffeeScriptJs() {
-        return getProject().files(coffeeScriptJs);
+    @Inject
+    protected ProjectLayout getProjectLayout() {
+        throw new UnsupportedOperationException();
+    }
+
+    @Inject
+    protected ObjectFactory getObjectFactory() {
+        throw new UnsupportedOperationException();
     }
 
     /**
-     * Sets Coffee Script Javascript file.
+     * {@inheritDoc}
+     */
+    @Override
+    @PathSensitive(PathSensitivity.RELATIVE)
+    public FileTree getSource() {
+        return super.getSource();
+    }
+
+    @PathSensitive(PathSensitivity.RELATIVE)
+    @InputFiles
+    public FileCollection getCoffeeScriptJs() {
+        return getObjectFactory().fileCollection().from(coffeeScriptJs);
+    }
+
+    /**
+     * Sets Coffee Script JavaScript file.
      *
      * @since 4.0
      */
@@ -67,7 +94,7 @@ public class CoffeeScriptCompile extends SourceTask {
 
     @Classpath
     public FileCollection getRhinoClasspath() {
-        return getProject().files(rhinoClasspath);
+        return getObjectFactory().fileCollection().from(rhinoClasspath);
     }
 
     /**
@@ -85,7 +112,7 @@ public class CoffeeScriptCompile extends SourceTask {
 
     @OutputDirectory
     public File getDestinationDir() {
-        return getProject().file(destinationDir);
+        return getServices().get(FileOperations.class).file(destinationDir);
     }
 
     /**
@@ -124,8 +151,8 @@ public class CoffeeScriptCompile extends SourceTask {
         spec.setSource(getSource());
         spec.setOptions(getOptions());
 
-        LogLevel logLevel = getProject().getGradle().getStartParameter().getLogLevel();
-        CoffeeScriptCompiler compiler = new RhinoCoffeeScriptCompiler(handleFactory, getRhinoClasspath(), logLevel, getProject().getProjectDir());
+        File projectDir = getProjectLayout().getProjectDirectory().getAsFile();
+        CoffeeScriptCompiler compiler = new RhinoCoffeeScriptCompiler(handleFactory, getRhinoClasspath(), logLevel, projectDir);
 
         setDidWork(compiler.compile(spec).getDidWork());
     }

@@ -18,11 +18,13 @@
 package org.gradle.java.compile
 
 import org.gradle.api.Action
+import org.gradle.api.JavaVersion
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.AvailableJavaHomes
 import org.gradle.test.fixtures.file.ClassFile
-import org.gradle.test.fixtures.file.LeaksFileHandles
 import org.gradle.util.Requires
 import org.gradle.util.TestPrecondition
+import spock.lang.Unroll
 
 abstract class BasicJavaCompilerIntegrationSpec extends AbstractIntegrationSpec {
     def setup() {
@@ -40,7 +42,6 @@ abstract class BasicJavaCompilerIntegrationSpec extends AbstractIntegrationSpec 
         expect:
         succeeds("compileJava")
         output.contains(logStatement())
-        !errorOutput
         javaClassFile("compile/test/Person.class").exists()
     }
 
@@ -51,7 +52,7 @@ abstract class BasicJavaCompilerIntegrationSpec extends AbstractIntegrationSpec 
         expect:
         fails("compileJava")
         output.contains(logStatement())
-        compilerErrorOutput.contains("';' expected")
+        failure.assertHasErrorOutput("';' expected")
         javaClassFile("").assertHasDescendants()
     }
 
@@ -65,7 +66,7 @@ abstract class BasicJavaCompilerIntegrationSpec extends AbstractIntegrationSpec 
         expect:
         succeeds("compileJava")
         output.contains(logStatement())
-        compilerErrorOutput.contains("';' expected")
+        result.assertHasErrorOutput("';' expected")
         javaClassFile("").assertHasDescendants()
     }
 
@@ -76,14 +77,16 @@ abstract class BasicJavaCompilerIntegrationSpec extends AbstractIntegrationSpec 
         and:
         buildFile << '''
             apply plugin: 'application'
-            mainClassName = 'Main'
+
+            application {
+                mainClass = 'Main'
+            }
             compileJava.options.encoding = \'ISO8859_7\'
 '''
 
         expect:
         succeeds("run")
         output.contains(logStatement())
-        !errorOutput
         file('encoded.out').getText("utf-8") == "\u03b1\u03b2\u03b3"
     }
 
@@ -125,7 +128,8 @@ compileJava.options.debug = false
         !noDebug.debugIncludesLocalVariables
     }
 
-    @Requires(TestPrecondition.JDK8_OR_LATER)
+    // JavaFx was removed in JDK 10
+    @Requires(TestPrecondition.JDK9_OR_EARLIER)
     def "compileJavaFx8Code"() {
         given:
         file("src/main/java/compile/test/FxApp.java") << '''
@@ -142,47 +146,259 @@ public class FxApp extends Application {
         succeeds("compileJava")
     }
 
-    @Requires(TestPrecondition.JDK9_OR_LATER)
-    def "compile with release option"() {
+    @Requires(adhoc = { AvailableJavaHomes.getJdk(JavaVersion.VERSION_11) != null })
+    def 'ignores project level compatibility when using toolchain'() {
         given:
         goodCode()
         buildFile << """
-compileJava.options.compilerArgs.addAll(['--release', '7'])
+java.sourceCompatibility = JavaVersion.VERSION_14
+java.targetCompatibility = JavaVersion.VERSION_15
+java.toolchain {
+    languageVersion = JavaLanguageVersion.of(11)
+}
+
+compileJava {
+    doFirst {
+        assert configurations.apiElements.attributes.getAttribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE) == 11
+        assert configurations.runtimeElements.attributes.getAttribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE) == 11
+        assert configurations.compileClasspath.attributes.getAttribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE) == 11
+        assert configurations.runtimeClasspath.attributes.getAttribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE) == 11
+    }
+}
+"""
+    }
+
+    @Requires(adhoc = { AvailableJavaHomes.getJdk(JavaVersion.VERSION_11) != null })
+    def 'honors task level compatibility when using toolchain'() {
+        given:
+        goodCode()
+        buildFile << """
+java.toolchain {
+    languageVersion = JavaLanguageVersion.of(11)
+}
+
+compileJava {
+    sourceCompatibility = JavaVersion.VERSION_9
+    targetCompatibility = JavaVersion.VERSION_9
+
+    doFirst {
+        assert configurations.apiElements.attributes.getAttribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE) == 9
+        assert configurations.runtimeElements.attributes.getAttribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE) == 9
+        assert configurations.compileClasspath.attributes.getAttribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE) == 9
+        assert configurations.runtimeClasspath.attributes.getAttribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE) == 9
+    }
+}
+"""
+    }
+
+    @Requires(adhoc = { AvailableJavaHomes.getJdk(JavaVersion.VERSION_14) != null })
+    def 'computes target jvm version when using toolchain'() {
+        given:
+        goodCode()
+        buildFile << """
+java.toolchain {
+    languageVersion = JavaLanguageVersion.of(14)
+}
+
+compileJava {
+    doFirst {
+        assert configurations.apiElements.attributes.getAttribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE) == 14
+        assert configurations.runtimeElements.attributes.getAttribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE) == 14
+        assert configurations.compileClasspath.attributes.getAttribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE) == 14
+        assert configurations.runtimeClasspath.attributes.getAttribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE) == 14
+    }
+}
+"""
+    }
+
+    @Requires(TestPrecondition.JDK9_OR_LATER)
+    @Unroll
+    def "compile with release flag using #notation notation"() {
+        given:
+        goodCode()
+        buildFile << """
+java.targetCompatibility = JavaVersion.VERSION_1_7
+compileJava.options.compilerArgs.addAll(['--release', $notation])
+compileJava {
+    doFirst {
+        assert configurations.apiElements.attributes.getAttribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE) == 8
+        assert configurations.runtimeElements.attributes.getAttribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE) == 8
+        assert configurations.compileClasspath.attributes.getAttribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE) == 8
+        assert configurations.runtimeClasspath.attributes.getAttribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE) == 8
+    }
+}
 """
 
         expect:
         succeeds 'compileJava'
+        bytecodeVersion() == 52
+
+        where:
+        notation << [
+            "'8'",
+            '8', // Integer, see #13351
+            '"${8}"' // GString, see #13351
+        ]
+    }
+
+    @Requires(TestPrecondition.JDK9_OR_LATER)
+    def "compile with release property set"() {
+        given:
+        goodCode()
+        buildFile << """
+java.targetCompatibility = JavaVersion.VERSION_1_7 // ignored
+compileJava.targetCompatibility = '10' // ignored
+compileJava.options.release.set(8)
+compileJava {
+    doFirst {
+        assert configurations.apiElements.attributes.getAttribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE) == 8
+        assert configurations.runtimeElements.attributes.getAttribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE) == 8
+        assert configurations.compileClasspath.attributes.getAttribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE) == 8
+        assert configurations.runtimeClasspath.attributes.getAttribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE) == 8
+    }
+}
+"""
+
+        expect:
+        succeeds 'compileJava'
+        bytecodeVersion() == 52
+    }
+
+    @Requires(TestPrecondition.JDK9_OR_LATER)
+    def "fails to compile with release property and flag set"() {
+        given:
+        goodCode()
+        buildFile << """
+compileJava.options.compilerArgs.addAll(['--release', '12'])
+compileJava.options.release.set(8)
+"""
+
+        expect:
+        fails 'compileJava'
+        failureHasCause('Cannot specify --release via `CompileOptions.compilerArgs` when using `JavaCompile.release`.')
+    }
+
+    @Requires(TestPrecondition.JDK9_OR_LATER)
+    def "compile with release property and autoTargetJvmDisabled"() {
+        given:
+        goodCode()
+        buildFile << """
+java.targetCompatibility = JavaVersion.VERSION_1_7 // ignored
+compileJava.targetCompatibility = '10' // ignored
+compileJava.options.release.set(8)
+java.disableAutoTargetJvm()
+compileJava {
+    doFirst {
+        assert configurations.apiElements.attributes.getAttribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE) == 8
+        assert configurations.runtimeElements.attributes.getAttribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE) == 8
+        assert !configurations.compileClasspath.attributes.contains(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE)
+        assert !configurations.runtimeClasspath.attributes.contains(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE)
+    }
+}
+"""
+
+        expect:
+        succeeds 'compileJava'
+        bytecodeVersion() == 52
+    }
+
+    def "compile with target compatibility"() {
+        given:
+        goodCode()
+        buildFile.text = buildFile.text.replace("<< '-Werror'", '') // warning: [options] bootstrap class path not set in conjunction with -source 8
+        buildFile << """
+java.targetCompatibility = JavaVersion.VERSION_1_9 // ignored
+compileJava.targetCompatibility = '1.8'
+compileJava.sourceCompatibility = '1.8'
+compileJava {
+    doFirst {
+        assert configurations.apiElements.attributes.getAttribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE) == 8
+        assert configurations.runtimeElements.attributes.getAttribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE) == 8
+        assert configurations.compileClasspath.attributes.getAttribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE) == 8
+        assert configurations.runtimeClasspath.attributes.getAttribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE) == 8
+    }
+}
+"""
+
+        expect:
+        succeeds 'compileJava'
+        bytecodeVersion() == 52
+    }
+
+    def "compile with target compatibility set in plugin extension"() {
+        given:
+        goodCode()
+        buildFile.text = buildFile.text.replace("<< '-Werror'", '') // warning: [options] bootstrap class path not set in conjunction with -source 8
+        buildFile << """
+java.targetCompatibility = JavaVersion.VERSION_1_8
+java.sourceCompatibility = JavaVersion.VERSION_1_8
+compileJava {
+    doFirst {
+        assert configurations.apiElements.attributes.getAttribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE) == 8
+        assert configurations.runtimeElements.attributes.getAttribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE) == 8
+        assert configurations.compileClasspath.attributes.getAttribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE) == 8
+        assert configurations.runtimeClasspath.attributes.getAttribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE) == 8
+    }
+}
+"""
+
+        expect:
+        succeeds 'compileJava'
+        bytecodeVersion() == 52
     }
 
     @Requires(TestPrecondition.JDK9_OR_LATER)
     def "compile fails when using newer API with release option"() {
         given:
-        file("src/main/java/compile/test/FailsOnJava7.java") << '''
+        file("src/main/java/compile/test/FailsOnJava8.java") << '''
 package compile.test;
 
-import java.util.Optional;
+import java.util.stream.Stream;
+import java.util.function.Predicate;
 
-public class FailsOnJava7 {
-    public Optional<String> someOptional() {
-        return Optional.of("Hello");
+public class FailsOnJava8<T> {
+    public Stream<T> takeFromStream(Stream<T> stream) {
+        return stream.takeWhile(Predicate.isEqual("foo"));
     }
 }
 '''
 
         buildFile << """
-compileJava.options.compilerArgs.addAll(['--release', '7'])
+compileJava.options.compilerArgs.addAll(['--release', '8'])
 """
 
         expect:
         fails 'compileJava'
         output.contains(logStatement())
-        compilerErrorOutput.contains("cannot find symbol")
-        compilerErrorOutput.contains("class Optional")
-
+        failure.assertHasErrorOutput("cannot find symbol")
+        failure.assertHasErrorOutput("method takeWhile")
     }
 
-    def getCompilerErrorOutput() {
-        return errorOutput
+    @Requires(TestPrecondition.JDK9_OR_LATER)
+    def "compile fails when using newer API with release property"() {
+        given:
+        file("src/main/java/compile/test/FailsOnJava8.java") << '''
+package compile.test;
+
+import java.util.stream.Stream;
+import java.util.function.Predicate;
+
+public class FailsOnJava8<T> {
+    public Stream<T> takeFromStream(Stream<T> stream) {
+        return stream.takeWhile(Predicate.isEqual("foo"));
+    }
+}
+'''
+
+        buildFile << """
+compileJava.options.release.set(8)
+"""
+
+        expect:
+        fails 'compileJava'
+        output.contains(logStatement())
+        failure.assertHasErrorOutput("cannot find symbol")
+        failure.assertHasErrorOutput("method takeWhile")
     }
 
     def buildScript() {
@@ -191,7 +407,7 @@ apply plugin: "java"
 ${mavenCentralRepository()}
 
 dependencies {
-    compile "org.codehaus.groovy:groovy:2.4.10"
+    implementation "org.codehaus.groovy:groovy:2.4.10"
 }
 """
     }
@@ -270,7 +486,6 @@ class Main {
         return new ClassFile(javaClassFile(path))
     }
 
-    @LeaksFileHandles("holds processor.jar open for in process compiler")
     def "can use annotation processor"() {
         when:
         buildFile << """
@@ -283,11 +498,13 @@ class Main {
         settingsFile << "include 'processor'"
         writeAnnotationProcessorProject()
 
-        file("src/main/java/Java.java") << "@com.test.SimpleAnnotation public class Java {}"
+        file("src/main/java/Java.java") << """@com.test.SimpleAnnotation public class Java {
+            void foo() { (new Runnable() { public void run() {} }).run(); }
+        }"""
 
         then:
         succeeds("compileJava")
-        javaClassFile('Java$$Generated.java').exists()
+        javaGeneratedSourceFile('Java$$Generated.java').exists()
     }
 
     def writeAnnotationProcessorProject() {
@@ -329,8 +546,8 @@ class Main {
                         public class SimpleAnnotationProcessor extends AbstractProcessor {
                             @Override
                             public boolean process(final Set<? extends TypeElement> annotations, final RoundEnvironment roundEnv) {
-                                if (${gradleLeaksIntoAnnotationProcessor() ? '!' : ''}isClasspathContaminated()) {
-                                    throw new RuntimeException("Annotation Processor Classpath is ${gradleLeaksIntoAnnotationProcessor() ? 'not ' : ''}}contaminated by Gradle ClassLoader");
+                                if (isClasspathContaminated()) {
+                                    throw new RuntimeException("Annotation Processor Classpath is contaminated by Gradle ClassLoader");
                                 }
 
                                 for (final Element classElement : roundEnv.getElementsAnnotatedWith(SimpleAnnotation.class)) {
@@ -390,11 +607,16 @@ class Main {
 
         then:
         fails("compileJava")
-        compilerErrorOutput.contains("package ${gradleBaseServicesClass.package.name} does not exist")
+        failure.assertHasErrorOutput("package ${gradleBaseServicesClass.package.name} does not exist")
     }
 
-    protected boolean gradleLeaksIntoAnnotationProcessor() {
-        return false;
+    def bytecodeVersion() {
+        def classFile = javaClassFile('compile/test/Person.class').newDataInputStream()
+        classFile.readInt()
+        classFile.readUnsignedShort()
+        def majorVersion = classFile.readUnsignedShort()
+        classFile.close()
+        return majorVersion
     }
 
 }

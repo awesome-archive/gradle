@@ -17,5 +17,7 @@
 /**
  * Classes that enable JVM application script generation.
  */
-@org.gradle.api.Incubating
+@NonNullApi
 package org.gradle.jvm.application.scripts;
+
+import org.gradle.api.NonNullApi;

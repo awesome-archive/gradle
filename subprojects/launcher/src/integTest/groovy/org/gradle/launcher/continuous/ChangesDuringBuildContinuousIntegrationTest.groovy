@@ -16,32 +16,28 @@
 
 package org.gradle.launcher.continuous
 
-import org.gradle.integtests.fixtures.RetryRuleUtil
+import org.gradle.integtests.fixtures.AbstractContinuousIntegrationTest
+import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
 import org.gradle.integtests.fixtures.archives.TestReproducibleArchives
 import org.gradle.internal.os.OperatingSystem
-import org.gradle.testing.internal.util.RetryRule
 import org.gradle.util.TestPrecondition
-import org.junit.Rule
+import spock.lang.Retry
 import spock.lang.Unroll
+
+import static org.gradle.integtests.fixtures.RetryConditions.cleanProjectDir
+import static spock.lang.Retry.Mode.SETUP_FEATURE_CLEANUP
 
 // Continuous build will trigger a rebuild when an input file is changed during build execution
 @TestReproducibleArchives
-class ChangesDuringBuildContinuousIntegrationTest extends Java7RequiringContinuousIntegrationTest {
-
-    @Rule
-    RetryRule retryRule = RetryRule.retryIf(this) {
-        if (TestPrecondition.LINUX && TestPrecondition.JDK8_OR_EARLIER) {
-            // possibly hit JDK-8145981
-            return RetryRuleUtil.retryWithCleanProjectDir(this)
-        }
-        false
-    }
+@Retry(condition = { TestPrecondition.LINUX && TestPrecondition.JDK8_OR_EARLIER && cleanProjectDir(instance) }, mode = SETUP_FEATURE_CLEANUP, count = 2)
+class ChangesDuringBuildContinuousIntegrationTest extends AbstractContinuousIntegrationTest {
 
     def setup() {
         def quietPeriod = OperatingSystem.current().isMacOsX() ? 2000 : 250
         waitAtEndOfBuildForQuietPeriod(quietPeriod)
     }
 
+    @UnsupportedWithConfigurationCache(because = "Spock interceptor interference")
     def "should trigger rebuild when java source file is changed during build execution"() {
         given:
         def inputFile = file("src/main/java/Thing.java")
@@ -87,6 +83,7 @@ jar.dependsOn postCompile
         assert classloader.loadClass('Thing').getDeclaredFields()*.name == ["CHANGED"]
     }
 
+    @UnsupportedWithConfigurationCache(because = "taskGraph.afterTask")
     def "new build should be triggered when input files to tasks are changed after each task has been executed, but before the build has completed"(changingInput) {
         given:
         ['a', 'b', 'c', 'd'].each { file(it).createDir() }
@@ -127,7 +124,7 @@ jar.dependsOn postCompile
         sendEOT()
         results.size() == 2
         results.each {
-            assert it.executedTasks == [':a', ':b', ':c', ':d']
+            assert it.assertTasksExecuted(':a', ':b', ':c', ':d')
         }
 
         where:
@@ -140,11 +137,13 @@ jar.dependsOn postCompile
 
         when:
         buildFile << """
+            def changeTriggerFile = file('change-triggered')
+            def inputFile = file('$changingInput/input.txt')
             def taskAction = { Task task ->
-                if(task.path == ':$changingInput' && !file('change-triggered').exists()) {
+                if (task.path == ':$changingInput' && !changeTriggerFile.exists()) {
                    sleep(500) // attempt to workaround JDK-8145981
-                   file('$changingInput/input.txt').text = 'New input file'
-                   file('change-triggered').text = 'done'
+                   inputFile.text = 'New input file'
+                   changeTriggerFile.text = 'done'
                 }
             }
 
@@ -174,7 +173,7 @@ jar.dependsOn postCompile
         sendEOT()
         results.size() == 2
         results.each {
-            assert it.executedTasks == [':a', ':b', ':c', ':d']
+            assert it.assertTasksExecuted(':a', ':b', ':c', ':d')
         }
 
         where:

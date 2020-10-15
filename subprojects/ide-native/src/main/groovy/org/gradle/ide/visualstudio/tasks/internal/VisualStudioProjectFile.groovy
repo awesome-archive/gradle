@@ -18,6 +18,7 @@ package org.gradle.ide.visualstudio.tasks.internal
 
 import org.gradle.api.Transformer
 import org.gradle.ide.visualstudio.internal.VisualStudioProjectConfiguration
+import org.gradle.ide.visualstudio.internal.VisualStudioTargetBinary
 import org.gradle.internal.xml.XmlTransformer
 import org.gradle.plugins.ide.internal.generator.XmlPersistableConfigurationObject
 import org.gradle.util.VersionNumber
@@ -77,9 +78,11 @@ class VisualStudioProjectFile extends XmlPersistableConfigurationObject {
         defaultProps + {
             PropertyGroup(Label: "Configuration", Condition: configCondition) {
                 ConfigurationType(configuration.type)
-                UseDebugLibraries(configuration.targetBinary.debuggable)
-                OutDir(vsOutputDir)
-                IntDir(vsOutputDir)
+                if (configuration.buildable) {
+                    UseDebugLibraries(configuration.targetBinary.debuggable)
+                    OutDir(vsOutputDir)
+                    IntDir(vsOutputDir)
+                }
                 if (visualStudioVersion.major > 14) {
                     PlatformToolset("v141")
                 } else if (visualStudioVersion.major >= 11) {
@@ -88,17 +91,27 @@ class VisualStudioProjectFile extends XmlPersistableConfigurationObject {
             }
         }
 
-        final includePath = toPath(configuration.targetBinary.includePaths).join(";")
+        final includePath = toPath(configuration.buildable ? configuration.targetBinary.includePaths : [] as Set).join(";")
         Node userMacros = xml.PropertyGroup.find({ it.'@Label' == 'UserMacros' }) as Node
         userMacros + {
             PropertyGroup(Label: "NMakeConfiguration", Condition: configCondition) {
-                NMakeBuildCommandLine("${gradleCommand} ${configuration.targetBinary.buildTaskPath}")
-                NMakeCleanCommandLine("${gradleCommand} ${configuration.targetBinary.cleanTaskPath}")
-                NMakeReBuildCommandLine("${gradleCommand} ${configuration.targetBinary.cleanTaskPath} ${configuration.targetBinary.buildTaskPath}")
-                NMakePreprocessorDefinitions(configuration.targetBinary.compilerDefines.join(";"))
-                NMakeIncludeSearchPath(includePath)
-                NMakeOutput(toPath(configuration.targetBinary.outputFile))
+                if (configuration.buildable) {
+                    NMakeBuildCommandLine("${gradleCommand} ${configuration.targetBinary.buildTaskPath}")
+                    NMakeCleanCommandLine("${gradleCommand} ${configuration.targetBinary.cleanTaskPath}")
+                    NMakeReBuildCommandLine("${gradleCommand} ${configuration.targetBinary.cleanTaskPath} ${configuration.targetBinary.buildTaskPath}")
+                    NMakePreprocessorDefinitions(configuration.targetBinary.compilerDefines.join(";"))
+                    NMakeIncludeSearchPath(includePath)
+                    NMakeOutput(toPath(configuration.targetBinary.outputFile))
+                } else {
+                    NMakeBuildCommandLine("echo '${configuration.project.name}' project is not buildable. && exit /b -42")
+                    NMakeCleanCommandLine("echo '${configuration.project.name}' project is not buildable. && exit /b -42")
+                    NMakeReBuildCommandLine("echo '${configuration.project.name}' project is not buildable. && exit /b -42")
+                }
             }
+        }
+
+        if (configuration.targetBinary != null && configuration.targetBinary.languageStandard != VisualStudioTargetBinary.LanguageStandard.NONE) {
+            xml.appendNode("ItemDefinitionGroup", [Condition: configCondition]).appendNode("ClCompile").appendNode("LanguageStandard", configuration.targetBinary.languageStandard.value)
         }
     }
 

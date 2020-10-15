@@ -16,6 +16,7 @@
 
 package org.gradle.language
 
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
 import org.gradle.nativeplatform.fixtures.app.HelloWorldApp
 import spock.lang.IgnoreIf
@@ -25,6 +26,7 @@ import spock.lang.IgnoreIf
 abstract class AbstractNativeSoftwareModelParallelIntegrationTest extends AbstractNativeParallelIntegrationTest {
     abstract HelloWorldApp getApp()
 
+    @ToBeFixedForConfigurationCache
     def "can execute link executable tasks in parallel"() {
         given:
         withComponentForApp()
@@ -37,6 +39,7 @@ abstract class AbstractNativeSoftwareModelParallelIntegrationTest extends Abstra
         assertTaskIsParallel("linkMainExecutable")
     }
 
+    @ToBeFixedForConfigurationCache
     def "can execute link shared library tasks in parallel"() {
         given:
         withComponentsForAppAndSharedLib()
@@ -49,6 +52,7 @@ abstract class AbstractNativeSoftwareModelParallelIntegrationTest extends Abstra
         assertTaskIsParallel("linkMainLibSharedLibrary")
     }
 
+    @ToBeFixedForConfigurationCache
     def "can execute create static library tasks in parallel"() {
         given:
         withComponentsForAppAndStaticLib()
@@ -61,6 +65,7 @@ abstract class AbstractNativeSoftwareModelParallelIntegrationTest extends Abstra
         assertTaskIsParallel("createMainLibStaticLibrary")
     }
 
+    @ToBeFixedForConfigurationCache
     def "can execute compile tasks in parallel"() {
         given:
         withComponentForApp()
@@ -73,6 +78,7 @@ abstract class AbstractNativeSoftwareModelParallelIntegrationTest extends Abstra
         assertTaskIsParallel("compileMainExecutableMain${app.sourceType.capitalize()}")
     }
 
+    @ToBeFixedForConfigurationCache
     def "can execute install task in parallel"() {
         given:
         withComponentForApp()

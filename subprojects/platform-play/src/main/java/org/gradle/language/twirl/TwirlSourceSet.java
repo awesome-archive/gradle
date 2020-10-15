@@ -25,7 +25,9 @@ import java.util.List;
  * Represents a source set containing twirl templates
  *
  * <pre class='autoTested'>
- *     apply plugin: 'play'
+ *     plugins {
+ *         id 'play'
+ *     }
  *
  *     model {
  *       components {
@@ -45,6 +47,7 @@ import java.util.List;
  * </pre>
  */
 @Incubating
+@Deprecated
 public interface TwirlSourceSet extends LanguageSourceSet {
     /**
      * The default imports that should be added to generated source files

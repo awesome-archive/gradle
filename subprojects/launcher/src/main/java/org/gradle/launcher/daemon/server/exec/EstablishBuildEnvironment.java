@@ -42,6 +42,7 @@ public class EstablishBuildEnvironment extends BuildCommandOnly {
         this.processEnvironment = processEnvironment;
     }
 
+    @Override
     protected void doBuild(DaemonCommandExecution execution, Build build) {
         Properties originalSystemProperties = new Properties();
         originalSystemProperties.putAll(System.getProperties());
@@ -49,20 +50,21 @@ public class EstablishBuildEnvironment extends BuildCommandOnly {
         File originalProcessDir = FileUtils.canonicalize(new File("."));
 
         for (Map.Entry<String, String> entry : build.getParameters().getSystemProperties().entrySet()) {
-            if (SystemProperties.getInstance().getStandardProperties().contains(entry.getKey())) {
+            if (SystemProperties.getInstance().isStandardProperty(entry.getKey())) {
                 continue;
             }
-            if (SystemProperties.getInstance().getNonStandardImportantProperties().contains(entry.getKey())) {
+            if (SystemProperties.getInstance().isNonStandardImportantProperty(entry.getKey())) {
                 continue;
             }
-            if (entry.getKey().startsWith("sun.") || entry.getKey().startsWith("awt.")
-                    || entry.getKey().contains(".awt.")) {
+            if (entry.getKey().startsWith("sun.") || entry.getKey().startsWith("awt.") || entry.getKey().contains(".awt.")) {
                 continue;
             }
             System.setProperty(entry.getKey(), entry.getValue());
         }
 
-        LOGGER.debug("Configuring env variables: {}", build.getParameters().getEnvVariables());
+        // Log only the variable names and not their values. Environment variables often contain sensitive data that should not be leaked to log files.
+        LOGGER.debug("Configuring env variables: {}", build.getParameters().getEnvVariables().keySet());
+
         EnvironmentModificationResult setEnvironmentResult = processEnvironment.maybeSetEnvironment(build.getParameters().getEnvVariables());
         if(!setEnvironmentResult.isSuccess()) {
             LOGGER.warn("Warning: Unable able to set daemon's environment variables to match the client because: "

@@ -19,9 +19,13 @@ package org.gradle.integtests.resolve.artifactreuse
 
 import org.gradle.api.internal.artifacts.ivyservice.DefaultArtifactCacheMetadata
 import org.gradle.integtests.fixtures.IgnoreVersions
+import org.gradle.integtests.fixtures.executer.DefaultGradleDistribution
+import org.gradle.util.GradleVersion
+import spock.lang.Ignore
 
 @IgnoreVersions({ it.artifactCacheLayoutVersion != DefaultArtifactCacheMetadata.CACHE_LAYOUT_VERSION })
 class SameCacheUsageCrossVersionIntegrationTest extends AbstractCacheReuseCrossVersionIntegrationTest {
+    @Ignore("Temporary ignore while release / master get back in sync")
     def "incurs zero remote requests when cache version not upgraded"() {
         given:
         def projectB = mavenHttpRepo.module('org.name', 'projectB', '1.0').publish()
@@ -63,5 +67,10 @@ task retrieve(type: Sync) {
         then:
         file('libs').assertHasDescendants('projectB-1.0.jar')
         file('libs/projectB-1.0.jar').assertContentsHaveNotChangedSince(snapshot)
+    }
+
+    static boolean isIgnoredMilestone(DefaultGradleDistribution distribution) {
+        def v = distribution.version
+        v.snapshot && v.baseVersion.version.equals("5.0") && v < GradleVersion.version("5.0-20181004235847+0000") // 5.0-milestone-1 had a different cache layout version
     }
 }

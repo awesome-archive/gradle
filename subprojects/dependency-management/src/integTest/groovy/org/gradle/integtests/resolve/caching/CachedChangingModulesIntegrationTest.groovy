@@ -18,7 +18,7 @@ package org.gradle.integtests.resolve.caching
 
 import org.gradle.integtests.fixtures.AbstractHttpDependencyResolutionTest
 
-public class CachedChangingModulesIntegrationTest extends AbstractHttpDependencyResolutionTest {
+class CachedChangingModulesIntegrationTest extends AbstractHttpDependencyResolutionTest {
 
     def "can cache and refresh unique versioned maven artifacts with a classifier"() {
         given:

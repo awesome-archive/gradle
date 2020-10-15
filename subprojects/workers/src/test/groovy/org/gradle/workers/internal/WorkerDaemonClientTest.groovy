@@ -17,57 +17,56 @@
 package org.gradle.workers.internal
 
 import org.gradle.api.logging.LogLevel
-import org.gradle.internal.operations.BuildOperationExecutor
-import org.gradle.internal.operations.BuildOperationRef
+import org.gradle.process.internal.worker.MultiRequestClient
+import org.gradle.workers.WorkAction
+import org.gradle.workers.WorkParameters
 import spock.lang.Specification
 
-import static org.gradle.internal.work.WorkerLeaseRegistry.WorkerLease
-import static org.gradle.internal.work.WorkerLeaseRegistry.WorkerLeaseCompletion
-
 class WorkerDaemonClientTest extends Specification {
-    BuildOperationExecutor buildOperationExecutor = Mock(BuildOperationExecutor)
-    BuildOperationRef buildOperation = Mock(BuildOperationRef)
-    WorkerLease workerOperation = Mock(WorkerLease)
-    WorkerLeaseCompletion completion = Mock(WorkerLeaseCompletion)
-
-    WorkerDaemonClient client
-
-    def setup() {
-        _ * workerOperation.startChild() >> completion
-    }
-
     def "underlying worker is executed when client is executed"() {
-        def workerDaemonProcess = Mock(WorkerDaemonProcess)
+        def workerDaemonProcess = Mock(MultiRequestClient)
 
         given:
-        client = client(workerDaemonProcess)
+        def client = client(workerDaemonProcess)
 
         when:
-        client.execute(Stub(ActionExecutionSpec), workerOperation, buildOperation)
+        client.execute(spec())
 
         then:
-        1 * workerDaemonProcess.execute(_)
+        1 * workerDaemonProcess.run(_)
     }
 
     def "use count is incremented when client is executed"() {
         given:
-        client = client()
+        def client = client()
         assert client.uses == 0
 
         when:
-        5.times { client.execute(Stub(ActionExecutionSpec), workerOperation, buildOperation) }
+        5.times { client.execute(spec()) }
 
         then:
         client.uses == 5
     }
 
     WorkerDaemonClient client() {
-        return client(Mock(WorkerDaemonProcess))
+        return client(Mock(MultiRequestClient))
     }
 
-    WorkerDaemonClient client(WorkerDaemonProcess workerDaemonProcess) {
+    WorkerDaemonClient client(MultiRequestClient workerDaemonProcess) {
         def daemonForkOptions = Mock(DaemonForkOptions)
+        def actionExecutionSpecFactory = Stub(ActionExecutionSpecFactory) {
+            newTransportableSpec(_) >> { Mock(TransportableActionExecutionSpec) }
+        }
         def workerProcess = workerDaemonProcess.start()
-        return new WorkerDaemonClient(daemonForkOptions, workerDaemonProcess, workerProcess, LogLevel.INFO)
+        return new WorkerDaemonClient(daemonForkOptions, workerDaemonProcess, workerProcess, LogLevel.INFO, actionExecutionSpecFactory)
+    }
+
+    def spec() {
+        return new IsolatedParametersActionExecutionSpec(TestWorkAction, "action", "impl", null, null, null, false)
+    }
+
+    static abstract class TestWorkAction implements WorkAction<WorkParameters.None> {
+        @Override
+        void execute() {}
     }
 }

@@ -15,12 +15,15 @@
  */
 
 package org.gradle.language.base
+
 import groovy.transform.NotYetImplemented
 import org.gradle.api.reporting.model.ModelReportOutput
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
 
 import static org.gradle.util.TextUtil.normaliseFileSeparators
 
+@UnsupportedWithConfigurationCache(because = "software model")
 class FunctionalSourceSetIntegrationTest extends AbstractIntegrationSpec {
 
     def "can create a top level functional source set with a rule"() {

@@ -13,18 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-
-
-
-
 package org.gradle.integtests.tooling.r15
 
-import org.gradle.integtests.tooling.fixture.TargetGradleVersion
+
 import org.gradle.integtests.tooling.fixture.ToolingApiSpecification
 import spock.lang.Issue
 
-@TargetGradleVersion(">=1.5")
 class CombiningCommandLineArgumentsCrossVersionSpec extends ToolingApiSpecification {
 
     @Issue("GRADLE-2635")

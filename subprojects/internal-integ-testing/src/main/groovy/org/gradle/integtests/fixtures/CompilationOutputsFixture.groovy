@@ -18,6 +18,9 @@ package org.gradle.integtests.fixtures
 
 import groovy.io.FileType
 import org.gradle.internal.FileUtils
+import org.gradle.util.TextUtil
+
+import java.util.function.Predicate
 
 import static org.apache.commons.io.FilenameUtils.removeExtension
 import static org.spockframework.util.CollectionUtil.asSet
@@ -26,6 +29,8 @@ class CompilationOutputsFixture {
 
     private final File targetDir
     private final List<String> includeExtensions
+    private final String sourceSet
+    private final String lang
 
     CompilationOutputsFixture(File targetDir) {
         this(targetDir, [])
@@ -33,9 +38,11 @@ class CompilationOutputsFixture {
     /**
      * Tracks outputs in given target dir considering only the files by the given extensions (ignoring case)
      */
-    CompilationOutputsFixture(File targetDir, List<String> includeExtensions) {
+    CompilationOutputsFixture(File targetDir, List<String> includeExtensions, String sourceSet = "main", String lang = "java") {
         assert targetDir != null
         this.targetDir = targetDir
+        this.sourceSet = sourceSet
+        this.lang = lang
         this.includeExtensions = includeExtensions
     }
 
@@ -81,6 +88,12 @@ class CompilationOutputsFixture {
         assert changedFileNames == expectedNames
     }
 
+    //asserts has the exact set of output files
+    void hasFiles(File... files) {
+        def expectedNames = files.collect({ removeExtension(it.name) }) as Set
+        assert getFiles { true } == expectedNames
+    }
+
     //asserts file changed/added since last snapshot
     void recompiledFile(String fileName) {
         recompiledFiles(fileName)
@@ -93,23 +106,45 @@ class CompilationOutputsFixture {
     }
 
     //asserts classes changed/added since last snapshot. Class means file name without extension.
-    void recompiledClasses(String ... classNames) {
+    void recompiledClasses(String... classNames) {
         assert changedFileNames == asSet(classNames)
     }
 
+    void recompiledFqn(String... classNames) {
+        assert getChangedFileNames(true) == asSet(classNames)
+    }
+
+    //asserts files deleted since last snapshot.
+    void deletedFiles(String... fileNames) {
+        def expectedNames = fileNames.collect({ removeExtension(it) }) as Set
+        def deleted = snapshot.findAll { !it.exists() }.collect { removeExtension(it.name) } as Set
+        assert deleted == expectedNames
+    }
+
     //asserts classes deleted since last snapshot. Class means file name without extension.
-    void deletedClasses(String ... classNames) {
+    void deletedClasses(String... classNames) {
         def deleted = snapshot.findAll { !it.exists() }.collect { removeExtension(it.name) } as Set
         assert deleted == asSet(classNames)
     }
 
-    private Set<String> getChangedFileNames() {
+    private Set<String> getChangedFileNames(boolean qualified = false) {
+        // Get all of the files that do not have a zero last modified timestamp
+        return getFiles(qualified) { it.lastModified() > 0 }
+    }
+
+    private Set<String> getFiles(boolean qualified = false, Predicate<File> criteria) {
         // Get all of the files that do not have a zero last modified timestamp
         def changed = new HashSet()
-        targetDir.eachFileRecurse(FileType.FILES) {
+        def dir = qualified ? new File(new File(targetDir, lang), sourceSet) : targetDir
+        dir.eachFileRecurse(FileType.FILES) {
             if (isIncluded(it)) {
-                if (it.lastModified() > 0) {
-                    changed << removeExtension(it.name)
+                if (criteria.test(it)) {
+                    if (qualified) {
+                        String relative = dir.toPath().relativize(it.toPath()).toString()
+                        changed << TextUtil.normaliseFileSeparators(removeExtension(relative)).replace('/', '.')
+                    } else {
+                        changed << removeExtension(it.name)
+                    }
                 }
             }
         }

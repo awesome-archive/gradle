@@ -17,7 +17,10 @@
 package org.gradle.plugins.ide.eclipse.model.internal;
 
 import org.gradle.api.artifacts.component.ProjectComponentIdentifier;
+import org.gradle.api.tasks.TaskDependency;
+import org.gradle.plugins.ide.eclipse.internal.EclipsePluginConstants;
 import org.gradle.plugins.ide.eclipse.internal.EclipseProjectMetadata;
+import org.gradle.plugins.ide.eclipse.model.FileReference;
 import org.gradle.plugins.ide.eclipse.model.ProjectDependency;
 import org.gradle.plugins.ide.internal.IdeArtifactRegistry;
 
@@ -28,8 +31,17 @@ public class ProjectDependencyBuilder {
         this.ideArtifactRegistry = ideArtifactRegistry;
     }
 
-    public ProjectDependency build(ProjectComponentIdentifier id) {
-        return buildProjectDependency(determineTargetProjectPath(id));
+    public ProjectDependency build(ProjectComponentIdentifier componentIdentifier, FileReference publication, TaskDependency buildDependencies, boolean asJavaModule) {
+        ProjectDependency dependency = buildProjectDependency(determineTargetProjectPath(componentIdentifier));
+        dependency.setPublication(publication);
+        if (buildDependencies != null) {
+            dependency.buildDependencies(buildDependencies);
+        }
+        if (asJavaModule) {
+            dependency.getEntryAttributes().put(EclipsePluginConstants.MODULE_ATTRIBUTE_KEY, EclipsePluginConstants.MODULE_ATTRIBUTE_VALUE);
+        }
+        dependency.getEntryAttributes().put(EclipsePluginConstants.WITHOUT_TEST_CODE_ATTRIBUTE_KEY, EclipsePluginConstants.WITHOUT_TEST_CODE_ATTRIBUTE_VALUE);
+        return dependency;
     }
 
     private String determineTargetProjectPath(ProjectComponentIdentifier id) {
@@ -37,7 +49,7 @@ public class ProjectDependencyBuilder {
     }
 
     public String determineTargetProjectName(ProjectComponentIdentifier id) {
-        EclipseProjectMetadata eclipseProject = ideArtifactRegistry.getIdeArtifactMetadata(EclipseProjectMetadata.class, id);
+        EclipseProjectMetadata eclipseProject = ideArtifactRegistry.getIdeProject(EclipseProjectMetadata.class, id);
         return eclipseProject == null ? id.getProjectName() : eclipseProject.getName();
     }
 

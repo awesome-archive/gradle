@@ -33,12 +33,14 @@ class CachedGroovyCompileIntegrationTest extends AbstractCachedCompileIntegratio
                 id 'application'
             }
 
-            mainClassName = "Hello"
+            application {
+                mainClass = "Hello"
+            }
 
             ${mavenCentralRepository()}
 
             dependencies {
-                compile 'org.codehaus.groovy:groovy-all:2.4.10'
+                implementation 'org.codehaus.groovy:groovy-all:2.4.10'
             }
         """.stripIndent()
 
@@ -72,7 +74,7 @@ class CachedGroovyCompileIntegrationTest extends AbstractCachedCompileIntegratio
             plugins { id 'groovy' }
 
             ${mavenCentralRepository()}
-            dependencies { compile 'org.codehaus.groovy:groovy-all:2.4.5' }
+            dependencies { implementation 'org.codehaus.groovy:groovy-all:2.4.5' }
         """.stripIndent()
 
         when:
@@ -90,7 +92,7 @@ class CachedGroovyCompileIntegrationTest extends AbstractCachedCompileIntegratio
             }
 
             dependencies {
-                compile localGroovy()
+                implementation localGroovy()
             }
         """
         file('src/main/java/RequiredByGroovy.java') << """
@@ -125,7 +127,7 @@ class CachedGroovyCompileIntegrationTest extends AbstractCachedCompileIntegratio
         withBuildCache().run ':clean', ':compileJava'
 
         then:
-        skippedTasks.contains(':compileJava')
+        skipped(':compileJava')
 
         when:
         // This line is crucial to expose the bug
@@ -136,7 +138,7 @@ class CachedGroovyCompileIntegrationTest extends AbstractCachedCompileIntegratio
         withBuildCache().run ':compileGroovy'
 
         then:
-        skippedTasks.containsAll([':compileJava', ':compileGroovy'])
+        skipped(':compileJava', ':compileGroovy')
 
         when:
         file('src/main/java/RequiredByGroovy.java').text = """

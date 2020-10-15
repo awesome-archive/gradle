@@ -16,12 +16,27 @@
 
 package org.gradle.api.internal.tasks.testing;
 
-public class DefaultTestDescriptor extends AbstractTestDescriptor {
-    private final String className;
+import org.gradle.internal.scan.UsedByScanPlugin;
 
+import javax.annotation.Nullable;
+
+@UsedByScanPlugin("test-distribution")
+public class DefaultTestDescriptor extends AbstractTestDescriptor {
+    private final String displayName;
+    private final String className;
+    private final String classDisplayName;
+
+    @UsedByScanPlugin("test-distribution")
     public DefaultTestDescriptor(Object id, String className, String name) {
+        this(id, className, name, null, name);
+    }
+
+    @UsedByScanPlugin("test-distribution")
+    public DefaultTestDescriptor(Object id, String className, String name, @Nullable String classDisplayName, String displayName) {
         super(id, name);
         this.className = className;
+        this.classDisplayName = classDisplayName == null ? className : classDisplayName;
+        this.displayName = displayName;
     }
 
     @Override
@@ -37,5 +52,15 @@ public class DefaultTestDescriptor extends AbstractTestDescriptor {
     @Override
     public String getClassName() {
         return className;
+    }
+
+    @Override
+    public String getDisplayName() {
+        return displayName;
+    }
+
+    @Override
+    public String getClassDisplayName() {
+        return classDisplayName;
     }
 }

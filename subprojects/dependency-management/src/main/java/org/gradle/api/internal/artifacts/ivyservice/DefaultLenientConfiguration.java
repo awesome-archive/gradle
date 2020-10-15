@@ -23,15 +23,15 @@ import org.gradle.api.artifacts.ResolveException;
 import org.gradle.api.artifacts.ResolvedArtifact;
 import org.gradle.api.artifacts.ResolvedDependency;
 import org.gradle.api.artifacts.UnresolvedDependency;
-import org.gradle.api.artifacts.component.ComponentArtifactIdentifier;
 import org.gradle.api.artifacts.component.ComponentIdentifier;
 import org.gradle.api.attributes.AttributeContainer;
 import org.gradle.api.internal.artifacts.DependencyGraphNodeResult;
 import org.gradle.api.internal.artifacts.ResolveArtifactsBuildOperationType;
 import org.gradle.api.internal.artifacts.configurations.ConfigurationInternal;
+import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.verification.DependencyVerificationOverride;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.artifact.ArtifactVisitor;
-import org.gradle.api.internal.artifacts.ivyservice.resolveengine.artifact.BuildDependenciesVisitor;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.artifact.CompositeResolvedArtifactSet;
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.artifact.LocalDependencyFiles;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.artifact.ParallelResolveArtifactSet;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.artifact.ResolvableArtifact;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.artifact.ResolvedArtifactSet;
@@ -45,15 +45,19 @@ import org.gradle.api.internal.artifacts.ivyservice.resolveengine.oldresult.Tran
 import org.gradle.api.internal.artifacts.transform.ArtifactTransforms;
 import org.gradle.api.internal.artifacts.transform.VariantSelector;
 import org.gradle.api.internal.attributes.AttributeContainerInternal;
+import org.gradle.api.internal.file.FileCollectionInternal;
+import org.gradle.api.internal.file.FileCollectionStructureVisitor;
+import org.gradle.api.internal.tasks.TaskDependencyResolveContext;
 import org.gradle.api.specs.Spec;
 import org.gradle.api.specs.Specs;
+import org.gradle.internal.DisplayName;
 import org.gradle.internal.UncheckedException;
 import org.gradle.internal.graph.CachingDirectedGraphWalker;
 import org.gradle.internal.graph.DirectedGraphWithEdgeValues;
 import org.gradle.internal.operations.BuildOperationContext;
+import org.gradle.internal.operations.BuildOperationDescriptor;
 import org.gradle.internal.operations.BuildOperationExecutor;
 import org.gradle.internal.operations.RunnableBuildOperation;
-import org.gradle.internal.operations.BuildOperationDescriptor;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -74,11 +78,12 @@ public class DefaultLenientConfiguration implements LenientConfiguration, Visite
     private final ArtifactTransforms artifactTransforms;
     private final AttributeContainerInternal implicitAttributes;
     private final BuildOperationExecutor buildOperationExecutor;
+    private final DependencyVerificationOverride dependencyVerificationOverride;
 
     // Selected for the configuration
     private SelectedArtifactResults artifactsForThisConfiguration;
 
-    public DefaultLenientConfiguration(ConfigurationInternal configuration, Set<UnresolvedDependency> unresolvedDependencies, VisitedArtifactsResults artifactResults, VisitedFileDependencyResults fileDependencyResults, TransientConfigurationResultsLoader transientConfigurationResultsLoader, ArtifactTransforms artifactTransforms, BuildOperationExecutor buildOperationExecutor) {
+    public DefaultLenientConfiguration(ConfigurationInternal configuration, Set<UnresolvedDependency> unresolvedDependencies, VisitedArtifactsResults artifactResults, VisitedFileDependencyResults fileDependencyResults, TransientConfigurationResultsLoader transientConfigurationResultsLoader, ArtifactTransforms artifactTransforms, BuildOperationExecutor buildOperationExecutor, DependencyVerificationOverride dependencyVerificationOverride) {
         this.configuration = configuration;
         this.implicitAttributes = configuration.getAttributes().asImmutable();
         this.unresolvedDependencies = unresolvedDependencies;
@@ -87,36 +92,37 @@ public class DefaultLenientConfiguration implements LenientConfiguration, Visite
         this.transientConfigurationResultsFactory = transientConfigurationResultsLoader;
         this.artifactTransforms = artifactTransforms;
         this.buildOperationExecutor = buildOperationExecutor;
+        this.dependencyVerificationOverride = dependencyVerificationOverride;
     }
 
     private SelectedArtifactResults getSelectedArtifacts() {
         if (artifactsForThisConfiguration == null) {
-            artifactsForThisConfiguration = artifactResults.select(Specs.<ComponentIdentifier>satisfyAll(), artifactTransforms.variantSelector(implicitAttributes, false));
+            artifactsForThisConfiguration = artifactResults.select(Specs.satisfyAll(), artifactTransforms.variantSelector(implicitAttributes, false,  configuration.getDependenciesResolver()));
         }
         return artifactsForThisConfiguration;
     }
 
     public SelectedArtifactSet select() {
-        return select(Specs.<Dependency>satisfyAll(), implicitAttributes, Specs.<ComponentIdentifier>satisfyAll(), false);
+        return select(Specs.satisfyAll(), implicitAttributes, Specs.satisfyAll(), false);
     }
 
     public SelectedArtifactSet select(final Spec<? super Dependency> dependencySpec) {
-        return select(dependencySpec, implicitAttributes, Specs.<ComponentIdentifier>satisfyAll(), false);
+        return select(dependencySpec, implicitAttributes, Specs.satisfyAll(), false);
     }
 
     @Override
     public SelectedArtifactSet select(final Spec<? super Dependency> dependencySpec, final AttributeContainerInternal requestedAttributes, final Spec<? super ComponentIdentifier> componentSpec, boolean allowNoMatchingVariants) {
         final SelectedArtifactResults artifactResults;
-        VariantSelector selector = artifactTransforms.variantSelector(requestedAttributes, allowNoMatchingVariants);
+        VariantSelector selector = artifactTransforms.variantSelector(requestedAttributes, allowNoMatchingVariants, configuration.getDependenciesResolver());
         artifactResults = this.artifactResults.select(componentSpec, selector);
 
         return new SelectedArtifactSet() {
             @Override
-            public void collectBuildDependencies(BuildDependenciesVisitor visitor) {
+            public void visitDependencies(TaskDependencyResolveContext context) {
                 for (UnresolvedDependency unresolvedDependency : unresolvedDependencies) {
-                    visitor.visitFailure(unresolvedDependency.getProblem());
+                    context.visitFailure(unresolvedDependency.getProblem());
                 }
-                artifactResults.getArtifacts().collectBuildDependencies(visitor);
+                context.add(artifactResults.getArtifacts());
             }
 
             @Override
@@ -135,7 +141,7 @@ public class DefaultLenientConfiguration implements LenientConfiguration, Visite
     }
 
     private ResolveException getFailure() {
-        List<Throwable> failures = new ArrayList<Throwable>();
+        List<Throwable> failures = new ArrayList<>();
         for (UnresolvedDependency unresolvedDependency : unresolvedDependencies) {
             failures.add(unresolvedDependency.getProblem());
         }
@@ -146,6 +152,7 @@ public class DefaultLenientConfiguration implements LenientConfiguration, Visite
         return unresolvedDependencies.size() > 0;
     }
 
+    @Override
     public Set<UnresolvedDependency> getUnresolvedModuleDependencies() {
         return unresolvedDependencies;
     }
@@ -160,8 +167,9 @@ public class DefaultLenientConfiguration implements LenientConfiguration, Visite
         return transientConfigurationResultsFactory.create(artifactResults);
     }
 
+    @Override
     public Set<ResolvedDependency> getFirstLevelModuleDependencies(Spec<? super Dependency> dependencySpec) {
-        Set<ResolvedDependency> matches = new LinkedHashSet<ResolvedDependency>();
+        Set<ResolvedDependency> matches = new LinkedHashSet<>();
         for (DependencyGraphNodeResult node : getFirstLevelNodes(dependencySpec)) {
             matches.add(node.getPublicView());
         }
@@ -169,7 +177,7 @@ public class DefaultLenientConfiguration implements LenientConfiguration, Visite
     }
 
     private Set<DependencyGraphNodeResult> getFirstLevelNodes(Spec<? super Dependency> dependencySpec) {
-        Set<DependencyGraphNodeResult> matches = new LinkedHashSet<DependencyGraphNodeResult>();
+        Set<DependencyGraphNodeResult> matches = new LinkedHashSet<>();
         TransientConfigurationResults graphResults = loadTransientGraphResults(getSelectedArtifacts());
         for (Map.Entry<Dependency, DependencyGraphNodeResult> entry : graphResults.getFirstLevelDependencies().entrySet()) {
             if (dependencySpec.isSatisfiedBy(entry.getKey())) {
@@ -179,17 +187,15 @@ public class DefaultLenientConfiguration implements LenientConfiguration, Visite
         return matches;
     }
 
+    @Override
     public Set<ResolvedDependency> getAllModuleDependencies() {
-        Set<ResolvedDependency> resolvedElements = new LinkedHashSet<ResolvedDependency>();
-        Deque<ResolvedDependency> workQueue = new LinkedList<ResolvedDependency>();
-        workQueue.addAll(loadTransientGraphResults(getSelectedArtifacts()).getRootNode().getPublicView().getChildren());
+        Set<ResolvedDependency> resolvedElements = new LinkedHashSet<>();
+        Deque<ResolvedDependency> workQueue = new LinkedList<>(loadTransientGraphResults(getSelectedArtifacts()).getRootNode().getPublicView().getChildren());
         while (!workQueue.isEmpty()) {
             ResolvedDependency item = workQueue.removeFirst();
             if (resolvedElements.add(item)) {
                 final Set<ResolvedDependency> children = item.getChildren();
-                if (children != null) {
-                    workQueue.addAll(children);
-                }
+                workQueue.addAll(children);
             }
         }
         return resolvedElements;
@@ -197,12 +203,13 @@ public class DefaultLenientConfiguration implements LenientConfiguration, Visite
 
     @Override
     public Set<File> getFiles() {
-        return getFiles(Specs.<Dependency>satisfyAll());
+        return getFiles(Specs.satisfyAll());
     }
 
     /**
      * Recursive but excludes unsuccessfully resolved artifacts.
      */
+    @Override
     public Set<File> getFiles(Spec<? super Dependency> dependencySpec) {
         LenientFilesAndArtifactResolveVisitor visitor = new LenientFilesAndArtifactResolveVisitor();
         visitArtifactsWithBuildOperation(dependencySpec, getSelectedArtifacts(), fileDependencyResults, visitor);
@@ -211,12 +218,13 @@ public class DefaultLenientConfiguration implements LenientConfiguration, Visite
 
     @Override
     public Set<ResolvedArtifact> getArtifacts() {
-        return getArtifacts(Specs.<Dependency>satisfyAll());
+        return getArtifacts(Specs.satisfyAll());
     }
 
     /**
      * Recursive but excludes unsuccessfully resolved artifacts.
      */
+    @Override
     public Set<ResolvedArtifact> getArtifacts(Spec<? super Dependency> dependencySpec) {
         LenientArtifactCollectingVisitor visitor = new LenientArtifactCollectingVisitor();
         visitArtifactsWithBuildOperation(dependencySpec, getSelectedArtifacts(), fileDependencyResults, visitor);
@@ -228,6 +236,7 @@ public class DefaultLenientConfiguration implements LenientConfiguration, Visite
             @Override
             public void run(BuildOperationContext context) {
                 visitArtifacts(dependencySpec, artifactResults, fileDependencyResults, visitor);
+                dependencyVerificationOverride.artifactsAccessed(configuration.getDisplayName());
                 context.setResult(ResolveArtifactsBuildOperationType.RESULT);
             }
 
@@ -256,17 +265,15 @@ public class DefaultLenientConfiguration implements LenientConfiguration, Visite
             return;
         }
 
-        List<ResolvedArtifactSet> artifactSets = new ArrayList<ResolvedArtifactSet>();
+        List<ResolvedArtifactSet> artifactSets = new ArrayList<>();
 
-        if (visitor.includeFiles()) {
-            for (Map.Entry<FileCollectionDependency, Integer> entry : fileDependencyResults.getFirstLevelFiles().entrySet()) {
-                if (dependencySpec.isSatisfiedBy(entry.getKey())) {
-                    artifactSets.add(artifactResults.getArtifactsWithId(entry.getValue()));
-                }
+        for (Map.Entry<FileCollectionDependency, Integer> entry : fileDependencyResults.getFirstLevelFiles().entrySet()) {
+            if (dependencySpec.isSatisfiedBy(entry.getKey())) {
+                artifactSets.add(artifactResults.getArtifactsWithId(entry.getValue()));
             }
         }
 
-        CachingDirectedGraphWalker<DependencyGraphNodeResult, ResolvedArtifact> walker = new CachingDirectedGraphWalker<DependencyGraphNodeResult, ResolvedArtifact>(new ResolvedDependencyArtifactsGraph(artifactSets));
+        CachingDirectedGraphWalker<DependencyGraphNodeResult, ResolvedArtifact> walker = new CachingDirectedGraphWalker<>(new ResolvedDependencyArtifactsGraph(artifactSets));
         for (DependencyGraphNodeResult node : getFirstLevelNodes(dependencySpec)) {
             walker.add(node);
         }
@@ -278,6 +285,7 @@ public class DefaultLenientConfiguration implements LenientConfiguration, Visite
         return configuration;
     }
 
+    @Override
     public Set<ResolvedDependency> getFirstLevelModuleDependencies() {
         return getFirstLevelModuleDependencies(Specs.SATISFIES_ALL);
     }
@@ -287,7 +295,7 @@ public class DefaultLenientConfiguration implements LenientConfiguration, Visite
         final Set<File> files = Sets.newLinkedHashSet();
 
         @Override
-        public void visitArtifact(String variantName, AttributeContainer variantAttributes, ResolvableArtifact artifact) {
+        public void visitArtifact(DisplayName variantName, AttributeContainer variantAttributes, ResolvableArtifact artifact) {
             try {
                 ResolvedArtifact resolvedArtifact = artifact.toPublicView();
                 files.add(resolvedArtifact.getFile());
@@ -298,8 +306,11 @@ public class DefaultLenientConfiguration implements LenientConfiguration, Visite
         }
 
         @Override
-        public boolean includeFiles() {
-            return false;
+        public FileCollectionStructureVisitor.VisitType prepareForVisit(FileCollectionInternal.Source source) {
+            if (source instanceof LocalDependencyFiles) {
+                return FileCollectionStructureVisitor.VisitType.NoContents;
+            }
+            return FileCollectionStructureVisitor.VisitType.Visit;
         }
 
         @Override
@@ -311,22 +322,12 @@ public class DefaultLenientConfiguration implements LenientConfiguration, Visite
         public void visitFailure(Throwable failure) {
             throw UncheckedException.throwAsUncheckedException(failure);
         }
-
-        @Override
-        public void visitFile(ComponentArtifactIdentifier artifactIdentifier, String variantName, AttributeContainer variantAttributes, File file) {
-            throw new UnsupportedOperationException();
-        }
     }
 
     private static class LenientFilesAndArtifactResolveVisitor extends LenientArtifactCollectingVisitor {
         @Override
-        public boolean includeFiles() {
-            return true;
-        }
-
-        @Override
-        public void visitFile(ComponentArtifactIdentifier artifactIdentifier, String variantName, AttributeContainer variantAttributes, File file) {
-            files.add(file);
+        public FileCollectionStructureVisitor.VisitType prepareForVisit(FileCollectionInternal.Source source) {
+            return FileCollectionStructureVisitor.VisitType.Visit;
         }
     }
 

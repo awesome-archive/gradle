@@ -30,16 +30,32 @@ class JavaGradlePluginPluginTestKitSetupIntegrationTest extends AbstractIntegrat
     private static final String PLUGIN_UNDER_TEST_METADATA_TASK_PATH = ":$PLUGIN_UNDER_TEST_METADATA_TASK_NAME"
 
     def setup() {
-        requireGradleDistribution()
         buildFile << """
             apply plugin: 'java-gradle-plugin'
         """
     }
 
+    def "has default conventions"() {
+        buildFile << """
+            task assertHasTestKit() {
+                def testRuntimeClasspath = project.sourceSets.test.runtimeClasspath
+                def testKit = dependencies.gradleTestKit().files
+                doLast {
+                    assert testRuntimeClasspath.files.containsAll(testKit.files)
+                }
+            }
+        """
+        expect:
+        succeeds("assertHasTestKit")
+        succeeds("test")
+        result.assertTaskExecuted(":pluginUnderTestMetadata")
+        result.assertTaskExecuted(":pluginDescriptors")
+    }
+
     def "wires creation of plugin under test metadata into build lifecycle"() {
         given:
         def module = mavenRepo.module('org.gradle.test', 'a', '1.3').publish()
-        buildFile << compileDependency('compile', module)
+        buildFile << compileDependency('implementation', module)
 
         when:
         succeeds 'build'
@@ -54,12 +70,11 @@ class JavaGradlePluginPluginTestKitSetupIntegrationTest extends AbstractIntegrat
     def "can configure plugin and test source set by extension"() {
         given:
         buildFile << """
-            sourceSets.remove(sourceSets.main)
-
             sourceSets {
                 custom {
                     java {
                         srcDir 'src'
+                        compileClasspath = configurations.compileClasspath
                     }
                     resources {
                         srcDir 'resources'
@@ -89,7 +104,7 @@ class JavaGradlePluginPluginTestKitSetupIntegrationTest extends AbstractIntegrat
             }
         """
         def module = mavenRepo.module('org.gradle.test', 'a', '1.3').publish()
-        buildFile << compileDependency('customCompile', module)
+        buildFile << compileDependency('customImplementation', module)
 
         when:
         succeeds 'build'

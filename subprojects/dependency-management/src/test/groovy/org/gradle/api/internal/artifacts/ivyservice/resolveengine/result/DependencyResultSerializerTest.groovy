@@ -17,6 +17,8 @@
 package org.gradle.api.internal.artifacts.ivyservice.resolveengine.result
 
 import org.gradle.api.artifacts.component.ModuleComponentSelector
+import org.gradle.api.internal.artifacts.DefaultModuleIdentifier
+import org.gradle.api.internal.artifacts.DependencyManagementTestUtil
 import org.gradle.api.internal.artifacts.dependencies.DefaultMutableVersionConstraint
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.DependencyGraphEdge
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.DependencyGraphSelector
@@ -24,16 +26,20 @@ import org.gradle.internal.component.external.model.DefaultModuleComponentSelect
 import org.gradle.internal.resolve.ModuleVersionResolveException
 import org.gradle.internal.serialize.InputStreamBackedDecoder
 import org.gradle.internal.serialize.OutputStreamBackedEncoder
+import org.gradle.util.AttributeTestUtil
+import org.gradle.util.TestUtil
 import spock.lang.Specification
 
 import static org.gradle.api.internal.artifacts.DefaultModuleVersionSelector.newSelector
 
 class DependencyResultSerializerTest extends Specification {
 
-    def serializer = new DependencyResultSerializer()
+    def serializer = new DependencyResultSerializer(new ResolvedVariantResultSerializer(
+        new ComponentIdentifierSerializer(),
+        new DesugaredAttributeContainerSerializer(AttributeTestUtil.attributesFactory(), TestUtil.objectInstantiator())), DependencyManagementTestUtil.componentSelectionDescriptorFactory())
 
     def "serializes successful dependency result"() {
-        def requested = DefaultModuleComponentSelector.newSelector("org", "foo", new DefaultMutableVersionConstraint("1.0", ['2.0', '3.0']))
+        def requested = DefaultModuleComponentSelector.newSelector(DefaultModuleIdentifier.newId("org", "foo"), new DefaultMutableVersionConstraint("1.0"))
         def successful = Mock(DependencyGraphEdge) {
             getSelector() >> Stub(DependencyGraphSelector) {
                 getResultId() >> 4L
@@ -41,7 +47,7 @@ class DependencyResultSerializerTest extends Specification {
             }
             getFailure() >> null
             getSelected() >> 12L
-            getReason() >> VersionSelectionReasons.requested()
+            getReason() >> ComponentSelectionReasons.requested()
         }
 
         when:
@@ -58,8 +64,9 @@ class DependencyResultSerializerTest extends Specification {
     }
 
     def "serializes failed dependency result"() {
-        def requested = DefaultModuleComponentSelector.newSelector("x", "y", new DefaultMutableVersionConstraint("1.0", ['2.0', '3.0']))
-        def failure = new ModuleVersionResolveException(newSelector("x", "y", new DefaultMutableVersionConstraint("1.2")), new RuntimeException("Boo!"))
+        def mid = DefaultModuleIdentifier.newId("x", "y")
+        def requested = DefaultModuleComponentSelector.newSelector(mid, new DefaultMutableVersionConstraint("1.0"))
+        def failure = new ModuleVersionResolveException(newSelector(mid, "1.2"), new RuntimeException("Boo!"))
 
         def failed = Mock(DependencyGraphEdge) {
             getSelector() >> Stub(DependencyGraphSelector) {
@@ -68,7 +75,7 @@ class DependencyResultSerializerTest extends Specification {
             }
             getFailure() >> failure
             getSelected() >> null
-            getReason() >> VersionSelectionReasons.of([VersionSelectionReasons.CONFLICT_RESOLUTION])
+            getReason() >> ComponentSelectionReasons.of(ComponentSelectionReasons.CONFLICT_RESOLUTION)
         }
 
         when:
@@ -78,7 +85,6 @@ class DependencyResultSerializerTest extends Specification {
         encoder.flush()
         Map<ModuleComponentSelector, ModuleVersionResolveException> map = new HashMap<>()
         map.put(requested, failure)
-        serializer.reset()
         def out = serializer.read(new InputStreamBackedDecoder(new ByteArrayInputStream(bytes.toByteArray())), [4L: requested], map)
 
         then:

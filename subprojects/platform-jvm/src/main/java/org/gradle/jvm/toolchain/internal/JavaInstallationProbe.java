@@ -22,9 +22,9 @@ import com.google.common.io.Files;
 import org.apache.commons.io.FileUtils;
 import org.gradle.api.GradleException;
 import org.gradle.api.JavaVersion;
-import org.gradle.api.internal.file.collections.SimpleFileCollection;
 import org.gradle.internal.ErroringAction;
 import org.gradle.internal.IoActions;
+import org.gradle.internal.jvm.Jvm;
 import org.gradle.internal.os.OperatingSystem;
 import org.gradle.process.ExecResult;
 import org.gradle.process.internal.ExecActionFactory;
@@ -35,7 +35,13 @@ import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 
-import java.io.*;
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.EnumMap;
 
 public class JavaInstallationProbe {
@@ -44,6 +50,9 @@ public class JavaInstallationProbe {
     private final LoadingCache<File, EnumMap<SysProp, String>> cache = CacheBuilder.newBuilder().build(new CacheLoader<File, EnumMap<SysProp, String>>() {
         @Override
         public EnumMap<SysProp, String> load(File javaHome) throws Exception {
+            if (Jvm.current().getJavaHome().equals(javaHome)) {
+                return getCurrentJvmMetadata();
+            }
             return getMetadataInternal(javaHome);
         }
     });
@@ -51,6 +60,7 @@ public class JavaInstallationProbe {
     private final ExecActionFactory factory;
 
     private enum SysProp {
+        JAVA_HOME("java.home"),
         VERSION("java.version"),
         VENDOR("java.vendor"),
         ARCH("os.arch"),
@@ -64,7 +74,6 @@ public class JavaInstallationProbe {
         SysProp(String sysProp) {
             this.sysProp = sysProp;
         }
-
     }
 
     public static class ProbeResult {
@@ -86,6 +95,26 @@ public class JavaInstallationProbe {
             this.error = error;
         }
 
+        public Path getJavaHome() {
+            assertOk();
+            return Paths.get(metadata.get(SysProp.JAVA_HOME));
+        }
+
+        public String getImplementationJavaVersion() {
+            assertOk();
+            return metadata.get(SysProp.VERSION);
+        }
+
+        public JavaVersion getJavaVersion() {
+            assertOk();
+            return JavaVersion.toVersion(metadata.get(SysProp.VERSION));
+        }
+
+        public String getImplementationName() {
+            assertOk();
+            return computeJdkName(installType, metadata);
+        }
+
         public InstallType getInstallType() {
             return installType;
         }
@@ -94,11 +123,18 @@ public class JavaInstallationProbe {
             return error;
         }
 
+        @Deprecated
         public void configure(LocalJavaInstallation install) {
-            JavaVersion javaVersion = JavaVersion.toVersion(metadata.get(SysProp.VERSION));
-            install.setJavaVersion(javaVersion);
+            assertOk();
+            install.setJavaVersion(getJavaVersion());
             String jdkName = computeJdkName(installType, metadata);
-            install.setDisplayName(jdkName + " " + javaVersion.getMajorVersion());
+            install.setDisplayName(jdkName + " " + getJavaVersion().getMajorVersion());
+        }
+
+        private void assertOk() {
+            if (error != null) {
+                throw new IllegalStateException("Unable to configure Java installation, probing failed with the following message: " + error);
+            }
         }
     }
 
@@ -113,14 +149,15 @@ public class JavaInstallationProbe {
         this.factory = factory;
     }
 
-    public void current(LocalJavaInstallation currentJava) {
-        ProbeResult.success(InstallType.IS_JDK, current()).configure(currentJava);
+    public ProbeResult current() {
+        return ProbeResult.success(InstallType.IS_JDK, currentMetadata());
     }
 
     public ProbeResult checkJdk(File jdkPath) {
         if (!jdkPath.exists()) {
             return ProbeResult.failure(InstallType.NO_SUCH_DIRECTORY, "No such directory: " + jdkPath);
         }
+        jdkPath = resolveSymlink(jdkPath);
         EnumMap<SysProp, String> metadata = cache.getUnchecked(jdkPath);
         String version = metadata.get(SysProp.VERSION);
         if (UNKNOWN.equals(version)) {
@@ -138,12 +175,30 @@ public class JavaInstallationProbe {
         return ProbeResult.success(InstallType.IS_JRE, metadata);
     }
 
+    private File resolveSymlink(File jdkPath) {
+        try {
+            return jdkPath.getCanonicalFile();
+        } catch (IOException e) {
+            return jdkPath;
+        }
+    }
+
+    private EnumMap<SysProp, String> getCurrentJvmMetadata() {
+        EnumMap<SysProp, String> result = new EnumMap<SysProp, String>(SysProp.class);
+        for (SysProp type : SysProp.values()) {
+            if (type != SysProp.Z_ERROR) {
+                result.put(type, System.getProperty(type.sysProp, "unknown"));
+            }
+        }
+        return result;
+    }
+
     private EnumMap<SysProp, String> getMetadataInternal(File jdkPath) {
         JavaExecAction exec = factory.newJavaExecAction();
         exec.executable(javaExe(jdkPath, "java"));
         File workingDir = Files.createTempDir();
         exec.setWorkingDir(workingDir);
-        exec.setClasspath(new SimpleFileCollection(workingDir));
+        exec.classpath(workingDir);
         try {
             writeProbe(workingDir);
             exec.setMain(JavaProbe.CLASSNAME);
@@ -162,6 +217,7 @@ public class JavaInstallationProbe {
             return error(ex.getMessage());
         } finally {
             try {
+                // TODO This should use Deleter
                 FileUtils.deleteDirectory(workingDir);
             } catch (IOException e) {
                 throw new GradleException("Unable to delete temp directory", e);
@@ -179,6 +235,8 @@ public class JavaInstallationProbe {
         }
         if (vendor.contains("apple")) {
             return "Apple " + basename;
+        } else if (vendor.contains("adoptopenjdk")) {
+            return result == InstallType.IS_JDK ? "AdoptOpenJDK" : "AdoptOpenJDK JRE";
         } else if (vendor.contains("oracle") || vendor.contains("sun")) {
             String vm = metadata.get(JavaInstallationProbe.SysProp.VM);
             if (vm != null && vm.contains("OpenJDK")) {
@@ -311,7 +369,7 @@ public class JavaInstallationProbe {
         return result;
     }
 
-    private static EnumMap<SysProp, String> current() {
+    private static EnumMap<SysProp, String> currentMetadata() {
         EnumMap<SysProp, String> result = new EnumMap<SysProp, String>(SysProp.class);
         for (SysProp type : SysProp.values()) {
             result.put(type, System.getProperty(type.sysProp, UNKNOWN));

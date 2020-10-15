@@ -17,7 +17,9 @@
 package org.gradle.model.dsl
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
 
+@UnsupportedWithConfigurationCache(because = "software model")
 class ModelDslCreationIntegrationTest extends AbstractIntegrationSpec {
 
     def "can create and initialize elements"() {

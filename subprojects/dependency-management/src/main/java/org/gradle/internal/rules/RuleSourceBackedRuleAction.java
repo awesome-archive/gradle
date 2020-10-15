@@ -18,16 +18,19 @@ package org.gradle.internal.rules;
 
 import org.gradle.api.specs.Spec;
 import org.gradle.internal.reflect.JavaMethod;
-import org.gradle.internal.reflect.JavaReflectionUtil;
 import org.gradle.model.Mutate;
 import org.gradle.model.internal.inspect.DefaultRuleSourceValidationProblemCollector;
 import org.gradle.model.internal.inspect.FormattingValidationProblemCollector;
 import org.gradle.model.internal.inspect.RuleSourceValidationProblemCollector;
 import org.gradle.model.internal.type.ModelType;
+import org.gradle.util.CollectionUtils;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Type;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.List;
 
 public class RuleSourceBackedRuleAction<R, T> implements RuleAction<T> {
@@ -43,11 +46,7 @@ public class RuleSourceBackedRuleAction<R, T> implements RuleAction<T> {
 
     public static <R, T> RuleSourceBackedRuleAction<R, T> create(ModelType<T> subjectType, R ruleSourceInstance) {
         ModelType<R> ruleSourceType = ModelType.typeOf(ruleSourceInstance);
-        List<Method> mutateMethods = JavaReflectionUtil.findAllMethods(ruleSourceType.getConcreteClass(), new Spec<Method>() {
-            public boolean isSatisfiedBy(Method element) {
-                return element.isAnnotationPresent(Mutate.class);
-            }
-        });
+        List<Method> mutateMethods = findAllMethods(ruleSourceType.getConcreteClass(), element -> element.isAnnotationPresent(Mutate.class));
         FormattingValidationProblemCollector problemsFormatter = new FormattingValidationProblemCollector("rule source", ruleSourceType);
         RuleSourceValidationProblemCollector problems = new DefaultRuleSourceValidationProblemCollector(problemsFormatter);
 
@@ -73,17 +72,19 @@ public class RuleSourceBackedRuleAction<R, T> implements RuleAction<T> {
             throw new RuleActionValidationException(problemsFormatter.format());
         }
 
-        return new RuleSourceBackedRuleAction<R, T>(ruleSourceInstance, new JavaMethod<R, T>(subjectType.getConcreteClass(), mutateMethods.get(0)));
+        return new RuleSourceBackedRuleAction<>(ruleSourceInstance, new JavaMethod<>(subjectType.getConcreteClass(), mutateMethods.get(0)));
     }
 
     public static List<Class<?>> determineInputTypes(Class<?>[] parameterTypes) {
         return Arrays.asList(parameterTypes).subList(1, parameterTypes.length);
     }
 
+    @Override
     public List<Class<?>> getInputTypes() {
         return inputTypes;
     }
 
+    @Override
     public void execute(T subject, List<?> inputs) {
         Object[] args = new Object[inputs.size() + 1];
         args[0] = subject;
@@ -92,5 +93,47 @@ public class RuleSourceBackedRuleAction<R, T> implements RuleAction<T> {
             args[i+1] = input;
         }
         ruleMethod.invoke(instance, args);
+    }
+
+    private static List<Method> findAllMethods(Class<?> target, Spec<Method> predicate) {
+        return findAllMethodsInternal(target, predicate, new MultiMap<>(), new ArrayList<>(), false);
+    }
+
+    private static class MultiMap<K, V> extends HashMap<K, List<V>> {
+        @Override
+        public List<V> get(Object key) {
+            if (!containsKey(key)) {
+                @SuppressWarnings("unchecked") K keyCast = (K) key;
+                put(keyCast, new LinkedList<>());
+            }
+
+            return super.get(key);
+        }
+    }
+
+    private static List<Method> findAllMethodsInternal(Class<?> target, Spec<Method> predicate, MultiMap<String, Method> seen, List<Method> collector, boolean stopAtFirst) {
+        for (final Method method : target.getDeclaredMethods()) {
+            List<Method> seenWithName = seen.get(method.getName());
+            Method override = CollectionUtils.findFirst(seenWithName, potentionOverride -> potentionOverride.getName().equals(method.getName())
+                && Arrays.equals(potentionOverride.getParameterTypes(), method.getParameterTypes()));
+
+
+            if (override == null) {
+                seenWithName.add(method);
+                if (predicate.isSatisfiedBy(method)) {
+                    collector.add(method);
+                    if (stopAtFirst) {
+                        return collector;
+                    }
+                }
+            }
+        }
+
+        Class<?> parent = target.getSuperclass();
+        if (parent != null) {
+            return findAllMethodsInternal(parent, predicate, seen, collector, stopAtFirst);
+        }
+
+        return collector;
     }
 }

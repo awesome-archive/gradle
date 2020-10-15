@@ -17,18 +17,17 @@
 package org.gradle.language.cpp.internal;
 
 import com.google.common.collect.Sets;
+import org.gradle.api.Task;
 import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.artifacts.ConfigurationContainer;
 import org.gradle.api.artifacts.ModuleVersionIdentifier;
 import org.gradle.api.attributes.AttributeContainer;
 import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.FileCollection;
-import org.gradle.api.file.ProjectLayout;
 import org.gradle.api.file.RegularFile;
 import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.internal.component.SoftwareComponentInternal;
 import org.gradle.api.internal.component.UsageContext;
-import org.gradle.api.internal.file.FileOperations;
 import org.gradle.api.internal.provider.Providers;
 import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.provider.Property;
@@ -38,6 +37,7 @@ import org.gradle.language.cpp.CppStaticLibrary;
 import org.gradle.language.nativeplatform.internal.ConfigurableComponentWithLinkUsage;
 import org.gradle.language.nativeplatform.internal.ConfigurableComponentWithRuntimeUsage;
 import org.gradle.language.nativeplatform.internal.ConfigurableComponentWithStaticLibrary;
+import org.gradle.language.nativeplatform.internal.Names;
 import org.gradle.nativeplatform.Linkage;
 import org.gradle.nativeplatform.tasks.CreateStaticLibrary;
 import org.gradle.nativeplatform.toolchain.internal.NativeToolChainInternal;
@@ -49,19 +49,21 @@ import java.util.Set;
 
 public class DefaultCppStaticLibrary extends DefaultCppBinary implements CppStaticLibrary, ConfigurableComponentWithStaticLibrary, ConfigurableComponentWithLinkUsage, ConfigurableComponentWithRuntimeUsage, SoftwareComponentInternal {
     private final RegularFileProperty linkFile;
+    private final Property<Task> linkFileProducer;
     private final Property<CreateStaticLibrary> createTaskProperty;
     private final Property<Configuration> linkElements;
     private final Property<Configuration> runtimeElements;
     private final ConfigurableFileCollection outputs;
 
     @Inject
-    public DefaultCppStaticLibrary(String name, ProjectLayout projectLayout, ObjectFactory objectFactory, FileOperations fileOperations, Provider<String> baseName, FileCollection sourceFiles, FileCollection componentHeaderDirs, ConfigurationContainer configurations, Configuration implementation, CppPlatform targetPlatform, NativeToolChainInternal toolChain, PlatformToolProvider platformToolProvider, NativeVariantIdentity identity) {
-        super(name, projectLayout, objectFactory, baseName, sourceFiles, componentHeaderDirs, configurations, implementation, targetPlatform, toolChain, platformToolProvider, identity);
-        this.linkFile = projectLayout.fileProperty();
+    public DefaultCppStaticLibrary(Names names, ObjectFactory objectFactory, Provider<String> baseName, FileCollection sourceFiles, FileCollection componentHeaderDirs, ConfigurationContainer configurations, Configuration implementation, CppPlatform targetPlatform, NativeToolChainInternal toolChain, PlatformToolProvider platformToolProvider, NativeVariantIdentity identity) {
+        super(names, objectFactory, baseName, sourceFiles, componentHeaderDirs, configurations, implementation, targetPlatform, toolChain, platformToolProvider, identity);
+        this.linkFile = objectFactory.fileProperty();
+        this.linkFileProducer = objectFactory.property(Task.class);
         this.createTaskProperty = objectFactory.property(CreateStaticLibrary.class);
         this.linkElements = objectFactory.property(Configuration.class);
         this.runtimeElements = objectFactory.property(Configuration.class);
-        this.outputs = fileOperations.files();
+        this.outputs = objectFactory.fileCollection();
     }
 
     @Override
@@ -72,6 +74,11 @@ public class DefaultCppStaticLibrary extends DefaultCppBinary implements CppStat
     @Override
     public RegularFileProperty getLinkFile() {
         return linkFile;
+    }
+
+    @Override
+    public Property<Task> getLinkFileProducer() {
+        return linkFileProducer;
     }
 
     @Override
@@ -108,7 +115,8 @@ public class DefaultCppStaticLibrary extends DefaultCppBinary implements CppStat
     @Override
     public Set<? extends UsageContext> getUsages() {
         Configuration linkElements = getLinkElements().get();
-        Configuration runtimeElements = this.runtimeElements.get();
+        Configuration runtimeElements = getRuntimeElements().get();
+        // TODO: Does a static library really have any runtime elements?
         return Sets.newHashSet(
             new DefaultUsageContext(getIdentity().getLinkUsageContext(), linkElements.getAllArtifacts(), linkElements),
             new DefaultUsageContext(getIdentity().getRuntimeUsageContext(), runtimeElements.getAllArtifacts(), runtimeElements)
@@ -124,6 +132,7 @@ public class DefaultCppStaticLibrary extends DefaultCppBinary implements CppStat
     public AttributeContainer getRuntimeAttributes() {
         return getIdentity().getRuntimeUsageContext().getAttributes();
     }
+
     @Override
     public ModuleVersionIdentifier getCoordinates() {
         return getIdentity().getCoordinates();

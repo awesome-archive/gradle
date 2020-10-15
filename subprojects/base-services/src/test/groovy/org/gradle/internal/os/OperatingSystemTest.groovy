@@ -15,6 +15,7 @@
  */
 package org.gradle.internal.os
 
+import org.gradle.internal.reflect.JavaReflectionUtil
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
 import org.gradle.util.SetSystemProperties
 import org.junit.Rule
@@ -25,7 +26,7 @@ import java.lang.reflect.Modifier
 
 class OperatingSystemTest extends Specification {
     @Rule SetSystemProperties systemProperties = new SetSystemProperties()
-    @Rule TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider()
+    @Rule TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider(getClass())
 
     def setup() {
         OperatingSystem.resetCurrent()
@@ -330,7 +331,7 @@ class OperatingSystemTest extends Specification {
                 .each { Field field ->
                 if (OperatingSystem.isAssignableFrom(field.getType())) {
                     makeFinalFieldAccessibleForTesting(field)
-                    field.set(null, field.getType().newInstance())
+                    field.set(null, JavaReflectionUtil.newInstance(field.getType()))
                 }
             }
             return true

@@ -16,20 +16,17 @@
 
 package org.gradle.testing.junitplatform
 
-import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.AbstractSampleIntegrationTest
 import org.gradle.integtests.fixtures.DefaultTestExecutionResult
 import org.gradle.integtests.fixtures.Sample
 import org.gradle.integtests.fixtures.UsesSample
-import org.gradle.util.Requires
-import org.gradle.util.TestPrecondition
 import org.junit.Rule
 
-@Requires(TestPrecondition.JDK8_OR_LATER)
-class JUnitPlatformSampleIntegrationTest extends AbstractIntegrationSpec {
+class JUnitPlatformSampleIntegrationTest extends AbstractSampleIntegrationTest {
     @Rule
     public final Sample sample = new Sample(testDirectoryProvider)
 
-    @UsesSample('testing/junitplatform/jupiter')
+    @UsesSample('testing/junitplatform-jupiter/groovy')
     def 'jupiter sample test'() {
         given:
         sample sample
@@ -38,16 +35,16 @@ class JUnitPlatformSampleIntegrationTest extends AbstractIntegrationSpec {
         succeeds 'test'
 
         then:
-        new DefaultTestExecutionResult(sample.dir).testClass('org.gradle.junitplatform.JupiterTest').assertTestCount(5, 0, 0)
-            .assertTestPassed('ok()')
-            .assertTestPassed('repetition 1 of 2')
-            .assertTestPassed('repetition 2 of 2')
-            .assertTestPassed('TEST 1')
-            .assertTestsSkipped('disabled()')
+        new DefaultTestExecutionResult(sample.dir).testClassByHtml('org.gradle.junitplatform.JupiterTest').assertTestCount(5, 0, 0)
+            .assertTestPassed('ok')
+            .assertTestPassed('repeated()[1]', 'repetition 1 of 2')
+            .assertTestPassed('repeated()[2]', 'repetition 2 of 2')
+            .assertTestPassed('test1(TestInfo)', 'TEST 1')
+            .assertTestSkipped('disabled')
     }
 
-    @UsesSample('testing/junitplatform/engine')
-    def 'engine sample test'() {
+    @UsesSample('testing/junitplatform-mix/groovy')
+    def 'mix JUnit3/4/5'() {
         given:
         sample sample
 
@@ -63,7 +60,21 @@ class JUnitPlatformSampleIntegrationTest extends AbstractIntegrationSpec {
             .testClass('org.gradle.junitplatform.JupiterTest').assertTestCount(1, 0, 0)
     }
 
-    @UsesSample('testing/junitplatform/tagging')
+    @UsesSample('testing/junitplatform-engine/groovy')
+    def 'engine sample test'() {
+        given:
+        sample sample
+
+        when:
+        succeeds('test')
+
+        then:
+        new DefaultTestExecutionResult(sample.dir)
+            .assertTestClassesExecuted('org.gradle.junitplatform.JUnit4Test')
+            .testClass('org.gradle.junitplatform.JUnit4Test').assertTestCount(1, 0, 0)
+    }
+
+    @UsesSample('testing/junitplatform-tagging/groovy')
     def 'tagging sample test'() {
         given:
         sample sample

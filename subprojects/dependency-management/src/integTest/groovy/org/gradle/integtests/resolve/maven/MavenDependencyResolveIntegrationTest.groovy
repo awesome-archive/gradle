@@ -17,12 +17,10 @@ package org.gradle.integtests.resolve.maven
 
 import org.gradle.integtests.fixtures.GradleMetadataResolveRunner
 import org.gradle.integtests.fixtures.RequiredFeature
-import org.gradle.integtests.fixtures.RequiredFeatures
 import org.gradle.integtests.resolve.AbstractModuleDependencyResolveTest
 
-@RequiredFeatures(
-    @RequiredFeature(feature = GradleMetadataResolveRunner.REPOSITORY_TYPE, value = "maven")
-)
+
+@RequiredFeature(feature = GradleMetadataResolveRunner.REPOSITORY_TYPE, value = "maven")
 class MavenDependencyResolveIntegrationTest extends AbstractModuleDependencyResolveTest {
 
     String getRootProjectName() { 'testproject' }
@@ -193,10 +191,8 @@ dependencies {
         failure.assertHasCause("Artifact name must not be null!")
     }
 
-    @RequiredFeatures(
-        // only available with Maven metadata: Gradle metadata does not support "optional"
-        @RequiredFeature(feature = GradleMetadataResolveRunner.GRADLE_METADATA, value = "false")
-    )
+    // only available with Maven metadata: Gradle metadata does not support "optional"
+    @RequiredFeature(feature = GradleMetadataResolveRunner.GRADLE_METADATA, value = "false")
     def "does not include optional dependencies of maven module"() {
         given:
         repository {
@@ -229,4 +225,21 @@ dependencies {
         }
     }
 
+    def "mixing variant aware and artifact selection is forbidden"() {
+        buildFile << """
+            dependencies {
+                conf('org:lib:1.0:indy') {
+                    capabilities {
+                        requireCapability("org:lib")
+                    }
+                }
+            }
+        """
+
+        when:
+        fails ':checkDeps'
+
+        then:
+        failureHasCause('Cannot add attributes or capabilities on a dependency that specifies artifacts or configuration information')
+    }
 }

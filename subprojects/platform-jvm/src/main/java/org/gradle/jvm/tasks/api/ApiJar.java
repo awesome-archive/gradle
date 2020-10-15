@@ -18,19 +18,22 @@ package org.gradle.jvm.tasks.api;
 
 import com.google.common.collect.Lists;
 import org.gradle.api.Incubating;
-import org.gradle.api.internal.tasks.compile.ApiClassExtractor;
+import org.gradle.api.file.FileTree;
 import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.OutputFile;
+import org.gradle.api.tasks.PathSensitive;
+import org.gradle.api.tasks.PathSensitivity;
 import org.gradle.api.tasks.SourceTask;
 import org.gradle.api.tasks.TaskAction;
 import org.gradle.internal.ErroringAction;
-import org.gradle.util.internal.PatchedClassReader;
+import org.gradle.internal.normalization.java.ApiClassExtractor;
 import org.objectweb.asm.ClassReader;
 
 import java.io.BufferedOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
@@ -73,10 +76,20 @@ import static org.gradle.internal.IoActions.withResource;
  * @see org.gradle.jvm.plugins.JvmComponentPlugin
  */
 @Incubating
+@Deprecated
 public class ApiJar extends SourceTask {
 
     private Set<String> exportedPackages;
     private File outputFile;
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    @PathSensitive(PathSensitivity.RELATIVE)
+    public FileTree getSource() {
+        return super.getSource();
+    }
 
     @Input
     public Set<String> getExportedPackages() {
@@ -119,32 +132,29 @@ public class ApiJar extends SourceTask {
                         if (!isClassFile(sourceFile)) {
                             continue;
                         }
-                        ClassReader classReader = new PatchedClassReader(readFileToByteArray(sourceFile));
-                        if (!apiClassExtractor.shouldExtractApiClassFrom(classReader)) {
-                            continue;
-                        }
-
-                        byte[] apiClassBytes = apiClassExtractor.extractApiClassFrom(classReader);
-                        if (apiClassBytes == null) {
-                            // Should be excluded
-                            continue;
-                        }
-
-                        String internalClassName = classReader.getClassName();
-                        String entryPath = internalClassName + ".class";
-                        writeEntry(jos, entryPath, apiClassBytes);
+                        ClassReader classReader = new ClassReader(readFileToByteArray(sourceFile));
+                        apiClassExtractor.extractApiClassFrom(classReader)
+                            .ifPresent(apiClassBytes -> {
+                                String internalClassName = classReader.getClassName();
+                                String entryPath = internalClassName + ".class";
+                                writeEntry(jos, entryPath, apiClassBytes);
+                            });
                     }
                 }
 
-                private void writeEntry(JarOutputStream jos, String name, byte[] bytes) throws IOException {
-                    JarEntry je = new JarEntry(name);
-                    // Setting time to 0 because we need API jars to be identical independently of
-                    // the timestamps of class files
-                    je.setTime(0);
-                    je.setSize(bytes.length);
-                    jos.putNextEntry(je);
-                    jos.write(bytes);
-                    jos.closeEntry();
+                private void writeEntry(JarOutputStream jos, String name, byte[] bytes) {
+                    try {
+                        JarEntry je = new JarEntry(name);
+                        // Setting time to 0 because we need API jars to be identical independently of
+                        // the timestamps of class files
+                        je.setTime(0);
+                        je.setSize(bytes.length);
+                        jos.putNextEntry(je);
+                        jos.write(bytes);
+                        jos.closeEntry();
+                    } catch (IOException ex) {
+                        throw new UncheckedIOException(ex);
+                    }
                 }
             }
         );

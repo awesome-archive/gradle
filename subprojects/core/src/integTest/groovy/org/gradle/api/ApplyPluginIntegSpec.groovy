@@ -17,24 +17,24 @@
 package org.gradle.api
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
 import org.gradle.integtests.fixtures.executer.UnexpectedBuildFailure
 import org.gradle.testfixtures.ProjectBuilder
 import org.gradle.util.GradleVersion
-import org.gradle.util.TextUtil
-import org.gradle.util.UsesNativeServices
 import spock.lang.FailsWith
+import spock.lang.IgnoreIf
 import spock.lang.Issue
+
+import static org.gradle.util.TextUtil.normaliseFileSeparators
 
 // TODO: This needs a better home - Possibly in the test kit package in the future
 
-@UsesNativeServices
 class ApplyPluginIntegSpec extends AbstractIntegrationSpec {
+
     def testProjectPath
-    def gradleUserHome
 
     def setup() {
-        testProjectPath = TextUtil.normaliseFileSeparators(file("test-project-dir").absolutePath)
-        gradleUserHome = TextUtil.normaliseFileSeparators(buildContext.gradleUserHomeDir.absolutePath)
+        testProjectPath = normalisedPathOf(file("test-project-dir"))
     }
 
     @Issue("GRADLE-2358")
@@ -82,9 +82,8 @@ class ApplyPluginIntegSpec extends AbstractIntegrationSpec {
     }
 
     @Issue("GRADLE-3068")
+    @IgnoreIf({ GradleContextualExecuter.embedded }) // Requires a Gradle distribution on the test-under-test classpath, but gradleApi() does not offer the full distribution
     def "can use gradleApi in test"() {
-        requireGradleDistribution()
-
         given:
         file("src/test/groovy/org/acme/ProjectBuilderTest.groovy") << """
             package org.acme
@@ -109,15 +108,15 @@ class ApplyPluginIntegSpec extends AbstractIntegrationSpec {
 
         and:
         buildFile << junitBasedBuildScript()
-        buildFile << nativeDirBuildScriptConfiguration()
 
         expect:
         executer.withArgument("--info")
         succeeds("test")
     }
 
+    @IgnoreIf({ GradleContextualExecuter.embedded }) // Gradle API JAR is not generated when running embedded
     def "generated Gradle API JAR in custom Gradle user home is reused across multiple invocations"() {
-        requireGradleDistribution()
+        requireOwnGradleUserHomeDir()
 
         given:
         file("src/test/groovy/org/acme/ProjectBuilderTest.groovy") << """
@@ -152,7 +151,7 @@ class ApplyPluginIntegSpec extends AbstractIntegrationSpec {
                 static Project createProject(File gradleUserHome) {
                     def project = ProjectBuilder.builder().withGradleUserHomeDir(gradleUserHome).build()
                     project.plugins.apply('java')
-                    project.dependencies.add('compile', project.dependencies.gradleApi())
+                    project.dependencies.add('implementation', project.dependencies.gradleApi())
                     project
                 }
             }
@@ -160,7 +159,6 @@ class ApplyPluginIntegSpec extends AbstractIntegrationSpec {
 
         and:
         buildFile << spockBasedBuildScript()
-        buildFile << nativeDirBuildScriptConfiguration()
 
         expect:
         succeeds('test')
@@ -171,7 +169,7 @@ class ApplyPluginIntegSpec extends AbstractIntegrationSpec {
             ${basicBuildScript()}
 
             dependencies {
-                testCompile 'junit:junit:4.12'
+                testImplementation  'junit:junit:4.13'
             }
         """
     }
@@ -181,7 +179,7 @@ class ApplyPluginIntegSpec extends AbstractIntegrationSpec {
             ${basicBuildScript()}
 
             dependencies {
-                testCompile('org.spockframework:spock-core:1.0-groovy-2.4') {
+                testImplementation ('org.spockframework:spock-core:1.0-groovy-2.4') {
                     exclude module: 'groovy-all'
                 }
             }
@@ -195,21 +193,18 @@ class ApplyPluginIntegSpec extends AbstractIntegrationSpec {
             ${mavenCentralRepository()}
 
             dependencies {
-                compile gradleApi()
-                compile localGroovy()
+                implementation gradleApi()
+                implementation localGroovy()
             }
         """
     }
 
-    static String nativeDirBuildScriptConfiguration() {
-        """
-            compileTestGroovy {
-                options.forkOptions.jvmArgs << '-Dorg.gradle.native.dir=' + System.getProperty('org.gradle.native.dir')
-            }
-
-            test {
-                systemProperties = ['org.gradle.native.dir' : System.getProperty('org.gradle.native.dir')]
-            }
-        """
+    private String getGradleUserHome() {
+        normalisedPathOf(executer.gradleUserHomeDir)
     }
+
+    static String normalisedPathOf(File file) {
+        normaliseFileSeparators(file.absolutePath)
+    }
+
 }

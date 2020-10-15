@@ -16,6 +16,7 @@
 
 package org.gradle.internal.resource
 
+import org.gradle.api.internal.file.IdentityFileResolver
 import org.gradle.api.resources.MissingResourceException
 import org.gradle.test.fixtures.server.http.BlockingHttpServer
 import org.junit.Rule
@@ -31,17 +32,17 @@ class UriTextResourceIntegrationTest extends Specification {
         server.start()
         String unknownPath = '/unknown.txt'
         String fullURI = "${server.uri}${unknownPath}"
-        UriTextResource resource = new UriTextResource('<display-name>', new URI(fullURI))
+        UriTextResource resource = new UriTextResource('<display-name>', new URI(fullURI), new IdentityFileResolver())
 
         when:
-        server.expect(server.missing(unknownPath))
+        server.expect(server.get(unknownPath).missing())
         boolean exists = resource.exists
 
         then:
         !exists
 
         when:
-        server.expect(server.missing(unknownPath))
+        server.expect(server.get(unknownPath).missing())
         resource.text
 
         then:

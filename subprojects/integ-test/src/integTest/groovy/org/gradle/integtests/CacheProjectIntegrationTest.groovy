@@ -18,11 +18,7 @@ package org.gradle.integtests
 
 import org.gradle.api.internal.artifacts.ivyservice.CacheLayout
 import org.gradle.integtests.fixtures.AbstractIntegrationTest
-import org.gradle.internal.hash.DefaultContentHasherFactory
-import org.gradle.internal.hash.DefaultFileHasher
-import org.gradle.internal.hash.DefaultStreamHasher
-import org.gradle.internal.hash.FileHasher
-import org.gradle.internal.hash.HashUtil
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.test.fixtures.file.TestFile
 import org.gradle.test.fixtures.server.http.HttpServer
 import org.gradle.test.fixtures.server.http.MavenHttpRepository
@@ -30,20 +26,22 @@ import org.gradle.util.GradleVersion
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
+import spock.lang.Issue
 
 import static org.junit.Assert.assertEquals
+import static org.junit.Assert.assertTrue
 
 class CacheProjectIntegrationTest extends AbstractIntegrationTest {
     static final String TEST_FILE = "build/test.txt"
 
-    final FileHasher fileHasher = new DefaultFileHasher(new DefaultStreamHasher(new DefaultContentHasherFactory()))
-
-    @Rule public final HttpServer server = new HttpServer()
+    @Rule
+    public final HttpServer server = new HttpServer()
 
     TestFile projectDir
     TestFile userHomeDir
     TestFile buildFile
     TestFile propertiesFile
+    TestFile classPathClassesDir
     TestFile classFile
     TestFile artifactsCache
 
@@ -60,7 +58,7 @@ class CacheProjectIntegrationTest extends AbstractIntegrationTest {
         userHomeDir = executer.gradleUserHomeDir
         buildFile = projectDir.file('build.gradle')
 
-        artifactsCache = projectDir.file(".gradle/$version/taskHistory/taskHistory.bin")
+        artifactsCache = projectDir.file(".gradle/$version/executionHistory/executionHistory.bin")
 
         repo = new MavenHttpRepository(server, mavenRepo)
 
@@ -72,15 +70,16 @@ class CacheProjectIntegrationTest extends AbstractIntegrationTest {
 
     private void updateCaches() {
         String version = GradleVersion.current().version
-        def hash = HashUtil.compactStringFor(fileHasher.hash(buildFile))
-        String dirName = userHomeDir.file("caches/$version/scripts/$hash/proj").list()[0]
-        String baseDir = "caches/$version/scripts/$hash/proj/$dirName"
-        propertiesFile = userHomeDir.file("$baseDir/cache.properties")
-        classFile = userHomeDir.file("$baseDir/classes/_BuildScript_.class")
+        classPathClassesDir = userHomeDir.file("caches/$version/scripts").listFiles().find { it.file("cp_proj").isDirectory() }?.file("cp_proj")
+        def candidates = userHomeDir.file("caches/$version/scripts").listFiles().findAll { it.file("proj").isDirectory() }
+        // when there are multiple candidates, assume that a different entry to that used last time is the one required
+        def baseDir = candidates.size() == 1 ? candidates.first() : candidates.find { propertiesFile == null || it != propertiesFile.parentFile }
+        propertiesFile = baseDir.file("cache.properties")
+        classFile = baseDir.file("proj/_BuildScript_.class")
     }
 
     @Test
-    public void "caches compiled build script"() {
+    void "caches compiled build script"() {
         createLargeBuildScript()
         testBuild("hello1", "Hello 1")
         TestFile.Snapshot classFileSnapshot = classFile.snapshot()
@@ -91,15 +90,31 @@ class CacheProjectIntegrationTest extends AbstractIntegrationTest {
         modifyLargeBuildScript()
         testBuild("newTask", "I am new")
         classFile.assertHasChangedSince(classFileSnapshot)
-        classFileSnapshot = classFile.snapshot()
+    }
 
-        executer.expectDeprecationWarning().requireGradleDistribution()
-        testBuild("newTask", "I am new", "--recompile-scripts")
-        classFile.assertContentsHaveNotChangedSince(classFileSnapshot)
+    @Issue("https://github.com/gradle/gradle/issues/13367")
+    @Test
+    void "recovers from discarded empty classes directory from classpath entry"() {
+        buildFile << """
+            task hello1 {
+                def f = file("build/test.txt")
+                outputs.file(f)
+                doLast {
+                    f.text = "Hello 1"
+                }
+            }
+        """
+
+        testBuild("hello1", "Hello 1")
+        assertTrue(classPathClassesDir.isDirectory() && classPathClassesDir.list().length == 0)
+        classPathClassesDir.deleteDir()
+
+        testBuild("hello1", "Hello 1")
     }
 
     @Test
-    public void "caches incremental build state"() {
+    @ToBeFixedForConfigurationCache
+    void "caches incremental build state"() {
         createLargeBuildScript()
         testBuild("hello1", "Hello 1")
         TestFile.Snapshot artifactsCacheSnapshot = artifactsCache.snapshot()
@@ -113,20 +128,6 @@ class CacheProjectIntegrationTest extends AbstractIntegrationTest {
 
         testBuild("hello2", "Hello 2", "-rerun-tasks")
         artifactsCache.assertHasChangedSince(artifactsCacheSnapshot)
-    }
-
-    @Test
-    public void "does not rebuild artifact cache when run with --recompile-scripts"() {
-        createLargeBuildScript()
-        testBuild("hello1", "Hello 1")
-
-        TestFile dependenciesCache = findDependencyCacheDir()
-        assert dependenciesCache.isDirectory() && dependenciesCache.listFiles().length > 0
-
-        modifyLargeBuildScript()
-        executer.expectDeprecationWarning().requireGradleDistribution()
-        testBuild("newTask", "I am new", "--recompile-scripts")
-        assert dependenciesCache.isDirectory() && dependenciesCache.listFiles().length > 0
     }
 
     @Test
@@ -171,7 +172,7 @@ configurations { compile }
 dependencies { compile 'commons-io:commons-io:1.4@jar' }
 """
 
-        50.times {i ->
+        50.times { i ->
             content += """
 task 'hello$i' {
     File file = file('$TEST_FILE')

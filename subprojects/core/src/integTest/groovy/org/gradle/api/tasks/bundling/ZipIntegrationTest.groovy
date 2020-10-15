@@ -27,69 +27,6 @@ import java.nio.charset.Charset
 @TestReproducibleArchives
 class ZipIntegrationTest extends AbstractIntegrationSpec {
 
-    def ensureDuplicatesIncludedWithoutWarning() {
-        given:
-        createTestFiles()
-        buildFile << '''
-            task zip(type: Zip) {
-                from 'dir1'
-                from 'dir2'
-                from 'dir3'
-                destinationDir = buildDir
-                archiveName = 'test.zip'
-            }
-            '''
-        when:
-        run 'zip'
-
-        then:
-        def theZip = new ZipTestFixture(file('build/test.zip'))
-        theZip.hasDescendants('file1.txt', 'file1.txt', 'file2.txt')
-    }
-
-    def ensureDuplicatesCanBeExcluded() {
-        given:
-        createTestFiles()
-        buildFile << '''
-            task zip(type: Zip) {
-                from 'dir1'
-                from 'dir2'
-                from 'dir3'
-                destinationDir = buildDir
-                archiveName = 'test.zip'
-                eachFile { it.duplicatesStrategy = 'exclude' }
-            }
-            '''
-        when:
-        run 'zip'
-
-        then:
-        def theZip = new ZipTestFixture(file('build/test.zip'))
-        theZip.hasDescendants('file1.txt', 'file2.txt')
-    }
-
-    def renamedFileWillBeTreatedAsDuplicateZip() {
-        given:
-        createTestFiles()
-        buildFile << '''
-                task zip(type: Zip) {
-                    from 'dir1'
-                    from 'dir2'
-                    destinationDir = buildDir
-                    rename 'file2.txt', 'file1.txt'
-                    archiveName = 'test.zip'
-                    eachFile { it.duplicatesStrategy = 'exclude' }
-                }
-                '''
-        when:
-        run 'zip'
-
-        then:
-        def theZip = new ZipTestFixture(file('build/test.zip'))
-        theZip.hasDescendants('file1.txt')
-        theZip.assertFileContent('file1.txt', "dir1/file1.txt")
-    }
-
     def zip64Support() {
         given:
         createTestFiles()
@@ -97,8 +34,8 @@ class ZipIntegrationTest extends AbstractIntegrationSpec {
             task zip(type: Zip) {
                 from 'dir1'
                 from 'dir2'
-                destinationDir = buildDir
-                archiveName = 'test.zip'
+                destinationDirectory = buildDir
+                archiveFileName = 'test.zip'
                 zip64 = true
             }
             '''
@@ -119,8 +56,8 @@ class ZipIntegrationTest extends AbstractIntegrationSpec {
                 from 'dir1'
                 from 'dir2'
                 from 'dir3'
-                destinationDir = buildDir
-                archiveName = 'test.zip'
+                destinationDirectory = buildDir
+                archiveFileName = 'test.zip'
                 metadataCharset = '$metadataCharset'
             }
             """
@@ -148,8 +85,8 @@ class ZipIntegrationTest extends AbstractIntegrationSpec {
                 from 'dir1'
                 from 'dir2'
                 from 'dir3'
-                destinationDir = buildDir
-                archiveName = 'test.zip'
+                destinationDirectory = buildDir
+                archiveFileName = 'test.zip'
                 metadataCharset = 'US-ASCII'
             }
             """
@@ -171,8 +108,8 @@ class ZipIntegrationTest extends AbstractIntegrationSpec {
         buildFile << """
             task zip(type: Zip) {
                 from 'dir1'
-                destinationDir = buildDir
-                archiveName = 'test.zip'
+                destinationDirectory = buildDir
+                archiveFileName = 'test.zip'
                 metadataCharset = $metadataCharset
             }
             """
@@ -208,12 +145,12 @@ class ZipIntegrationTest extends AbstractIntegrationSpec {
         when:
         succeeds "zip"
         then:
-        skippedTasks.empty
+        noneSkipped()
 
         when:
         succeeds "zip"
         then:
-        skippedTasks as List == [":zip"]
+        skipped ":zip"
 
         buildFile.delete()
         buildFile << """
@@ -231,7 +168,7 @@ class ZipIntegrationTest extends AbstractIntegrationSpec {
         when:
         succeeds "zip", "--info"
         then:
-        skippedTasks.empty
+        executedAndNotSkipped(":zip")
         output.contains "Value of input property 'rootSpec\$1\$1.destPath' has changed for task ':zip'"
         output.contains "Value of input property 'rootSpec\$1\$1\$1.destPath' has changed for task ':zip'"
     }

@@ -16,16 +16,14 @@
 package org.gradle.plugins.ide.internal.tooling.eclipse;
 
 import org.gradle.api.artifacts.ModuleVersionIdentifier;
-import org.gradle.tooling.internal.gradle.DefaultGradleModuleVersion;
-import org.gradle.tooling.internal.protocol.ExternalDependencyVersion1;
+import org.gradle.plugins.ide.internal.tooling.model.DefaultGradleModuleVersion;
 import org.gradle.tooling.model.GradleModuleVersion;
 
 import java.io.File;
 import java.io.Serializable;
 import java.util.List;
 
-public class DefaultEclipseExternalDependency extends DefaultEclipseDependency implements ExternalDependencyVersion1,
-    Serializable {
+public class DefaultEclipseExternalDependency extends DefaultEclipseDependency implements Serializable {
     private final File file;
     private final File javadoc;
     private final File source;
@@ -33,26 +31,28 @@ public class DefaultEclipseExternalDependency extends DefaultEclipseDependency i
     private final ModuleVersionIdentifier identifier;
     private final GradleModuleVersion moduleVersion;
 
-    public DefaultEclipseExternalDependency(File file, File javadoc, File source, ModuleVersionIdentifier identifier, boolean exported, List<DefaultClasspathAttribute> attributes, List<DefaultAccessRule> accessRules) {
+    private final boolean resolved;
+    private final DefaultEclipseComponentSelector attemptedSelector;
+
+    private DefaultEclipseExternalDependency(File file, File javadoc, File source, ModuleVersionIdentifier identifier, boolean exported, List<DefaultClasspathAttribute> attributes, List<DefaultAccessRule> accessRules, boolean resolved, String attemptedSelector) {
         super(exported, attributes, accessRules);
         this.file = file;
         this.javadoc = javadoc;
         this.source = source;
         this.identifier = identifier;
-        this.moduleVersion = (identifier == null)? null : new DefaultGradleModuleVersion(identifier);
+        this.moduleVersion = (identifier == null) ? null : new DefaultGradleModuleVersion(identifier);
+        this.resolved = resolved;
+        this.attemptedSelector = (attemptedSelector == null) ? null : new DefaultEclipseComponentSelector(attemptedSelector);
     }
 
-    @Override
     public File getFile() {
         return file;
     }
 
-    @Override
     public File getJavadoc() {
         return javadoc;
     }
 
-    @Override
     public File getSource() {
         return source;
     }
@@ -63,6 +63,22 @@ public class DefaultEclipseExternalDependency extends DefaultEclipseDependency i
 
     public GradleModuleVersion getGradleModuleVersion() {
         return moduleVersion;
+    }
+
+    public boolean isResolved() {
+        return resolved;
+    }
+
+    public DefaultEclipseComponentSelector getAttemptedSelector() {
+        return attemptedSelector;
+    }
+
+    public static DefaultEclipseExternalDependency createResolved(File file, File javadoc, File source, ModuleVersionIdentifier identifier, boolean exported, List<DefaultClasspathAttribute> attributes, List<DefaultAccessRule> accessRules) {
+        return new DefaultEclipseExternalDependency(file, javadoc, source, identifier, exported, attributes, accessRules, true, null);
+    }
+
+    public static DefaultEclipseExternalDependency createUnresolved(File file, File javadoc, File source, ModuleVersionIdentifier identifier, boolean exported, List<DefaultClasspathAttribute> attributes, List<DefaultAccessRule> accessRules, String attemptedSelector) {
+        return new DefaultEclipseExternalDependency(file, javadoc, source, identifier, exported, attributes, accessRules, false, attemptedSelector);
     }
 
 }

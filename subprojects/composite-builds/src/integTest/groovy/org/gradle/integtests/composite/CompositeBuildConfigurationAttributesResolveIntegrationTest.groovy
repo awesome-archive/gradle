@@ -74,7 +74,7 @@ class CompositeBuildConfigurationAttributesResolveIntegrationTest extends Abstra
             }
         '''
 
-        file('includedBuild/build.gradle') << '''
+        file('includedBuild/build.gradle') << """
 
             group = 'com.acme.external'
             version = '2.0-SNAPSHOT'
@@ -92,17 +92,9 @@ class CompositeBuildConfigurationAttributesResolveIntegrationTest extends Abstra
                 foo.attributes { attribute(buildType, 'debug'); attribute(flavor, 'free') }
                 bar.attributes { attribute(buildType, 'release'); attribute(flavor, 'free') }
             }
-            task fooJar(type: Jar) {
-               baseName = 'c-foo'
-            }
-            task barJar(type: Jar) {
-               baseName = 'c-bar'
-            }
-            artifacts {
-                foo fooJar
-                bar barJar
-            }
-        '''
+
+            ${fooAndBarJars()}
+        """
         file('includedBuild/settings.gradle') << '''
             rootProject.name = 'external'
         '''
@@ -111,15 +103,15 @@ class CompositeBuildConfigurationAttributesResolveIntegrationTest extends Abstra
         run ':a:checkDebug'
 
         then:
-        executedAndNotSkipped ':external:fooJar'
-        notExecuted ':external:barJar'
+        executedAndNotSkipped ':includedBuild:fooJar'
+        notExecuted ':includedBuild:barJar'
 
         when:
         run ':a:checkRelease'
 
         then:
-        executedAndNotSkipped ':external:barJar'
-        notExecuted ':external:fooJar'
+        executedAndNotSkipped ':includedBuild:barJar'
+        notExecuted ':includedBuild:fooJar'
     }
 
     def "context travels to transitive dependencies via external components (Maven)"() {
@@ -176,7 +168,7 @@ class CompositeBuildConfigurationAttributesResolveIntegrationTest extends Abstra
             }
         """
 
-        file('includedBuild/build.gradle') << '''
+        file('includedBuild/build.gradle') << """
 
             group = 'com.acme.external'
             version = '2.0-SNAPSHOT'
@@ -194,17 +186,9 @@ class CompositeBuildConfigurationAttributesResolveIntegrationTest extends Abstra
                 foo.attributes { attribute(buildType, 'debug'); attribute(flavor, 'free') }
                 bar.attributes { attribute(buildType, 'release'); attribute(flavor, 'free') }
             }
-            task fooJar(type: Jar) {
-               baseName = 'c-foo'
-            }
-            task barJar(type: Jar) {
-               baseName = 'c-bar'
-            }
-            artifacts {
-                foo fooJar
-                bar barJar
-            }
-        '''
+
+            ${fooAndBarJars()}
+        """
         file('includedBuild/settings.gradle') << '''
             rootProject.name = 'c'
         '''
@@ -213,15 +197,15 @@ class CompositeBuildConfigurationAttributesResolveIntegrationTest extends Abstra
         run ':a:checkDebug'
 
         then:
-        executedAndNotSkipped ':c:fooJar'
-        notExecuted ':c:barJar'
+        executedAndNotSkipped ':includedBuild:fooJar'
+        notExecuted ':includedBuild:barJar'
 
         when:
         run ':a:checkRelease'
 
         then:
-        executedAndNotSkipped ':c:barJar'
-        notExecuted ':c:fooJar'
+        executedAndNotSkipped ':includedBuild:barJar'
+        notExecuted ':includedBuild:fooJar'
     }
 
     def "context travels to transitive dependencies via external components (Ivy)"() {
@@ -278,7 +262,7 @@ class CompositeBuildConfigurationAttributesResolveIntegrationTest extends Abstra
             }
         """
 
-        file('includedBuild/build.gradle') << '''
+        file('includedBuild/build.gradle') << """
 
             group = 'com.acme.external'
             version = '2.0-SNAPSHOT'
@@ -296,17 +280,9 @@ class CompositeBuildConfigurationAttributesResolveIntegrationTest extends Abstra
                 foo.attributes { attribute(buildType, 'debug'); attribute(flavor, 'free') }
                 bar.attributes { attribute(buildType, 'release'); attribute(flavor, 'free') }
             }
-            task fooJar(type: Jar) {
-               baseName = 'c-foo'
-            }
-            task barJar(type: Jar) {
-               baseName = 'c-bar'
-            }
-            artifacts {
-                foo fooJar
-                bar barJar
-            }
-        '''
+
+            ${fooAndBarJars()}
+        """
         file('includedBuild/settings.gradle') << '''
             rootProject.name = 'c'
         '''
@@ -315,15 +291,15 @@ class CompositeBuildConfigurationAttributesResolveIntegrationTest extends Abstra
         run ':a:checkDebug'
 
         then:
-        executedAndNotSkipped ':c:fooJar'
-        notExecuted ':c:barJar'
+        executedAndNotSkipped ':includedBuild:fooJar'
+        notExecuted ':includedBuild:barJar'
 
         when:
         run ':a:checkRelease'
 
         then:
-        executedAndNotSkipped ':c:barJar'
-        notExecuted ':c:fooJar'
+        executedAndNotSkipped ':includedBuild:barJar'
+        notExecuted ':includedBuild:fooJar'
     }
 
     @Unroll
@@ -398,16 +374,8 @@ class CompositeBuildConfigurationAttributesResolveIntegrationTest extends Abstra
                 foo.attributes { attribute(flavor, $freeValue) }
                 bar.attributes { attribute(flavor, $paidValue) }
             }
-            task fooJar(type: Jar) {
-               baseName = 'c-foo'
-            }
-            task barJar(type: Jar) {
-               baseName = 'c-bar'
-            }
-            artifacts {
-                foo fooJar
-                bar barJar
-            }
+
+            ${fooAndBarJars()}
         """
         file('includedBuild/settings.gradle') << '''
             rootProject.name = 'external'
@@ -417,15 +385,15 @@ class CompositeBuildConfigurationAttributesResolveIntegrationTest extends Abstra
         run ':a:checkFree'
 
         then:
-        executedAndNotSkipped ':external:fooJar'
-        notExecuted ':external:barJar'
+        executedAndNotSkipped ':includedBuild:fooJar'
+        notExecuted ':includedBuild:barJar'
 
         when:
         run ':a:checkPaid'
 
         then:
-        executedAndNotSkipped ':external:barJar'
-        notExecuted ':external:fooJar'
+        executedAndNotSkipped ':includedBuild:barJar'
+        notExecuted ':includedBuild:fooJar'
 
         where:
         type         | freeValue                      | paidValue
@@ -442,7 +410,7 @@ class CompositeBuildConfigurationAttributesResolveIntegrationTest extends Abstra
         """
         buildFile << """
             interface Thing extends Named { }
-            
+
             class CompatRule implements AttributeCompatibilityRule<Thing> {
                 void execute(CompatibilityCheckDetails<Thing> details) {
                     if (details.consumerValue.name == 'paid' && details.producerValue.name == 'blue') {
@@ -521,16 +489,8 @@ class CompositeBuildConfigurationAttributesResolveIntegrationTest extends Abstra
                 foo.attributes { attribute(flavor, objects.named(Thing, 'red')) }
                 bar.attributes { attribute(flavor, objects.named(Thing, 'blue')) }
             }
-            task fooJar(type: Jar) {
-               baseName = 'c-foo'
-            }
-            task barJar(type: Jar) {
-               baseName = 'c-bar'
-            }
-            artifacts {
-                foo fooJar
-                bar barJar
-            }
+
+            ${fooAndBarJars()}
         """
         file('includedBuild/settings.gradle') << '''
             rootProject.name = 'external'
@@ -540,15 +500,15 @@ class CompositeBuildConfigurationAttributesResolveIntegrationTest extends Abstra
         run ':a:checkFree'
 
         then:
-        executedAndNotSkipped ':external:fooJar'
-        notExecuted ':external:barJar'
+        executedAndNotSkipped ':includedBuild:fooJar'
+        notExecuted ':includedBuild:barJar'
 
         when:
         run ':a:checkPaid'
 
         then:
-        executedAndNotSkipped ':external:barJar'
-        notExecuted ':external:fooJar'
+        executedAndNotSkipped ':includedBuild:barJar'
+        notExecuted ':includedBuild:fooJar'
     }
 
     def "reports failure to resolve due to incompatible attribute values"() {
@@ -559,7 +519,7 @@ class CompositeBuildConfigurationAttributesResolveIntegrationTest extends Abstra
         """
         buildFile << """
             interface Thing extends Named { }
-            
+
             class CompatRule implements AttributeCompatibilityRule<Thing> {
                 void execute(CompatibilityCheckDetails<Thing> details) {
                     if (details.consumerValue.name == 'paid') {
@@ -624,16 +584,8 @@ class CompositeBuildConfigurationAttributesResolveIntegrationTest extends Abstra
                 foo.attributes { attribute(flavor, objects.named(Thing, 'red')) }
                 bar.attributes { attribute(flavor, objects.named(Thing, 'blue')) }
             }
-            task fooJar(type: Jar) {
-               baseName = 'c-foo'
-            }
-            task barJar(type: Jar) {
-               baseName = 'c-bar'
-            }
-            artifacts {
-                foo fooJar
-                bar barJar
-            }
+
+            ${fooAndBarJars()}
         """
         file('includedBuild/settings.gradle') << '''
             rootProject.name = 'external'
@@ -644,21 +596,23 @@ class CompositeBuildConfigurationAttributesResolveIntegrationTest extends Abstra
 
         then:
         failure.assertHasCause("Could not resolve com.acme.external:external:1.0.")
-        failure.assertHasCause("""Unable to find a matching configuration of project :external:
-  - Configuration 'bar': Required flavor 'free' and found incompatible value 'blue'.
-  - Configuration 'foo': Required flavor 'free' and found incompatible value 'red'.""")
+        failure.assertHasCause("""No matching variant of project :includedBuild was found. The consumer was configured to find attribute 'flavor' with value 'free' but:
+  - Variant 'bar' capability com.acme.external:external:2.0-SNAPSHOT:
+      - Incompatible because this component declares attribute 'flavor' with value 'blue' and the consumer needed attribute 'flavor' with value 'free'
+  - Variant 'foo' capability com.acme.external:external:2.0-SNAPSHOT:
+      - Incompatible because this component declares attribute 'flavor' with value 'red' and the consumer needed attribute 'flavor' with value 'free'""")
 
         when:
         fails ':a:checkPaid'
 
         then:
         failure.assertHasCause("Could not resolve com.acme.external:external:1.0.")
-        failure.assertHasCause("""Cannot choose between the following configurations of project :external:
+        failure.assertHasCause("""The consumer was configured to find attribute 'flavor' with value 'paid'. However we cannot choose between the following variants of project :includedBuild:
   - bar
   - foo
 All of them match the consumer attributes:
-  - Configuration 'bar': Required flavor 'paid' and found compatible value 'blue'.
-  - Configuration 'foo': Required flavor 'paid' and found compatible value 'red'.""")
+  - Variant 'bar' capability com.acme.external:external:2.0-SNAPSHOT declares attribute 'flavor' with value 'blue'
+  - Variant 'foo' capability com.acme.external:external:2.0-SNAPSHOT declares attribute 'flavor' with value 'red'""")
     }
 
     @Unroll("context travels down to transitive dependencies with typed attributes using plugin [#v1, #v2, pluginsDSL=#usePluginsDSL]")
@@ -738,16 +692,8 @@ All of them match the consumer attributes:
                 foo.attributes { attribute(buildType, debug); attribute(flavor, free) }
                 bar.attributes { attribute(buildType, release); attribute(flavor, free) }
             }
-            task fooJar(type: Jar) {
-               baseName = 'c-foo'
-            }
-            task barJar(type: Jar) {
-               baseName = 'c-bar'
-            }
-            artifacts {
-                foo fooJar
-                bar barJar
-            }
+
+            ${fooAndBarJars()}
         """
 
         file('includedBuild/settings.gradle') << """
@@ -763,15 +709,15 @@ All of them match the consumer attributes:
         run ':a:checkDebug'
 
         then:
-        executedAndNotSkipped ':external:fooJar'
-        notExecuted ':external:barJar'
+        executedAndNotSkipped ':includedBuild:fooJar'
+        notExecuted ':includedBuild:barJar'
 
         when:
         run ':a:checkRelease'
 
         then:
-        executedAndNotSkipped ':external:barJar'
-        notExecuted ':external:fooJar'
+        executedAndNotSkipped ':includedBuild:barJar'
+        notExecuted ':includedBuild:fooJar'
 
         where:
         v1    | v2    | usePluginsDSL
@@ -819,21 +765,24 @@ All of them match the consumer attributes:
             'settings.gradle'('rootProject.name="com.acme.typed-attributes.gradle.plugin"')
             'build.gradle'("""
                 apply plugin: 'groovy'
-                apply plugin: 'maven'
+                apply plugin: 'maven-publish'
 
                 group = 'com.acme.typed-attributes'
                 version = '$version'
 
                 dependencies {
-                    compile localGroovy()
-                    compile gradleApi()
+                    implementation localGroovy()
+                    implementation gradleApi()
                 }
 
-                uploadArchives {
+                publishing {
                     repositories {
-                        mavenDeployer {
-                            repository(url: "${mavenRepo.uri}")
+                        maven {
+                            url "${mavenRepo.uri}"
                         }
+                    }
+                    publications {
+                        maven(MavenPublication) { from components.java }
                     }
                 }
             """)
@@ -873,8 +822,24 @@ All of them match the consumer attributes:
             }
         }
         executer.usingBuildScript(new File(pluginDir, "build.gradle"))
-            .withTasks("uploadArchives")
+            .withTasks("publishMavenPublicationToMavenRepository")
             .run()
+    }
 
+    private String fooAndBarJars() {
+        '''
+            task fooJar(type: Jar) {
+                archiveBaseName = 'c-foo'
+                destinationDirectory = projectDir
+            }
+            task barJar(type: Jar) {
+                archiveBaseName = 'c-bar'
+                destinationDirectory = projectDir
+            }
+            artifacts {
+                foo fooJar
+                bar barJar
+            }
+        '''
     }
 }

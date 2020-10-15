@@ -16,13 +16,9 @@
 package org.gradle.nativeplatform.tasks;
 
 import org.gradle.api.DefaultTask;
-import org.gradle.api.Incubating;
-import org.gradle.api.Transformer;
 import org.gradle.api.file.ConfigurableFileCollection;
-import org.gradle.api.file.Directory;
 import org.gradle.api.file.DirectoryProperty;
 import org.gradle.api.file.FileCollection;
-import org.gradle.api.file.RegularFile;
 import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.provider.ListProperty;
@@ -33,16 +29,19 @@ import org.gradle.api.tasks.Internal;
 import org.gradle.api.tasks.Nested;
 import org.gradle.api.tasks.OutputDirectory;
 import org.gradle.api.tasks.OutputFile;
+import org.gradle.api.tasks.PathSensitive;
+import org.gradle.api.tasks.PathSensitivity;
 import org.gradle.api.tasks.SkipWhenEmpty;
 import org.gradle.api.tasks.TaskAction;
 import org.gradle.api.tasks.WorkResult;
 import org.gradle.internal.Cast;
+import org.gradle.internal.file.Deleter;
 import org.gradle.internal.operations.logging.BuildOperationLogger;
 import org.gradle.internal.operations.logging.BuildOperationLoggerFactory;
 import org.gradle.language.base.compile.CompilerVersion;
 import org.gradle.language.base.internal.compile.Compiler;
 import org.gradle.language.base.internal.compile.VersionAwareCompiler;
-import org.gradle.language.base.internal.tasks.SimpleStaleClassCleaner;
+import org.gradle.language.base.internal.tasks.StaleOutputCleaner;
 import org.gradle.nativeplatform.internal.BuildOperationLoggingCompilerDecorator;
 import org.gradle.nativeplatform.internal.LinkerSpec;
 import org.gradle.nativeplatform.platform.NativePlatform;
@@ -56,7 +55,6 @@ import javax.inject.Inject;
 /**
  * Base task for linking a native binary from object files and libraries.
  */
-@Incubating
 public abstract class AbstractLinkTask extends DefaultTask implements ObjectFilesToBinary {
     private final RegularFileProperty linkedFile;
     private final DirectoryProperty destinationDirectory;
@@ -68,23 +66,20 @@ public abstract class AbstractLinkTask extends DefaultTask implements ObjectFile
     private final Property<NativeToolChain> toolChain;
 
     public AbstractLinkTask() {
-        ObjectFactory objectFactory = getProject().getObjects();
+        final ObjectFactory objectFactory = getProject().getObjects();
         this.libs = getProject().files();
         this.source = getProject().files();
-        this.linkedFile = newOutputFile();
-        this.destinationDirectory = newOutputDirectory();
-        destinationDirectory.set(linkedFile.map(new Transformer<Directory, RegularFile>() {
-            @Override
-            public Directory transform(RegularFile regularFile) {
-                // TODO: Get rid of destinationDirectory entirely and replace it with a
-                // collection of link outputs
-                DirectoryProperty dirProp = getProject().getLayout().directoryProperty();
-                dirProp.set(regularFile.getAsFile().getParentFile());
-                return dirProp.get();
-            }
+        this.linkedFile = objectFactory.fileProperty();
+        this.destinationDirectory = objectFactory.directoryProperty();
+        destinationDirectory.set(linkedFile.getLocationOnly().map(regularFile -> {
+            // TODO: Get rid of destinationDirectory entirely and replace it with a
+            // collection of link outputs
+            DirectoryProperty dirProp = objectFactory.directoryProperty();
+            dirProp.set(regularFile.getAsFile().getParentFile());
+            return dirProp.get();
         }));
         this.linkerArgs = getProject().getObjects().listProperty(String.class);
-        this.debuggable = objectFactory.property(Boolean.class);
+        this.debuggable = objectFactory.property(Boolean.class).value(false);
         this.targetPlatform = objectFactory.property(NativePlatform.class);
         this.toolChain = objectFactory.property(NativeToolChain.class);
     }
@@ -162,6 +157,7 @@ public abstract class AbstractLinkTask extends DefaultTask implements ObjectFile
     /**
      * The source object files to be passed to the linker.
      */
+    @PathSensitive(PathSensitivity.RELATIVE)
     @InputFiles
     @SkipWhenEmpty
     public ConfigurableFileCollection getSource() {
@@ -175,6 +171,7 @@ public abstract class AbstractLinkTask extends DefaultTask implements ObjectFile
     /**
      * The library files to be passed to the linker.
      */
+    @PathSensitive(PathSensitivity.RELATIVE)
     @InputFiles
     public ConfigurableFileCollection getLibs() {
         return libs;
@@ -187,6 +184,7 @@ public abstract class AbstractLinkTask extends DefaultTask implements ObjectFile
     /**
      * Adds a set of object files to be linked. The provided source object is evaluated as per {@link org.gradle.api.Project#files(Object...)}.
      */
+    @Override
     public void source(Object source) {
         this.source.from(source);
     }
@@ -209,18 +207,25 @@ public abstract class AbstractLinkTask extends DefaultTask implements ObjectFile
     }
 
     @Inject
-    public BuildOperationLoggerFactory getOperationLoggerFactory() {
+    protected BuildOperationLoggerFactory getOperationLoggerFactory() {
         throw new UnsupportedOperationException();
     }
 
+    @Inject
+    protected Deleter getDeleter() {
+        throw new UnsupportedOperationException("Decorator takes care of injection");
+    }
+
     @TaskAction
-    public void link() {
-        SimpleStaleClassCleaner cleaner = new SimpleStaleClassCleaner(getOutputs());
-        cleaner.setDestinationDir(getDestinationDirectory().get().getAsFile());
-        cleaner.execute();
+    protected void link() {
+        boolean cleanedOutputs = StaleOutputCleaner.cleanOutputs(
+            getDeleter(),
+            getOutputs().getPreviousOutputFiles(),
+            getDestinationDirectory().get().getAsFile()
+        );
 
         if (getSource().isEmpty()) {
-            setDidWork(cleaner.getDidWork());
+            setDidWork(cleanedOutputs);
             return;
         }
 
@@ -240,7 +245,7 @@ public abstract class AbstractLinkTask extends DefaultTask implements ObjectFile
         Compiler<LinkerSpec> compiler = createCompiler();
         compiler = BuildOperationLoggingCompilerDecorator.wrap(compiler);
         WorkResult result = compiler.execute(spec);
-        setDidWork(result.getDidWork());
+        setDidWork(result.getDidWork() || cleanedOutputs);
     }
 
     @SuppressWarnings("unchecked")

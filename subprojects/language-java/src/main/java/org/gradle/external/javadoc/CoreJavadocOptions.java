@@ -42,6 +42,7 @@ public abstract class CoreJavadocOptions implements MinimalJavadocOptions {
     private final JavadocOptionFileOption<List<File>> docletpath;
     private final JavadocOptionFileOption<String> source; // TODO bind with the sourceCompatibility property
     private final JavadocOptionFileOption<List<File>> classpath; // TODO link to runtime configuration ?
+    private final JavadocOptionFileOption<List<File>> modulePath;
     private final JavadocOptionFileOption<List<File>> bootClasspath;
     private final JavadocOptionFileOption<List<File>> extDirs;
     private final JavadocOptionFileOption<JavadocOutputLevel> outputLevel;
@@ -65,6 +66,7 @@ public abstract class CoreJavadocOptions implements MinimalJavadocOptions {
         docletpath = addPathOption("docletpath");
         source = addStringOption("source");
         classpath = addPathOption("classpath");
+        modulePath = addPathOption("-module-path");
         bootClasspath = addPathOption("bootclasspath");
         extDirs = addPathOption("extdirs");
         outputLevel = addEnumOption("outputLevel", JavadocOutputLevel.QUIET);
@@ -84,6 +86,7 @@ public abstract class CoreJavadocOptions implements MinimalJavadocOptions {
         docletpath = optionFile.getOption("docletpath");
         source = optionFile.getOption("source");
         classpath = optionFile.getOption("classpath");
+        modulePath = optionFile.getOption("-module-path");
         bootClasspath = optionFile.getOption("bootclasspath");
         extDirs = optionFile.getOption("extdirs");
         outputLevel = optionFile.getOption("outputLevel");
@@ -240,7 +243,7 @@ public abstract class CoreJavadocOptions implements MinimalJavadocOptions {
     }
 
     @Override
-    public MinimalJavadocOptions docletpath(File ... docletpath) {
+    public MinimalJavadocOptions docletpath(File... docletpath) {
         this.docletpath.getValue().addAll(Arrays.asList(docletpath));
         return this;
     }
@@ -308,13 +311,29 @@ public abstract class CoreJavadocOptions implements MinimalJavadocOptions {
     }
 
     @Override
+    public List<File> getModulePath() {
+        return modulePath.getValue();
+    }
+
+    @Override
+    public void setModulePath(List<File> modulePath) {
+        this.modulePath.setValue(modulePath);
+    }
+
+    @Override
+    public MinimalJavadocOptions modulePath(List<File> modulePath) {
+        this.modulePath.getValue().addAll(modulePath);
+        return this;
+    }
+
+    @Override
     public MinimalJavadocOptions classpath(List<File> classpath) {
         this.classpath.getValue().addAll(classpath);
         return this;
     }
 
     @Override
-    public MinimalJavadocOptions classpath(File ... classpath) {
+    public MinimalJavadocOptions classpath(File... classpath) {
         this.classpath.getValue().addAll(Arrays.asList(classpath));
         return this;
     }
@@ -336,7 +355,7 @@ public abstract class CoreJavadocOptions implements MinimalJavadocOptions {
     }
 
     @Override
-    public MinimalJavadocOptions bootClasspath(File ... bootClasspath) {
+    public MinimalJavadocOptions bootClasspath(File... bootClasspath) {
         this.bootClasspath.getValue().addAll(Arrays.asList(bootClasspath));
         return this;
     }
@@ -360,7 +379,7 @@ public abstract class CoreJavadocOptions implements MinimalJavadocOptions {
     }
 
     @Override
-    public MinimalJavadocOptions extDirs(File ... extDirs) {
+    public MinimalJavadocOptions extDirs(File... extDirs) {
         this.extDirs.getValue().addAll(Arrays.asList(extDirs));
         return this;
     }
@@ -514,7 +533,7 @@ public abstract class CoreJavadocOptions implements MinimalJavadocOptions {
     }
 
     @Override
-    public MinimalJavadocOptions sourceNames(String ... sourceNames) {
+    public MinimalJavadocOptions sourceNames(String... sourceNames) {
         this.sourceNames.getValue().addAll(Arrays.asList(sourceNames));
         return this;
     }
@@ -549,7 +568,7 @@ public abstract class CoreJavadocOptions implements MinimalJavadocOptions {
     }
 
     @Override
-    public MinimalJavadocOptions jFlags(String ... jFlags) {
+    public MinimalJavadocOptions jFlags(String... jFlags) {
         this.jFlags.addAll(Arrays.asList(jFlags));
         return this;
     }
@@ -572,7 +591,7 @@ public abstract class CoreJavadocOptions implements MinimalJavadocOptions {
     }
 
     @Override
-    public MinimalJavadocOptions optionFiles(File ... argumentFiles) {
+    public MinimalJavadocOptions optionFiles(File... argumentFiles) {
         this.optionFiles.addAll(Arrays.asList(argumentFiles));
         return this;
     }

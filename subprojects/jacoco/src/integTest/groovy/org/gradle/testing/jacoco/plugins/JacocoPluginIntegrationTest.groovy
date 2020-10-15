@@ -19,9 +19,9 @@ package org.gradle.testing.jacoco.plugins
 import org.gradle.api.Project
 import org.gradle.api.reporting.ReportingExtension
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
+import org.gradle.testing.jacoco.plugins.fixtures.JacocoReportFixture
 import org.gradle.testing.jacoco.plugins.fixtures.JavaProjectUnderTest
-import spock.lang.IgnoreIf
 
 class JacocoPluginIntegrationTest extends AbstractIntegrationSpec {
 
@@ -51,29 +51,31 @@ class JacocoPluginIntegrationTest extends AbstractIntegrationSpec {
     def "jacoco plugin adds coverage report for test task when java plugin applied"() {
         given:
         buildFile << '''
-            task doCheck {
-                doLast {
-                    assert project.test.extensions.getByType(JacocoTaskExtension) != null
-                    assert project.jacocoTestReport instanceof JacocoReport
-                    assert project.jacocoTestReport.sourceDirectories*.absolutePath == project.files("src/main/java")*.absolutePath
-                    assert project.jacocoTestReport.classDirectories == project.sourceSets.main.output
-                }
-            }
+            assert project.test.extensions.getByType(JacocoTaskExtension) != null
+            assert project.jacocoTestReport instanceof JacocoReport
+            assert project.jacocoTestReport.sourceDirectories*.absolutePath == project.layout.files("src/main/java")*.absolutePath
+            assert project.jacocoTestReport.classDirectories*.absolutePath == project.sourceSets.main.output*.absolutePath
         '''.stripIndent()
 
         expect:
-        succeeds 'doCheck'
+        succeeds 'help'
     }
 
+    @ToBeFixedForConfigurationCache(because = ":dependencies")
     def "dependencies report shows default jacoco dependencies"() {
-        when: succeeds("dependencies", "--configuration", "jacocoAgent")
-        then: output.contains "org.jacoco:org.jacoco.agent:"
+        when:
+        succeeds("dependencies", "--configuration", "jacocoAgent")
+        then:
+        output.contains "org.jacoco:org.jacoco.agent:"
 
-        when: succeeds("dependencies", "--configuration", "jacocoAnt")
-        then: output.contains "org.jacoco:org.jacoco.ant:"
+        when:
+        succeeds("dependencies", "--configuration", "jacocoAnt")
+        then:
+        output.contains "org.jacoco:org.jacoco.ant:"
     }
 
-    void "allows configuring tool dependencies explicitly"() {
+    @ToBeFixedForConfigurationCache(because = ":dependencies")
+    def "allows configuring tool dependencies explicitly"() {
         when:
         buildFile << """
             dependencies {
@@ -84,20 +86,23 @@ class JacocoPluginIntegrationTest extends AbstractIntegrationSpec {
         """
 
         succeeds("dependencies", "--configuration", "jacocoAgent")
-        then: output.contains "org.jacoco:org.jacoco.agent:0.6.0.201210061924"
+        then:
+        output.contains "org.jacoco:org.jacoco.agent:0.6.0.201210061924"
 
-        when: succeeds("dependencies", "--configuration", "jacocoAnt")
-        then: output.contains "org.jacoco:org.jacoco.ant:0.6.0.201210061924"
+        when:
+        succeeds("dependencies", "--configuration", "jacocoAnt")
+        then:
+        output.contains "org.jacoco:org.jacoco.ant:0.6.0.201210061924"
     }
 
-    @IgnoreIf({GradleContextualExecuter.parallel})
-    void jacocoReportIsIncremental() {
+    def "jacoco report is incremental"() {
         def reportResourceDir = file("${REPORTING_BASE}/jacoco/test/html/jacoco-resources")
 
         when:
         succeeds('test', 'jacocoTestReport')
 
         then:
+        executedAndNotSkipped(":jacocoTestReport")
         htmlReport().exists()
         reportResourceDir.exists()
 
@@ -105,7 +110,7 @@ class JacocoPluginIntegrationTest extends AbstractIntegrationSpec {
         succeeds('jacocoTestReport')
 
         then:
-        skippedTasks.contains(":jacocoTestReport")
+        skipped(":jacocoTestReport")
         htmlReport().exists()
         reportResourceDir.exists()
 
@@ -114,13 +119,30 @@ class JacocoPluginIntegrationTest extends AbstractIntegrationSpec {
         succeeds('test', 'jacocoTestReport')
 
         then:
-        !skippedTasks.contains(":jacocoTestReport")
+        executedAndNotSkipped(":jacocoTestReport")
         htmlReport().exists()
         reportResourceDir.exists()
     }
 
     private JacocoReportFixture htmlReport(String basedir = "${REPORTING_BASE}/jacoco/test/html") {
         return new JacocoReportFixture(file(basedir))
+    }
+
+    def "reports miss configuration of destination file"() {
+        given:
+        buildFile << """
+            test {
+                jacoco {
+                    destinationFile = provider { null }
+                }
+            }
+        """
+
+        when:
+        runAndFail("test")
+
+        then:
+        errorOutput.contains("JaCoCo destination file must not be null if output type is FILE")
     }
 }
 

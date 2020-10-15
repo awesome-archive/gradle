@@ -18,41 +18,43 @@ package org.gradle.performance.experiment.java
 
 import org.gradle.performance.AbstractCrossBuildPerformanceTest
 import org.gradle.performance.categories.PerformanceExperiment
+import org.gradle.performance.fixture.GradleBuildExperimentSpec
 import org.junit.experimental.categories.Category
-import spock.lang.Unroll
-
-import static org.gradle.performance.generator.JavaTestProject.LARGE_MONOLITHIC_JAVA_PROJECT
-import static org.gradle.performance.generator.JavaTestProject.LARGE_JAVA_MULTI_PROJECT
 
 @Category(PerformanceExperiment)
 class ParallelBuildPerformanceTest extends AbstractCrossBuildPerformanceTest {
 
-    @Unroll
-    def "clean assemble on #testProject with 4 parallel workers"() {
-        when:
+    def "clean assemble with 4 parallel workers"() {
+        given:
         runner.testGroup = "parallel builds"
         runner.buildSpec {
-            warmUpCount = warmUpRuns
-            invocationCount = runs
-            projectName(testProject.projectName).displayName("parallel").invocation {
-                tasksToRun("clean", "assemble").args("-Dorg.gradle.parallel=true", "--max-workers=4").gradleOpts("-Xms${testProject.daemonMemory}", "-Xmx${testProject.daemonMemory}")
+            displayName("parallel")
+            invocation {
+                args("-Dorg.gradle.parallel=true", "--max-workers=4")
             }
         }
         runner.baseline {
-            warmUpCount = warmUpRuns
-            invocationCount = runs
-            projectName(testProject.projectName).displayName("serial").invocation {
-                tasksToRun("clean", "assemble").args("-Dorg.gradle.parallel=false", "--max-workers=4").gradleOpts("-Xms${testProject.daemonMemory}", "-Xmx${testProject.daemonMemory}")
+            displayName("serial")
+            invocation {
+                args("-Dorg.gradle.parallel=false", "--max-workers=4")
             }
         }
 
-        then:
-        runner.run()
+        when:
+        def results = runner.run()
 
-        where:
-        testProject                   | warmUpRuns | runs
-        LARGE_MONOLITHIC_JAVA_PROJECT | 2          | 6
-        LARGE_JAVA_MULTI_PROJECT      | 2          | 6
+        then:
+        results
     }
 
+    @Override
+    protected void defaultSpec(GradleBuildExperimentSpec.GradleBuilder builder) {
+        super.defaultSpec(builder)
+        builder.warmUpCount = 2
+        builder.invocationCount = 3
+        builder.invocation {
+            tasksToRun("clean", "assemble")
+            gradleOpts(runner.projectMemoryOptions)
+        }
+    }
 }

@@ -16,8 +16,13 @@
 
 package org.gradle.testkit.runner.enduser
 
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
+import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
+import spock.lang.IgnoreIf
+
 import static org.gradle.integtests.fixtures.BuildScanUserInputFixture.*
 
+@IgnoreIf({ GradleContextualExecuter.embedded }) // These tests run builds that themselves run a build in a test worker with 'gradleTestKit()' dependency, which needs to pick up Gradle modules from a real distribution
 class GradleRunnerConsoleInputEndUserIntegrationTest extends BaseTestKitEndUserIntegrationTest {
 
     def setup() {
@@ -25,9 +30,9 @@ class GradleRunnerConsoleInputEndUserIntegrationTest extends BaseTestKitEndUserI
             apply plugin: 'groovy'
 
             dependencies {
-                testCompile localGroovy()
-                testCompile gradleTestKit()
-                testCompile('org.spockframework:spock-core:1.0-groovy-2.4') {
+                testImplementation localGroovy()
+                testImplementation gradleTestKit()
+                testImplementation('org.spockframework:spock-core:1.0-groovy-2.4') {
                     exclude module: 'groovy-all'
                 }
             }
@@ -36,6 +41,7 @@ class GradleRunnerConsoleInputEndUserIntegrationTest extends BaseTestKitEndUserI
         """
     }
 
+    @ToBeFixedForConfigurationCache(because = "gradle/configuration-cache#270")
     def "can capture user input if standard input was provided"() {
         when:
         file("src/test/groovy/Test.groovy") << functionalTest(true, true)
@@ -45,6 +51,7 @@ class GradleRunnerConsoleInputEndUserIntegrationTest extends BaseTestKitEndUserI
         executedAndNotSkipped ':test'
     }
 
+    @ToBeFixedForConfigurationCache(because = "gradle/configuration-cache#270")
     def "cannot capture user input if standard in was not provided"() {
         when:
         file("src/test/groovy/Test.groovy") << functionalTest(false, null)
@@ -63,13 +70,15 @@ class GradleRunnerConsoleInputEndUserIntegrationTest extends BaseTestKitEndUserI
             import spock.lang.Specification
 
             class Test extends Specification {
-                @Rule final TemporaryFolder testProjectDir = new TemporaryFolder()
+                @Rule TemporaryFolder testProjectDir = new TemporaryFolder()
                 File buildFile
 
                 def setup() {
                     def buildSrcDir = testProjectDir.newFolder('buildSrc', 'src', 'main', 'java')
                     def pluginFile = new File(buildSrcDir, 'BuildScanPlugin.java')
                     pluginFile << '''${buildScanPlugin()}'''
+                    def settingsFile = testProjectDir.newFile('settings.gradle')
+                    settingsFile << "rootProject.name = 'test'"
                     buildFile = testProjectDir.newFile('build.gradle')
                     buildFile << '''${buildScanPluginApplication()}'''
                 }

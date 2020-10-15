@@ -23,15 +23,16 @@ import org.gradle.api.logging.Logging;
 import org.gradle.initialization.BuildCancellationToken;
 import org.gradle.initialization.BuildEventConsumer;
 import org.gradle.initialization.BuildRequestContext;
+import org.gradle.internal.SystemProperties;
 import org.gradle.internal.UncheckedException;
 import org.gradle.internal.concurrent.CompositeStoppable;
 import org.gradle.internal.concurrent.ExecutorFactory;
 import org.gradle.internal.id.IdGenerator;
 import org.gradle.internal.invocation.BuildAction;
+import org.gradle.internal.logging.ConsoleRenderer;
 import org.gradle.internal.logging.events.OutputEventListener;
 import org.gradle.internal.nativeintegration.ProcessEnvironment;
 import org.gradle.internal.remote.internal.Connection;
-import org.gradle.internal.service.ServiceRegistry;
 import org.gradle.launcher.daemon.context.DaemonContext;
 import org.gradle.launcher.daemon.diagnostics.DaemonDiagnostics;
 import org.gradle.launcher.daemon.protocol.Build;
@@ -49,9 +50,14 @@ import org.gradle.launcher.daemon.protocol.Stop;
 import org.gradle.launcher.daemon.server.api.DaemonStoppedException;
 import org.gradle.launcher.exec.BuildActionExecuter;
 import org.gradle.launcher.exec.BuildActionParameters;
+import org.gradle.launcher.exec.BuildActionResult;
 
+import java.io.File;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 
 /**
  * The client piece of the build daemon.
@@ -89,20 +95,20 @@ import java.util.List;
  * <p>
  * If the daemon returns a {@code null} message before returning a {@link Result} object, it has terminated unexpectedly for some reason.
  */
-public class DaemonClient implements BuildActionExecuter<BuildActionParameters> {
+public class DaemonClient implements BuildActionExecuter<BuildActionParameters, BuildRequestContext> {
     private static final Logger LOGGER = Logging.getLogger(DaemonClient.class);
     private final DaemonConnector connector;
     private final OutputEventListener outputEventListener;
     private final ExplainingSpec<DaemonContext> compatibilitySpec;
     private final InputStream buildStandardInput;
     private final ExecutorFactory executorFactory;
-    private final IdGenerator<?> idGenerator;
+    private final IdGenerator<UUID> idGenerator;
     private final ProcessEnvironment processEnvironment;
 
     //TODO - outputEventListener and buildStandardInput are per-build settings
     //so down the road we should refactor the code accordingly and potentially attach them to BuildActionParameters
     public DaemonClient(DaemonConnector connector, OutputEventListener outputEventListener, ExplainingSpec<DaemonContext> compatibilitySpec,
-                        InputStream buildStandardInput, ExecutorFactory executorFactory, IdGenerator<?> idGenerator, ProcessEnvironment processEnvironment) {
+                        InputStream buildStandardInput, ExecutorFactory executorFactory, IdGenerator<UUID> idGenerator, ProcessEnvironment processEnvironment) {
         this.connector = connector;
         this.outputEventListener = outputEventListener;
         this.compatibilitySpec = compatibilitySpec;
@@ -112,7 +118,7 @@ public class DaemonClient implements BuildActionExecuter<BuildActionParameters> 
         this.processEnvironment = processEnvironment;
     }
 
-    protected IdGenerator<?> getIdGenerator() {
+    protected IdGenerator<UUID> getIdGenerator() {
         return idGenerator;
     }
 
@@ -124,10 +130,10 @@ public class DaemonClient implements BuildActionExecuter<BuildActionParameters> 
      * Executes the given action in the daemon. The action and parameters must be serializable.
      *
      * @param action The action
-     * @throws org.gradle.initialization.ReportedException On failure, when the failure has already been logged/reported.
      */
-    public Object execute(BuildAction action, BuildRequestContext requestContext, BuildActionParameters parameters, ServiceRegistry contextServices) {
-        Object buildId = idGenerator.generateId();
+    @Override
+    public BuildActionResult execute(BuildAction action, BuildActionParameters parameters, BuildRequestContext requestContext) {
+        UUID buildId = idGenerator.generateId();
         List<DaemonInitialConnectException> accumulatedExceptions = Lists.newArrayList();
 
         LOGGER.debug("Executing build " + buildId + " in daemon client {pid=" + processEnvironment.maybeGetPid() + "}");
@@ -137,7 +143,7 @@ public class DaemonClient implements BuildActionExecuter<BuildActionParameters> 
         for (int i = 1; i < saneNumberOfAttempts; i++) {
             final DaemonClientConnection connection = connector.connect(compatibilitySpec);
             try {
-                Build build = new Build(buildId, connection.getDaemon().getToken(), action, requestContext.getClient(), requestContext.getStartTime(), parameters);
+                Build build = new Build(buildId, connection.getDaemon().getToken(), action, requestContext.getClient(), requestContext.getStartTime(), requestContext.isInteractive(), parameters);
                 return executeBuild(build, connection, requestContext.getCancellationToken(), requestContext.getEventConsumer());
             } catch (DaemonInitialConnectException e) {
                 // this exception means that we want to try again.
@@ -153,7 +159,7 @@ public class DaemonClient implements BuildActionExecuter<BuildActionParameters> 
             + parameters + ".", accumulatedExceptions);
     }
 
-    protected Object executeBuild(Build build, DaemonClientConnection connection, BuildCancellationToken cancellationToken, BuildEventConsumer buildEventConsumer) throws DaemonInitialConnectException {
+    protected BuildActionResult executeBuild(Build build, DaemonClientConnection connection, BuildCancellationToken cancellationToken, BuildEventConsumer buildEventConsumer) throws DaemonInitialConnectException {
         Object result;
         try {
             LOGGER.debug("Connected to daemon {}. Dispatching request {}.", connection.getDaemon(), build);
@@ -185,14 +191,13 @@ public class DaemonClient implements BuildActionExecuter<BuildActionParameters> 
         if (result instanceof Failure) {
             Throwable failure = ((Failure) result).getValue();
             if (failure instanceof DaemonStoppedException && cancellationToken.isCancellationRequested()) {
-                LOGGER.error("Daemon was stopped to handle build cancel request.");
-                throw new BuildCancelledException();
+                return BuildActionResult.cancelled(new BuildCancelledException("Daemon was stopped to handle build cancel request.", failure));
             }
             throw UncheckedException.throwAsUncheckedException(failure);
         } else if (result instanceof DaemonUnavailable) {
             throw new DaemonInitialConnectException("The daemon we connected to was unavailable: " + ((DaemonUnavailable) result).getReason());
         } else if (result instanceof Result) {
-            return ((Result) result).getValue();
+            return (BuildActionResult) ((Result) result).getValue();
         } else {
             throw invalidResponse(result, build, diagnostics);
         }
@@ -208,7 +213,10 @@ public class DaemonClient implements BuildActionExecuter<BuildActionParameters> 
 
             while (true) {
                 Message object = connection.receive();
-                LOGGER.trace("Received object #{}, type: {}", objectsReceived++, object == null ? null : object.getClass().getName());
+                objectsReceived++;
+                if (LOGGER.isTraceEnabled()) {
+                    LOGGER.trace("Received object #{}, type: {}", objectsReceived++, object == null ? null : object.getClass().getName());
+                }
 
                 if (object == null) {
                     return handleDaemonDisappearance(build, diagnostics);
@@ -235,7 +243,24 @@ public class DaemonClient implements BuildActionExecuter<BuildActionParameters> 
             + "\nAttempting to read last messages from the daemon log...", build);
 
         LOGGER.error(diagnostics.describe());
+        findCrashLogFile(build, diagnostics).ifPresent(crashLogFile ->
+            LOGGER.error("JVM crash log found: " + new ConsoleRenderer().asClickableFileUrl(crashLogFile))
+        );
         throw new DaemonDisappearedException();
+    }
+
+    private Optional<File> findCrashLogFile(Build build, DaemonDiagnostics diagnostics) {
+        String crashLogFileName = "hs_err_pid" + diagnostics.getPid() + ".log";
+        List<File> candidates = new ArrayList<>();
+        candidates.add(new File(build.getParameters().getCurrentDir(), crashLogFileName));
+        candidates.add(new File(diagnostics.getDaemonLog().getParent(), crashLogFileName));
+        String javaTmpDir = SystemProperties.getInstance().getJavaIoTmpDir();
+        if (javaTmpDir != null && !javaTmpDir.isEmpty()) {
+            candidates.add(new File(javaTmpDir, crashLogFileName));
+        }
+        return candidates.stream()
+            .filter(File::isFile)
+            .findFirst();
     }
 
     private IllegalStateException invalidResponse(Object response, Build command, DaemonDiagnostics diagnostics) {

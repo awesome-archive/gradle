@@ -17,12 +17,12 @@
 package org.gradle.internal.operations.logging
 
 import org.gradle.api.logging.LogLevel
-import org.gradle.internal.logging.LoggingManagerInternal
 import org.gradle.internal.logging.events.LogEvent
 import org.gradle.internal.logging.events.ProgressStartEvent
 import org.gradle.internal.logging.events.StyledTextOutputEvent
+import org.gradle.internal.logging.sink.OutputEventListenerManager
 import org.gradle.internal.operations.BuildOperationCategory
-import org.gradle.internal.operations.BuildOperationListener
+import org.gradle.internal.operations.BuildOperationProgressEventEmitter
 import org.gradle.internal.operations.OperationIdentifier
 import spock.lang.Shared
 import spock.lang.Specification
@@ -30,13 +30,20 @@ import spock.lang.Unroll
 
 class LoggingBuildOperationProgressBroadcasterTest extends Specification {
 
-    def loggingManagerInternal = Mock(LoggingManagerInternal)
-    def buildOperationListener = Mock(BuildOperationListener)
+    def outputEventListenerManager = Mock(OutputEventListenerManager)
+    def buildOperationProgressEventEmitter = Mock(BuildOperationProgressEventEmitter)
 
     @Shared
-    def operationId = Mock(OperationIdentifier)
+    def testOperationId = Mock(OperationIdentifier)
 
-    LoggingBuildOperationProgressBroadcaster bridge = new LoggingBuildOperationProgressBroadcaster(loggingManagerInternal, buildOperationListener)
+    @Shared
+    def fallbackOperationId = Mock(OperationIdentifier)
+
+    LoggingBuildOperationProgressBroadcaster bridge = new LoggingBuildOperationProgressBroadcaster(outputEventListenerManager, buildOperationProgressEventEmitter)
+
+    def setup() {
+        bridge.rootBuildOperation = fallbackOperationId
+    }
 
     @Unroll
     def "forwards #eventType with operationId"() {
@@ -44,49 +51,52 @@ class LoggingBuildOperationProgressBroadcasterTest extends Specification {
         bridge.onOutput(eventWithBuildOperationId)
 
         then:
-        1 * buildOperationListener.progress(_, _) >> {
-            assert it[0] == operationId
-            assert it[1].details == eventWithBuildOperationId
+        1 * buildOperationProgressEventEmitter.emit(_, _, _) >> { OperationIdentifier operationIdentifier, long timestamp, Object details ->
+            assert operationIdentifier == testOperationId
+            assert details == eventWithBuildOperationId
         }
 
 
         when:
-        bridge.onOutput(eventWithNoBuildOperationId)
+        bridge.onOutput(eventWithFallbackBuildOperationId)
 
         then:
-        0 * buildOperationListener.progress(_, _)
+        1 * buildOperationProgressEventEmitter.emit(_, _, _) >> { OperationIdentifier operationIdentifier, long timestamp, Object details ->
+            assert operationIdentifier == fallbackOperationId
+            assert details == eventWithFallbackBuildOperationId
+        }
 
         where:
-        eventType             | eventWithBuildOperationId                                          | eventWithNoBuildOperationId
-        LogEvent              | new LogEvent(0, 'c', LogLevel.INFO, 'm', null, operationId)        | new LogEvent(0, 'c', LogLevel.INFO, 'm', null, null)
-        StyledTextOutputEvent | new StyledTextOutputEvent(0, 'c', LogLevel.INFO, operationId, 'm') | new StyledTextOutputEvent(0, 'c', LogLevel.INFO, null, 'm')
-        ProgressStartEvent    | progressStartEvent(operationId)                                    | progressStartEvent(null)
+        eventType             | eventWithBuildOperationId                                              | eventWithFallbackBuildOperationId
+        LogEvent              | new LogEvent(0, 'c', LogLevel.INFO, 'm', null, testOperationId)        | new LogEvent(0, 'c', LogLevel.INFO, 'm', null, null)
+        StyledTextOutputEvent | new StyledTextOutputEvent(0, 'c', LogLevel.INFO, testOperationId, 'm') | new StyledTextOutputEvent(0, 'c', LogLevel.INFO, null, 'm')
+        ProgressStartEvent    | progressStartEvent(testOperationId)                                    | progressStartEvent(null)
     }
 
     def "does not forward progress start events with no logging header"() {
         when:
-        bridge.onOutput(progressStartEvent(operationId, null))
+        bridge.onOutput(progressStartEvent(testOperationId, null))
 
         then:
-        0 * buildOperationListener.progress(_, _)
+        0 * buildOperationProgressEventEmitter.emit(_, _, _)
     }
 
     def "registers / unregisters itself as output listener"() {
         when:
-        def loggingBuildOperationNotificationBridge = new LoggingBuildOperationProgressBroadcaster(loggingManagerInternal, buildOperationListener)
+        def loggingBuildOperationNotificationBridge = new LoggingBuildOperationProgressBroadcaster(outputEventListenerManager, buildOperationProgressEventEmitter)
 
         then:
-        loggingManagerInternal.addOutputEventListener(loggingBuildOperationNotificationBridge)
+        outputEventListenerManager.setListener(loggingBuildOperationNotificationBridge)
 
 
         when:
         loggingBuildOperationNotificationBridge.stop()
 
         then:
-        loggingManagerInternal.removeOutputEventListener(loggingBuildOperationNotificationBridge)
+        outputEventListenerManager.removeListener(loggingBuildOperationNotificationBridge)
     }
 
     private ProgressStartEvent progressStartEvent(OperationIdentifier operationId, String header = 'header') {
-        new ProgressStartEvent(null, null, 0, 'c', 'd', 'sd', header, 's', 0, false, operationId, null, BuildOperationCategory.UNCATEGORIZED)
+        new ProgressStartEvent(null, null, 0, 'c', 'd', header, 's', 0, false, operationId, BuildOperationCategory.UNCATEGORIZED)
     }
 }

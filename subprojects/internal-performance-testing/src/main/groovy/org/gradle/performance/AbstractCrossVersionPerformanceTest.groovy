@@ -1,5 +1,5 @@
 /*
- * Copyright 2012 the original author or authors.
+ * Copyright 2019 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,33 +20,33 @@ import org.gradle.integtests.fixtures.executer.IntegrationTestBuildContext
 import org.gradle.integtests.fixtures.executer.UnderDevelopmentGradleDistribution
 import org.gradle.integtests.fixtures.versions.ReleasedVersionDistributions
 import org.gradle.performance.categories.PerformanceRegressionTest
-import org.gradle.performance.fixture.BuildExperimentRunner
 import org.gradle.performance.fixture.CrossVersionPerformanceTestRunner
-import org.gradle.performance.fixture.GradleSessionProvider
+import org.gradle.performance.fixture.GradleBuildExperimentRunner
 import org.gradle.performance.fixture.PerformanceTestDirectoryProvider
 import org.gradle.performance.fixture.PerformanceTestIdProvider
-import org.gradle.performance.fixture.PerformanceTestRetryRule
 import org.gradle.performance.results.CrossVersionResultsStore
-import org.gradle.performance.results.SlackReporter
+import org.gradle.performance.results.GradleProfilerReporter
 import org.gradle.test.fixtures.file.CleanupTestDirectory
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
-import org.gradle.testing.internal.util.RetryRule
 import org.junit.Rule
 import org.junit.experimental.categories.Category
 import spock.lang.Specification
 
+import static org.gradle.performance.results.ResultsStoreHelper.createResultsStoreWhenDatabaseAvailable
+
+/**
+ * A base class for cross version performance tests.
+ *
+ * This base class uses Gradle profiler as a backend for running the performance tests.
+ */
 @Category(PerformanceRegressionTest)
 @CleanupTestDirectory
 class AbstractCrossVersionPerformanceTest extends Specification {
 
-    private static def resultStore = new CrossVersionResultsStore()
-    private static def reporter = SlackReporter.wrap(resultStore)
+    private static final RESULTS_STORE = createResultsStoreWhenDatabaseAvailable { new CrossVersionResultsStore() }
 
     @Rule
-    TestNameTestDirectoryProvider temporaryFolder = new PerformanceTestDirectoryProvider()
-
-    @Rule
-    RetryRule retry = new PerformanceTestRetryRule()
+    TestNameTestDirectoryProvider temporaryFolder = new PerformanceTestDirectoryProvider(getClass())
 
     private final IntegrationTestBuildContext buildContext = new IntegrationTestBuildContext()
 
@@ -56,10 +56,11 @@ class AbstractCrossVersionPerformanceTest extends Specification {
     PerformanceTestIdProvider performanceTestIdProvider = new PerformanceTestIdProvider()
 
     def setup() {
+        def gradleProfilerReporter = new GradleProfilerReporter(temporaryFolder.testDirectory)
         runner = new CrossVersionPerformanceTestRunner(
-            new BuildExperimentRunner(new GradleSessionProvider(buildContext)),
-            resultStore,
-            reporter,
+            new GradleBuildExperimentRunner(gradleProfilerReporter),
+            RESULTS_STORE,
+            RESULTS_STORE.reportAlso(gradleProfilerReporter),
             new ReleasedVersionDistributions(buildContext),
             buildContext
         )
@@ -75,8 +76,7 @@ class AbstractCrossVersionPerformanceTest extends Specification {
     static {
         // TODO - find a better way to cleanup
         System.addShutdownHook {
-            resultStore.close()
-            reporter.close()
+            RESULTS_STORE.close()
         }
     }
 }

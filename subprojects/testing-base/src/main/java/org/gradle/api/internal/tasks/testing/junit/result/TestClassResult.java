@@ -18,24 +18,31 @@ package org.gradle.api.internal.tasks.testing.junit.result;
 
 import org.gradle.api.tasks.testing.TestResult;
 
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 
 public class TestClassResult {
     private final List<TestMethodResult> methodResults = new ArrayList<TestMethodResult>();
     private final String className;
+    private final String classDisplayName;
     private long startTime;
     private int failuresCount;
     private int skippedCount;
     private long id;
 
     public TestClassResult(long id, String className, long startTime) {
+        this(id, className, null, startTime);
+    }
+
+    public TestClassResult(long id, String className, @Nullable String classDisplayName, long startTime) {
         if (id < 1) {
             throw new IllegalArgumentException("id must be > 0");
         }
         this.id = id;
         this.className = className;
         this.startTime = startTime;
+        this.classDisplayName = classDisplayName == null ? className : classDisplayName;
     }
 
     public long getId() {
@@ -44,6 +51,10 @@ public class TestClassResult {
 
     public String getClassName() {
         return className;
+    }
+
+    public String getClassDisplayName() {
+        return classDisplayName;
     }
 
     public TestClassResult add(TestMethodResult methodResult) {
@@ -90,5 +101,15 @@ public class TestClassResult {
 
     public void setStartTime(long startTime) {
         this.startTime = startTime;
+    }
+
+    String getXmlTestSuiteName() {
+        return hasDefaultDisplayName() ? className : classDisplayName;
+    }
+
+    private boolean hasDefaultDisplayName() {
+        // both JUnit Jupiter and Vintage use the simple class name as the default display name
+        // so we use this as a heuristic to determine whether the display name was customized
+        return className.endsWith("." + classDisplayName) || className.endsWith("$" + classDisplayName);
     }
 }

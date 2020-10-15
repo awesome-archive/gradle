@@ -22,64 +22,72 @@ import org.gradle.internal.jvm.Jvm
 import org.gradle.util.Requires
 import org.gradle.util.TextUtil
 
-import static org.gradle.api.JavaVersion.VERSION_1_7
 import static org.gradle.api.JavaVersion.VERSION_1_8
+import static org.gradle.api.JavaVersion.VERSION_11
 
-@Requires(adhoc = { AvailableJavaHomes.getJdk(VERSION_1_7) && AvailableJavaHomes.getJdk(VERSION_1_8) })
+@Requires(adhoc = { AvailableJavaHomes.getJdk(VERSION_1_8) && AvailableJavaHomes.getJdk(VERSION_11) })
 class GroovyCompileJavaVersionTrackingIntegrationTest extends AbstractIntegrationSpec {
+
+    /**
+     * When running in embedded mode, core tasks are loaded from the runtime classloader.
+     * When running in the daemon, they are loaded from the plugins classloader.
+     * This difference leads to different up-to-date messages, which is why we force
+     * a consistent execution mode.
+     */
     def setup() {
         file("src/main/groovy/org/gradle/Person.groovy") << """
             package org.gradle
             class Person {}
         """
+        executer.requireDaemon().requireIsolatedDaemons()
     }
 
     def "tracks changes to the Groovy compiler JVM Java version"() {
         given:
-        def jdk7 = AvailableJavaHomes.getJdk(VERSION_1_7)
         def jdk8 = AvailableJavaHomes.getJdk(VERSION_1_8)
+        def jdk11 = AvailableJavaHomes.getJdk(VERSION_11)
 
-        compileWithJavaJdk(jdk7)
+        compileWithJavaJdk(jdk8)
+
+        when:
+        executer.withJavaHome jdk11.javaHome
+        succeeds ":compileGroovy"
+        then:
+        executedAndNotSkipped ":compileGroovy"
+
+        when:
+        executer.withJavaHome jdk11.javaHome
+        succeeds ":compileGroovy"
+        then:
+        skipped ":compileGroovy"
 
         when:
         executer.withJavaHome jdk8.javaHome
-        succeeds ":compileGroovy"
-        then:
-        nonSkippedTasks.contains ":compileGroovy"
-
-        when:
-        executer.withJavaHome jdk8.javaHome
-        succeeds ":compileGroovy"
-        then:
-        skippedTasks.contains ":compileGroovy"
-
-        when:
-        executer.withJavaHome jdk7.javaHome
         succeeds ":compileGroovy", "--info"
         then:
-        nonSkippedTasks.contains ":compileGroovy"
+        executedAndNotSkipped ":compileGroovy"
         output.contains "Value of input property 'groovyCompilerJvmVersion' has changed for task ':compileGroovy'"
     }
 
     def "tracks changes to the Java toolchain used for cross compilation"() {
         given:
-        def jdk7 = AvailableJavaHomes.getJdk(VERSION_1_7)
         def jdk8 = AvailableJavaHomes.getJdk(VERSION_1_8)
+        def jdk11 = AvailableJavaHomes.getJdk(VERSION_11)
 
-        compileWithJavaJdk(jdk7)
+        compileWithJavaJdk(jdk8)
 
         when:
-        executer.withJavaHome jdk8.javaHome
+        executer.withJavaHome jdk11.javaHome
         succeeds "compileGroovy"
         then:
-        nonSkippedTasks.contains ":compileGroovy"
+        executedAndNotSkipped ":compileGroovy"
 
         when:
-        compileWithJavaJdk(jdk8)
-        executer.withJavaHome jdk8.javaHome
+        compileWithJavaJdk(jdk11)
+        executer.withJavaHome jdk11.javaHome
         succeeds "compileGroovy", "--info"
         then:
-        nonSkippedTasks.contains ":compileGroovy"
+        executedAndNotSkipped ":compileGroovy"
         output.contains "Value of input property 'javaToolChain.version' has changed for task ':compileGroovy'"
     }
 
@@ -90,9 +98,9 @@ class GroovyCompileJavaVersionTrackingIntegrationTest extends AbstractIntegratio
 
             sourceCompatibility = "1.7"
             targetCompatibility = "1.7"
-               
+
             dependencies {
-                compile localGroovy()
+                implementation localGroovy()
             }
 
             compileGroovy {
@@ -101,7 +109,7 @@ class GroovyCompileJavaVersionTrackingIntegrationTest extends AbstractIntegratio
                     forkOptions.javaHome=file('${javaHome}')
                 }
             }
-            
+
         """
     }
 }

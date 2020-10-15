@@ -19,15 +19,22 @@ package org.gradle.plugins.ide.eclipse.model;
 import com.google.common.base.Preconditions;
 import groovy.lang.Closure;
 import org.gradle.api.Action;
+import org.gradle.api.Task;
 import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.internal.project.ProjectInternal;
+import org.gradle.api.internal.project.ProjectStateRegistry;
+import org.gradle.api.plugins.JavaPlugin;
 import org.gradle.api.tasks.SourceSet;
+import org.gradle.api.tasks.compile.JavaCompile;
+import org.gradle.internal.xml.XmlTransformer;
 import org.gradle.plugins.ide.api.XmlFileContentMerger;
 import org.gradle.plugins.ide.eclipse.model.internal.ClasspathFactory;
 import org.gradle.plugins.ide.eclipse.model.internal.FileReferenceFactory;
 import org.gradle.plugins.ide.internal.IdeArtifactRegistry;
+import org.gradle.plugins.ide.internal.resolver.DefaultGradleApiSourcesResolver;
 import org.gradle.util.ConfigureUtil;
 
+import javax.inject.Inject;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -47,8 +54,10 @@ import java.util.Set;
  * if the defaults don't match your needs.
  *
  * <pre class='autoTested'>
- * apply plugin: 'java'
- * apply plugin: 'eclipse'
+ * plugins {
+ *     id 'java'
+ *     id 'eclipse'
+ * }
  *
  * configurations {
  *   provided
@@ -88,8 +97,10 @@ import java.util.Set;
  * Examples of advanced configuration:
  *
  * <pre class='autoTested'>
- * apply plugin: 'java'
- * apply plugin: 'eclipse'
+ * plugins {
+ *     id 'java'
+ *     id 'eclipse'
+ * }
  *
  * eclipse {
  *   classpath {
@@ -131,7 +142,7 @@ public class EclipseClasspath {
 
     private boolean downloadJavadoc;
 
-    private XmlFileContentMerger file;
+    private XmlFileContentMerger file = new XmlFileContentMerger(new XmlTransformer());
 
     private Map<String, File> pathVariables = new HashMap<String, File>();
 
@@ -141,6 +152,7 @@ public class EclipseClasspath {
 
     private final org.gradle.api.Project project;
 
+    @Inject
     public EclipseClasspath(org.gradle.api.Project project) {
         this.project = project;
     }
@@ -315,10 +327,20 @@ public class EclipseClasspath {
      * Calculates, resolves and returns dependency entries of this classpath.
      */
     public List<ClasspathEntry> resolveDependencies() {
-        ClasspathFactory classpathFactory = new ClasspathFactory(this, ((ProjectInternal) project).getServices().get(IdeArtifactRegistry.class));
+        ProjectInternal projectInternal = (ProjectInternal) this.project;
+        IdeArtifactRegistry ideArtifactRegistry = projectInternal.getServices().get(IdeArtifactRegistry.class);
+        ProjectStateRegistry projectRegistry = projectInternal.getServices().get(ProjectStateRegistry.class);
+        boolean inferModulePath = false;
+        Task compileJava = project.getTasks().findByName(JavaPlugin.COMPILE_JAVA_TASK_NAME);
+        if (compileJava instanceof JavaCompile) {
+            inferModulePath = ((JavaCompile) compileJava).getModularity().getInferModulePath().get();
+        }
+        ClasspathFactory classpathFactory = new ClasspathFactory(this, ideArtifactRegistry, projectRegistry, new DefaultGradleApiSourcesResolver(project), inferModulePath);
         return classpathFactory.createEntries();
     }
 
+
+    @SuppressWarnings("unchecked")
     public void mergeXmlClasspath(Classpath xmlClasspath) {
         file.getBeforeMerged().execute(xmlClasspath);
         List<ClasspathEntry> entries = resolveDependencies();

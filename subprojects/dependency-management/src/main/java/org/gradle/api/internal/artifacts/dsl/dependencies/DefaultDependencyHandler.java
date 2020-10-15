@@ -18,20 +18,34 @@ package org.gradle.api.internal.artifacts.dsl.dependencies;
 
 import groovy.lang.Closure;
 import org.gradle.api.Action;
+import org.gradle.api.InvalidUserDataException;
+import org.gradle.api.Transformer;
 import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.artifacts.ConfigurationContainer;
 import org.gradle.api.artifacts.Dependency;
+import org.gradle.api.artifacts.ExternalModuleDependency;
+import org.gradle.api.artifacts.ModuleDependency;
+import org.gradle.api.artifacts.ProjectDependency;
 import org.gradle.api.artifacts.dsl.ComponentMetadataHandler;
 import org.gradle.api.artifacts.dsl.ComponentModuleMetadataHandler;
 import org.gradle.api.artifacts.dsl.DependencyConstraintHandler;
 import org.gradle.api.artifacts.dsl.DependencyHandler;
 import org.gradle.api.artifacts.query.ArtifactResolutionQuery;
-import org.gradle.api.artifacts.transform.VariantTransform;
+import org.gradle.api.artifacts.transform.TransformAction;
+import org.gradle.api.artifacts.transform.TransformParameters;
+import org.gradle.api.artifacts.transform.TransformSpec;
 import org.gradle.api.artifacts.type.ArtifactTypeContainer;
 import org.gradle.api.attributes.AttributesSchema;
+import org.gradle.api.attributes.Category;
+import org.gradle.api.attributes.HasConfigurableAttributes;
 import org.gradle.api.internal.artifacts.VariantTransformRegistry;
 import org.gradle.api.internal.artifacts.query.ArtifactResolutionQueryFactory;
+import org.gradle.api.internal.model.NamedObjectInstantiator;
+import org.gradle.api.provider.Provider;
 import org.gradle.internal.Factory;
+import org.gradle.internal.component.external.model.ImmutableCapability;
+import org.gradle.internal.component.external.model.ProjectTestFixtures;
+import org.gradle.internal.deprecation.DeprecationLogger;
 import org.gradle.internal.metaobject.MethodAccess;
 import org.gradle.internal.metaobject.MethodMixIn;
 import org.gradle.util.ConfigureUtil;
@@ -40,8 +54,9 @@ import javax.annotation.Nullable;
 import java.util.Map;
 
 import static org.gradle.api.internal.artifacts.ArtifactAttributes.ARTIFACT_FORMAT;
+import static org.gradle.internal.component.external.model.TestFixturesSupport.TEST_FIXTURES_CAPABILITY_APPENDIX;
 
-public class DefaultDependencyHandler implements DependencyHandler, MethodMixIn {
+public abstract class DefaultDependencyHandler implements DependencyHandler, MethodMixIn {
     private final ConfigurationContainer configurationContainer;
     private final DependencyFactory dependencyFactory;
     private final ProjectFinder projectFinder;
@@ -52,6 +67,8 @@ public class DefaultDependencyHandler implements DependencyHandler, MethodMixIn 
     private final AttributesSchema attributesSchema;
     private final VariantTransformRegistry transforms;
     private final Factory<ArtifactTypeContainer> artifactTypeContainer;
+    private final NamedObjectInstantiator namedObjectInstantiator;
+    private final PlatformSupport platformSupport;
     private final DynamicAddDependencyMethods dynamicMethods;
 
     public DefaultDependencyHandler(ConfigurationContainer configurationContainer,
@@ -63,7 +80,9 @@ public class DefaultDependencyHandler implements DependencyHandler, MethodMixIn 
                                     ArtifactResolutionQueryFactory resolutionQueryFactory,
                                     AttributesSchema attributesSchema,
                                     VariantTransformRegistry transforms,
-                                    Factory<ArtifactTypeContainer> artifactTypeContainer) {
+                                    Factory<ArtifactTypeContainer> artifactTypeContainer,
+                                    NamedObjectInstantiator namedObjectInstantiator,
+                                    PlatformSupport platformSupport) {
         this.configurationContainer = configurationContainer;
         this.dependencyFactory = dependencyFactory;
         this.projectFinder = projectFinder;
@@ -74,6 +93,8 @@ public class DefaultDependencyHandler implements DependencyHandler, MethodMixIn 
         this.attributesSchema = attributesSchema;
         this.transforms = transforms;
         this.artifactTypeContainer = artifactTypeContainer;
+        this.namedObjectInstantiator = namedObjectInstantiator;
+        this.platformSupport = platformSupport;
         configureSchema();
         dynamicMethods = new DynamicAddDependencyMethods(configurationContainer, new DirectDependencyAdder());
     }
@@ -84,7 +105,8 @@ public class DefaultDependencyHandler implements DependencyHandler, MethodMixIn 
     }
 
     @Override
-    public Dependency add(String configurationName, Object dependencyNotation, Closure configureClosure) {
+    @SuppressWarnings("rawtypes")
+    public Dependency add(String configurationName, Object dependencyNotation, @Nullable Closure configureClosure) {
         return doAdd(configurationContainer.getByName(configurationName), dependencyNotation, configureClosure);
     }
 
@@ -94,24 +116,58 @@ public class DefaultDependencyHandler implements DependencyHandler, MethodMixIn 
     }
 
     @Override
-    public Dependency create(Object dependencyNotation, Closure configureClosure) {
+    @SuppressWarnings("rawtypes")
+    public Dependency create(Object dependencyNotation, @Nullable Closure configureClosure) {
         Dependency dependency = dependencyFactory.createDependency(dependencyNotation);
         return ConfigureUtil.configure(configureClosure, dependency);
     }
 
-    private Dependency doAdd(Configuration configuration, Object dependencyNotation, Closure configureClosure) {
+    @SuppressWarnings("rawtypes")
+    private Dependency doAdd(Configuration configuration, Object dependencyNotation, @Nullable Closure configureClosure) {
         if (dependencyNotation instanceof Configuration) {
-            Configuration other = (Configuration) dependencyNotation;
-            if (!configurationContainer.contains(other)) {
-                throw new UnsupportedOperationException("Currently you can only declare dependencies on configurations from the same project.");
-            }
-            configuration.extendsFrom(other);
-            return null;
+            DeprecationLogger.deprecateBehaviour("Adding a Configuration as a dependency is a confusing behavior which isn't recommended.")
+                .withAdvice("If you're interested in inheriting the dependencies from the Configuration you are adding, you should use Configuration#extendsFrom instead.")
+                .willBeRemovedInGradle8()
+                .withDslReference(Configuration.class, "extendsFrom(org.gradle.api.artifacts.Configuration[])")
+                .nagUser();
+            return doAddConfiguration(configuration, (Configuration) dependencyNotation);
         }
+        if (dependencyNotation instanceof Provider<?>) {
+            return doAddProvider(configuration, (Provider<?>) dependencyNotation, configureClosure);
+        } else {
+            return doAddRegularDependency(configuration, dependencyNotation, configureClosure);
+        }
+    }
 
+    private Dependency doAddRegularDependency(Configuration configuration, Object dependencyNotation, Closure<?> configureClosure) {
         Dependency dependency = create(dependencyNotation, configureClosure);
         configuration.getDependencies().add(dependency);
         return dependency;
+    }
+
+    private Dependency doAddProvider(Configuration configuration, Provider<?> dependencyNotation, Closure<?> configureClosure) {
+        Provider<Dependency> lazyDependency = dependencyNotation.map(mapDependencyProvider(configuration, configureClosure));
+        configuration.getDependencies().addLater(lazyDependency);
+        // Return null here because we don't want to prematurely realize the dependency
+        return null;
+    }
+
+    private <T> Transformer<Dependency, T> mapDependencyProvider(Configuration configuration, Closure<?> configureClosure) {
+        return lazyNotation -> {
+            if (lazyNotation instanceof Configuration) {
+                throw new InvalidUserDataException("Adding a configuration as a dependency using a provider isn't supported. You should call " + configuration.getName() + ".extendsFrom(" + ((Configuration) lazyNotation).getName() + ") instead");
+            }
+            return create(lazyNotation, configureClosure);
+        };
+    }
+
+    private Dependency doAddConfiguration(Configuration configuration, Configuration dependencyNotation) {
+        Configuration other = dependencyNotation;
+        if (!configurationContainer.contains(other)) {
+            throw new UnsupportedOperationException("Currently you can only declare dependencies on configurations from the same project.");
+        }
+        configuration.extendsFrom(other);
+        return null;
     }
 
     @Override
@@ -125,7 +181,8 @@ public class DefaultDependencyHandler implements DependencyHandler, MethodMixIn 
     }
 
     @Override
-    public Dependency module(Object notation, Closure configureClosure) {
+    @SuppressWarnings("rawtypes")
+    public Dependency module(Object notation, @Nullable Closure configureClosure) {
         return dependencyFactory.createModule(notation, configureClosure);
     }
 
@@ -159,22 +216,27 @@ public class DefaultDependencyHandler implements DependencyHandler, MethodMixIn 
         return dependencyConstraintHandler;
     }
 
+    @Override
     public void components(Action<? super ComponentMetadataHandler> configureAction) {
         configureAction.execute(getComponents());
     }
 
+    @Override
     public ComponentMetadataHandler getComponents() {
         return componentMetadataHandler;
     }
 
+    @Override
     public void modules(Action<? super ComponentModuleMetadataHandler> configureAction) {
         configureAction.execute(getModules());
     }
 
+    @Override
     public ComponentModuleMetadataHandler getModules() {
         return componentModuleMetadataHandler;
     }
 
+    @Override
     public ArtifactResolutionQuery createArtifactResolutionQuery() {
         return resolutionQueryFactory.createArtifactResolutionQuery();
     }
@@ -205,13 +267,88 @@ public class DefaultDependencyHandler implements DependencyHandler, MethodMixIn 
     }
 
     @Override
-    public void registerTransform(Action<? super VariantTransform> registrationAction) {
+    @SuppressWarnings("deprecation")
+    public void registerTransform(Action<? super org.gradle.api.artifacts.transform.VariantTransform> registrationAction) {
         transforms.registerTransform(registrationAction);
+    }
+
+    @Override
+    public <T extends TransformParameters> void registerTransform(Class<? extends TransformAction<T>> actionType, Action<? super TransformSpec<T>> registrationAction) {
+        transforms.registerTransform(actionType, registrationAction);
+    }
+
+    @Override
+    public Dependency platform(Object notation) {
+        Dependency dependency = create(notation);
+        if (dependency instanceof ModuleDependency) {
+            ModuleDependency moduleDependency = (ModuleDependency) dependency;
+            moduleDependency.endorseStrictVersions();
+            platformSupport.addPlatformAttribute(moduleDependency, toCategory(Category.REGULAR_PLATFORM));
+        } else if (dependency instanceof HasConfigurableAttributes) {
+            platformSupport.addPlatformAttribute((HasConfigurableAttributes<?>) dependency, toCategory(Category.REGULAR_PLATFORM));
+        }
+        return dependency;
+    }
+
+    @Override
+    public Dependency platform(Object notation, Action<? super Dependency> configureAction) {
+        Dependency dep = platform(notation);
+        configureAction.execute(dep);
+        return dep;
+    }
+
+    @Override
+    @SuppressWarnings("deprecation")
+    public Dependency enforcedPlatform(Object notation) {
+        Dependency platformDependency = create(notation);
+        if (platformDependency instanceof ExternalModuleDependency) {
+            ExternalModuleDependency externalModuleDependency = (ExternalModuleDependency) platformDependency;
+            DeprecationLogger.whileDisabled(() -> externalModuleDependency.setForce(true));
+            platformSupport.addPlatformAttribute(externalModuleDependency, toCategory(Category.ENFORCED_PLATFORM));
+        } else if (platformDependency instanceof HasConfigurableAttributes) {
+            platformSupport.addPlatformAttribute((HasConfigurableAttributes<?>) platformDependency, toCategory(Category.ENFORCED_PLATFORM));
+        }
+        return platformDependency;
+    }
+
+    @Override
+    public Dependency enforcedPlatform(Object notation, Action<? super Dependency> configureAction) {
+        Dependency dep = enforcedPlatform(notation);
+        configureAction.execute(dep);
+        return dep;
+    }
+
+    @Override
+    public Dependency testFixtures(Object notation) {
+        Dependency testFixturesDependency = create(notation);
+        if (testFixturesDependency instanceof ProjectDependency) {
+            ProjectDependency projectDependency = (ProjectDependency) testFixturesDependency;
+            projectDependency.capabilities(new ProjectTestFixtures(projectDependency.getDependencyProject()));
+        } else if (testFixturesDependency instanceof ModuleDependency) {
+            ModuleDependency moduleDependency = (ModuleDependency) testFixturesDependency;
+            moduleDependency.capabilities(capabilities -> capabilities.requireCapability(new ImmutableCapability(
+                moduleDependency.getGroup(),
+                moduleDependency.getName() + TEST_FIXTURES_CAPABILITY_APPENDIX,
+                null)));
+        }
+        return testFixturesDependency;
+    }
+
+    @Override
+    public Dependency testFixtures(Object notation, Action<? super Dependency> configureAction) {
+        Dependency testFixturesDependency = testFixtures(notation);
+        configureAction.execute(testFixturesDependency);
+        return testFixturesDependency;
+    }
+
+    private Category toCategory(String category) {
+        return namedObjectInstantiator.named(Category.class, category);
     }
 
     private class DirectDependencyAdder implements DynamicAddDependencyMethods.DependencyAdder<Dependency> {
 
         @Override
+        @SuppressWarnings("rawtypes")
         public Dependency add(Configuration configuration, Object dependencyNotation, @Nullable Closure configureAction) {
             return doAdd(configuration, dependencyNotation, configureAction);
         }

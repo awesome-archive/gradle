@@ -29,7 +29,7 @@ public class UnionVersionSelector implements CompositeVersionSelector {
     private final List<VersionSelector> selectors;
 
     public static UnionVersionSelector of(List<String> selectors, VersionSelectorScheme scheme) {
-        ImmutableList.Builder<VersionSelector> builder = new ImmutableList.Builder<VersionSelector>();
+        ImmutableList.Builder<VersionSelector> builder = new ImmutableList.Builder<>();
         for (String selector : selectors) {
             builder.add(scheme.parseSelector(selector));
         }
@@ -115,6 +115,7 @@ public class UnionVersionSelector implements CompositeVersionSelector {
         throw new UnsupportedOperationException("Union selectors should only be used internally and don't provide a public string representation");
     }
 
+    @Override
     public List<VersionSelector> getSelectors() {
         return selectors;
     }

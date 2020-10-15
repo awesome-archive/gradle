@@ -19,6 +19,7 @@ package org.gradle.plugins.javascript.jshint.internal;
 import org.gradle.api.logging.Logger;
 import org.gradle.api.logging.Logging;
 import org.gradle.plugins.javascript.rhino.worker.internal.RhinoWorkerUtils;
+import org.gradle.process.internal.worker.RequestHandler;
 import org.mozilla.javascript.Context;
 import org.mozilla.javascript.Scriptable;
 
@@ -26,14 +27,17 @@ import java.io.File;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-import static org.gradle.plugins.javascript.rhino.worker.internal.RhinoWorkerUtils.*;
+import static org.gradle.plugins.javascript.rhino.worker.internal.RhinoWorkerUtils.DefaultScopeOperation;
+import static org.gradle.plugins.javascript.rhino.worker.internal.RhinoWorkerUtils.childScope;
+import static org.gradle.plugins.javascript.rhino.worker.internal.RhinoWorkerUtils.readFile;
+import static org.gradle.plugins.javascript.rhino.worker.internal.RhinoWorkerUtils.toMap;
 
-public class JsHintWorker implements JsHintProtocol {
+public class JsHintWorker implements RequestHandler<JsHintSpec, JsHintResult> {
 
     private static final Logger LOGGER = Logging.getLogger(JsHintWorker.class);
 
     @Override
-    public JsHintResult process(JsHintSpec spec) {
+    public JsHintResult run(JsHintSpec spec) {
         Scriptable jsHintScope = RhinoWorkerUtils.parse(spec.getJsHint(), "UTF-8");
 
         String encoding = spec.getEncoding();
@@ -52,6 +56,7 @@ public class JsHintWorker implements JsHintProtocol {
 
     private Map<String, Object> jsHint(Scriptable jsHintScope, final String source, final String sourceName) {
         return childScope(jsHintScope, new DefaultScopeOperation<Map<String, Object>>() {
+            @Override
             public Map<String, Object> action(Scriptable scope, Context context) {
                 scope.put("jsHintSource", scope, source);
                 Object data = context.evaluateString(scope, "JSHINT(jsHintSource); JSHINT.data();", sourceName, 0, null);

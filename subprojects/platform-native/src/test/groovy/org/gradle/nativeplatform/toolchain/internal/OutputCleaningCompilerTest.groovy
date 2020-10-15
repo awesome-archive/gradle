@@ -16,7 +16,7 @@
 
 package org.gradle.nativeplatform.toolchain.internal
 
-import org.gradle.api.internal.file.BaseDirFileResolver
+
 import org.gradle.api.internal.file.TestFiles
 import org.gradle.api.tasks.WorkResult
 import org.gradle.language.base.internal.compile.Compiler
@@ -29,11 +29,11 @@ import spock.lang.Specification
 class OutputCleaningCompilerTest extends Specification {
 
     @Rule
-    final TestNameTestDirectoryProvider tmpDirProvider = new TestNameTestDirectoryProvider()
+    final TestNameTestDirectoryProvider tmpDirProvider = new TestNameTestDirectoryProvider(getClass())
 
     TestFile outputDir = tmpDirProvider.createDir("objs")
 
-    def compilerOutputFileNamingSchemeFactory = new CompilerOutputFileNamingSchemeFactory(new BaseDirFileResolver(TestFiles.fileSystem(), tmpDirProvider.testDirectory, TestFiles.getPatternSetFactory()))
+    def compilerOutputFileNamingSchemeFactory = new CompilerOutputFileNamingSchemeFactory(TestFiles.resolver(tmpDirProvider.testDirectory))
     def namingScheme = compilerOutputFileNamingSchemeFactory.create()
 
     private static final String O_EXT = ".o"

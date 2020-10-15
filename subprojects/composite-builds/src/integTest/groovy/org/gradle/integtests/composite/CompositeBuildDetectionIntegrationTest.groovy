@@ -17,6 +17,7 @@
 package org.gradle.integtests.composite
 
 import org.gradle.integtests.fixtures.build.BuildTestFile
+
 /**
  * Tests for resolving dependency artifacts with substitution within a composite build.
  */

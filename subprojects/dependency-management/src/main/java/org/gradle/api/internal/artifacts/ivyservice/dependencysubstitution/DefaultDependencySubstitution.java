@@ -16,31 +16,40 @@
 
 package org.gradle.api.internal.artifacts.ivyservice.dependencysubstitution;
 
+import com.google.common.collect.Lists;
+import org.gradle.api.Action;
 import org.gradle.api.InvalidUserDataException;
+import org.gradle.api.artifacts.ArtifactSelectionDetails;
 import org.gradle.api.artifacts.component.ComponentSelector;
 import org.gradle.api.artifacts.result.ComponentSelectionDescriptor;
-import org.gradle.api.internal.artifacts.ivyservice.resolveengine.result.ComponentSelectionDescriptorInternal;
-import org.gradle.api.internal.artifacts.ivyservice.resolveengine.result.DefaultComponentSelectionDescriptor;
 import org.gradle.api.internal.artifacts.DependencySubstitutionInternal;
 import org.gradle.api.internal.artifacts.dsl.ComponentSelectorParsers;
-import org.gradle.api.internal.artifacts.ivyservice.resolveengine.result.VersionSelectionReasons;
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.result.ComponentSelectionDescriptorFactory;
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.result.ComponentSelectionDescriptorInternal;
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.result.ComponentSelectionReasons;
+import org.gradle.internal.component.model.IvyArtifactName;
 
-import static org.gradle.api.artifacts.result.ComponentSelectionCause.REQUESTED;
+import javax.inject.Inject;
+import java.util.Collections;
+import java.util.List;
+
 import static org.gradle.api.artifacts.result.ComponentSelectionCause.SELECTED_BY_RULE;
 
 public class DefaultDependencySubstitution implements DependencySubstitutionInternal {
+    private final ComponentSelectionDescriptorFactory componentSelectionDescriptorFactory;
     private final ComponentSelector requested;
-    private ComponentSelectionDescriptorInternal selectionDescription;
+    private List<ComponentSelectionDescriptorInternal> ruleDescriptors;
     private ComponentSelector target;
+    private final ArtifactSelectionDetailsInternal artifactSelectionDetails;
 
-    public DefaultDependencySubstitution(ComponentSelector requested, String reason) {
+    @Inject
+    public DefaultDependencySubstitution(ComponentSelectionDescriptorFactory componentSelectionDescriptorFactory,
+                                         ComponentSelector requested,
+                                         List<IvyArtifactName> artifacts) {
+        this.componentSelectionDescriptorFactory = componentSelectionDescriptorFactory;
         this.requested = requested;
         this.target = requested;
-        if (reason != null) {
-            this.selectionDescription = VersionSelectionReasons.REQUESTED.withReason(reason);
-        } else {
-            this.selectionDescription = VersionSelectionReasons.REQUESTED;
-        }
+        this.artifactSelectionDetails = new DefaultArtifactSelectionDetails(this, artifacts);
     }
 
     @Override
@@ -50,24 +59,36 @@ public class DefaultDependencySubstitution implements DependencySubstitutionInte
 
     @Override
     public void useTarget(Object notation) {
-        useTarget(notation, VersionSelectionReasons.SELECTED_BY_RULE);
+        useTarget(notation, ComponentSelectionReasons.SELECTED_BY_RULE);
     }
 
     @Override
     public void useTarget(Object notation, String reason) {
-        useTarget(notation, new DefaultComponentSelectionDescriptor(SELECTED_BY_RULE, reason));
+        useTarget(notation, componentSelectionDescriptorFactory.newDescriptor(SELECTED_BY_RULE, reason));
     }
 
     @Override
-    public void useTarget(Object notation, ComponentSelectionDescriptor selectionDescription) {
+    public void artifactSelection(Action<? super ArtifactSelectionDetails> action) {
+        action.execute(artifactSelectionDetails);
+    }
+
+    @Override
+    public void useTarget(Object notation, ComponentSelectionDescriptor ruleDescriptor) {
         this.target = ComponentSelectorParsers.parser().parseNotation(notation);
-        this.selectionDescription = (ComponentSelectionDescriptorInternal) selectionDescription;
+        addRuleDescriptor((ComponentSelectionDescriptorInternal) ruleDescriptor);
         validateTarget(target);
     }
 
+    void addRuleDescriptor(ComponentSelectionDescriptorInternal ruleDescriptor) {
+        if (this.ruleDescriptors == null) {
+            this.ruleDescriptors = Lists.newArrayList();
+        }
+        this.ruleDescriptors.add(ruleDescriptor);
+    }
+
     @Override
-    public ComponentSelectionDescriptorInternal getSelectionDescription() {
-        return selectionDescription;
+    public List<ComponentSelectionDescriptorInternal> getRuleDescriptors() {
+        return ruleDescriptors == null ? Collections.emptyList() : ruleDescriptors;
     }
 
     @Override
@@ -77,7 +98,12 @@ public class DefaultDependencySubstitution implements DependencySubstitutionInte
 
     @Override
     public boolean isUpdated() {
-        return selectionDescription.getCause() != REQUESTED;
+        return ruleDescriptors != null;
+    }
+
+    @Override
+    public ArtifactSelectionDetailsInternal getArtifactSelectionDetails() {
+        return artifactSelectionDetails;
     }
 
     public static void validateTarget(ComponentSelector componentSelector) {

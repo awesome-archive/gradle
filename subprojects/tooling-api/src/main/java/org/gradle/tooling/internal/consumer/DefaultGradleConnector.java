@@ -24,13 +24,18 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.net.URI;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-public class DefaultGradleConnector extends GradleConnector {
+public class DefaultGradleConnector extends GradleConnector implements ProjectConnectionCloseListener {
     private static final Logger LOGGER = LoggerFactory.getLogger(GradleConnector.class);
     private final ConnectionFactory connectionFactory;
     private final DistributionFactory distributionFactory;
     private Distribution distribution;
+
+    private final List<DefaultProjectConnection> connections = new ArrayList<DefaultProjectConnection>(4);
+    private boolean stopped = false;
 
     private final DefaultConnectionParameters.Builder connectionParamsBuilder = DefaultConnectionParameters.builder();
 
@@ -57,16 +62,37 @@ public class DefaultGradleConnector extends GradleConnector {
         ConnectorServices.close();
     }
 
+    @Override
+    public void connectionClosed(ProjectConnection connection) {
+        synchronized (connections) {
+            connections.remove(connection);
+        }
+    }
+
+    @Override
+    public void disconnect() {
+        synchronized (connections) {
+            stopped = true;
+            for (DefaultProjectConnection connection : connections) {
+                connection.disconnect();
+            }
+            connections.clear();
+        }
+    }
+
+    @Override
     public GradleConnector useInstallation(File gradleHome) {
         distribution = distributionFactory.getDistribution(gradleHome);
         return this;
     }
 
+    @Override
     public GradleConnector useGradleVersion(String gradleVersion) {
         distribution = distributionFactory.getDistribution(gradleVersion);
         return this;
     }
 
+    @Override
     public GradleConnector useDistribution(URI gradleDistribution) {
         distribution = distributionFactory.getDistribution(gradleDistribution);
         return this;
@@ -77,6 +103,7 @@ public class DefaultGradleConnector extends GradleConnector {
         return this;
     }
 
+    @Override
     public GradleConnector useBuildDistribution() {
         distribution = null;
         return this;
@@ -87,11 +114,13 @@ public class DefaultGradleConnector extends GradleConnector {
         return this;
     }
 
+    @Override
     public GradleConnector forProjectDirectory(File projectDir) {
         connectionParamsBuilder.setProjectDir(projectDir);
         return this;
     }
 
+    @Override
     public GradleConnector useGradleUserHomeDir(File gradleUserHomeDir) {
         connectionParamsBuilder.setGradleUserHomeDir(gradleUserHomeDir);
         return this;
@@ -126,6 +155,7 @@ public class DefaultGradleConnector extends GradleConnector {
         return this;
     }
 
+    @Override
     public ProjectConnection connect() throws GradleConnectionException {
         LOGGER.debug("Connecting from tooling API consumer version {}", GradleVersion.current().getVersion());
 
@@ -136,7 +166,16 @@ public class DefaultGradleConnector extends GradleConnector {
         if (distribution == null) {
             distribution = distributionFactory.getDefaultDistribution(connectionParameters.getProjectDir(), connectionParameters.isSearchUpwards() != null ? connectionParameters.isSearchUpwards() : true);
         }
-        return connectionFactory.create(distribution, connectionParameters);
+
+        synchronized (connections) {
+            if (stopped) {
+                throw new IllegalStateException("Tooling API client has been disconnected. No other connections may be used.");
+            }
+
+            ProjectConnection connection = connectionFactory.create(distribution, connectionParameters, this);
+            connections.add((DefaultProjectConnection) connection);
+            return connection;
+        }
     }
 
     ConnectionFactory getConnectionFactory() {

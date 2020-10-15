@@ -20,6 +20,7 @@ import org.gradle.api.artifacts.PublishArtifact;
 import org.gradle.api.artifacts.PublishException;
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier;
 import org.gradle.api.internal.artifacts.ArtifactPublisher;
+import org.gradle.api.internal.artifacts.DefaultModuleIdentifier;
 import org.gradle.api.internal.artifacts.Module;
 import org.gradle.api.internal.artifacts.ModuleVersionPublisher;
 import org.gradle.api.internal.artifacts.configurations.ConfigurationInternal;
@@ -51,6 +52,7 @@ public class DefaultArtifactPublisher implements ArtifactPublisher {
         this.ivyModuleDescriptorWriter = ivyModuleDescriptorWriter;
     }
 
+    @Override
     public void publish(final Iterable<? extends PublicationAwareRepository> repositories, final Module module, final Configuration configuration, final File descriptor) throws PublishException {
         Set<ConfigurationInternal> allConfigurations = Cast.uncheckedCast(configuration.getAll());
         Set<ConfigurationInternal> configurationsToPublish = Cast.uncheckedCast(configuration.getHierarchy());
@@ -77,7 +79,7 @@ public class DefaultArtifactPublisher implements ArtifactPublisher {
     }
 
     private DefaultIvyModulePublishMetadata toPublishMetaData(Module module, Set<? extends ConfigurationInternal> configurations, boolean validateArtifacts) {
-        ModuleComponentIdentifier id = DefaultModuleComponentIdentifier.newId(module.getGroup(), module.getName(), module.getVersion());
+        ModuleComponentIdentifier id = DefaultModuleComponentIdentifier.newId(DefaultModuleIdentifier.newId(module.getGroup(), module.getName()), module.getVersion());
         DefaultIvyModulePublishMetadata publishMetaData = new DefaultIvyModulePublishMetadata(id, module.getStatus());
         addConfigurations(publishMetaData, configurations, validateArtifacts);
         return publishMetaData;

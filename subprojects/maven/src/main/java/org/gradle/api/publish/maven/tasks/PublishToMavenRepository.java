@@ -16,30 +16,40 @@
 
 package org.gradle.api.publish.maven.tasks;
 
-import org.gradle.api.Incubating;
 import org.gradle.api.InvalidUserDataException;
 import org.gradle.api.artifacts.repositories.MavenArtifactRepository;
-import org.gradle.api.internal.artifacts.repositories.transport.RepositoryTransportFactory;
+import org.gradle.api.credentials.Credentials;
+import org.gradle.api.internal.artifacts.BaseRepositoryFactory;
+import org.gradle.api.provider.Property;
 import org.gradle.api.publish.internal.PublishOperation;
 import org.gradle.api.publish.maven.internal.publication.MavenPublicationInternal;
+import org.gradle.api.publish.maven.internal.publisher.MavenNormalizedPublication;
 import org.gradle.api.publish.maven.internal.publisher.MavenPublisher;
-import org.gradle.api.publish.maven.internal.publisher.MavenRemotePublisher;
-import org.gradle.api.publish.maven.internal.publisher.StaticLockingMavenPublisher;
 import org.gradle.api.publish.maven.internal.publisher.ValidatingMavenPublisher;
+import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.Internal;
+import org.gradle.api.tasks.Optional;
 import org.gradle.api.tasks.TaskAction;
+import org.gradle.internal.artifacts.repositories.AuthenticationSupportedInternal;
+import org.gradle.internal.serialization.Cached;
+import org.gradle.internal.serialization.Transient;
+import org.gradle.internal.service.ServiceRegistry;
 
-import javax.inject.Inject;
+import java.net.URI;
+
+import static org.gradle.internal.serialization.Transient.varOf;
+
 
 /**
  * Publishes a {@link org.gradle.api.publish.maven.MavenPublication} to a {@link MavenArtifactRepository}.
  *
  * @since 1.4
  */
-@Incubating
 public class PublishToMavenRepository extends AbstractPublishToMaven {
+    private final Transient.Var<MavenArtifactRepository> repository = varOf();
+    private final Cached<PublishSpec> spec = Cached.of(this::computeSpec);
 
-    private MavenArtifactRepository repository;
+    private final Property<Credentials> credentials = getProject().getObjects().property(Credentials.class);
 
     /**
      * The repository to publish to.
@@ -47,8 +57,15 @@ public class PublishToMavenRepository extends AbstractPublishToMaven {
      * @return The repository to publish to
      */
     @Internal
+
     public MavenArtifactRepository getRepository() {
-        return repository;
+        return repository.get();
+    }
+
+    @Input
+    @Optional
+    Property<Credentials> getCredentials() {
+        return credentials;
     }
 
     /**
@@ -57,11 +74,17 @@ public class PublishToMavenRepository extends AbstractPublishToMaven {
      * @param repository The repository to publish to
      */
     public void setRepository(MavenArtifactRepository repository) {
-        this.repository = repository;
+        this.repository.set(repository);
+        this.credentials.set(((AuthenticationSupportedInternal) repository).getConfiguredCredentials());
     }
 
     @TaskAction
     public void publish() {
+        PublishSpec spec = this.spec.get();
+        doPublish(spec.publication, spec.repository.get(getServices()));
+    }
+
+    private PublishSpec computeSpec() {
         MavenPublicationInternal publicationInternal = getPublicationInternal();
         if (publicationInternal == null) {
             throw new InvalidUserDataException("The 'publication' property is required");
@@ -72,23 +95,100 @@ public class PublishToMavenRepository extends AbstractPublishToMaven {
             throw new InvalidUserDataException("The 'repository' property is required");
         }
 
-        doPublish(publicationInternal, repository);
+        getDuplicatePublicationTracker().checkCanPublish(publicationInternal, repository.getUrl(), repository.getName());
+        MavenNormalizedPublication normalizedPublication = publicationInternal.asNormalisedPublication();
+        return new PublishSpec(
+                RepositorySpec.of(repository),
+                normalizedPublication
+        );
     }
 
-    private void doPublish(final MavenPublicationInternal publication, final MavenArtifactRepository repository) {
-        new PublishOperation(publication, repository.getName()) {
+    private void doPublish(final MavenNormalizedPublication normalizedPublication, final MavenArtifactRepository repository) {
+        new PublishOperation(normalizedPublication.getName(), repository.getName()) {
             @Override
-            protected void publish() throws Exception {
-                MavenPublisher remotePublisher = new MavenRemotePublisher(getLoggingManagerFactory(), getMavenRepositoryLocator(), getTemporaryDirFactory(), getRepositoryTransportFactory());
-                MavenPublisher staticLockingPublisher = new StaticLockingMavenPublisher(remotePublisher);
-                MavenPublisher validatingPublisher = new ValidatingMavenPublisher(staticLockingPublisher);
-                validatingPublisher.publish(publication.asNormalisedPublication(), repository);
+            protected void publish() {
+                validatingMavenPublisher().publish(normalizedPublication, repository);
             }
         }.run();
     }
 
-    @Inject
-    protected RepositoryTransportFactory getRepositoryTransportFactory() {
-        throw new UnsupportedOperationException();
+    private MavenPublisher validatingMavenPublisher() {
+        return new ValidatingMavenPublisher(
+                getMavenPublishers().getRemotePublisher(getTemporaryDirFactory())
+        );
+    }
+
+    static class PublishSpec {
+
+        private final RepositorySpec repository;
+        private final MavenNormalizedPublication publication;
+
+        public PublishSpec(
+                RepositorySpec repository,
+                MavenNormalizedPublication publication
+        ) {
+            this.repository = repository;
+            this.publication = publication;
+        }
+    }
+
+    static abstract class RepositorySpec {
+
+        static RepositorySpec of(MavenArtifactRepository repository) {
+            return new Configured(repository);
+        }
+
+        abstract MavenArtifactRepository get(ServiceRegistry services);
+
+        static class Configured extends RepositorySpec implements java.io.Serializable {
+            final MavenArtifactRepository repository;
+
+            public Configured(MavenArtifactRepository repository) {
+                this.repository = repository;
+            }
+
+            @Override
+            MavenArtifactRepository get(ServiceRegistry services) {
+                return repository;
+            }
+
+            private Object writeReplace() {
+                if ("file".equals(repository.getUrl().getScheme())) {
+                    return new LocalRepositorySpec(repository.getUrl());
+                }
+                // Let the configuration cache report on the unsupported repository
+                return new UnsupportedRepositorySpec(repository);
+            }
+        }
+
+        static class LocalRepositorySpec extends RepositorySpec {
+
+            private final URI repositoryUrl;
+
+            public LocalRepositorySpec(URI repositoryUrl) {
+                this.repositoryUrl = repositoryUrl;
+            }
+
+            @Override
+            MavenArtifactRepository get(ServiceRegistry services) {
+                MavenArtifactRepository repository = services.get(BaseRepositoryFactory.class).createMavenRepository();
+                repository.setUrl(repositoryUrl);
+                return repository;
+            }
+        }
+
+        static class UnsupportedRepositorySpec extends RepositorySpec {
+
+            private final MavenArtifactRepository repository;
+
+            public UnsupportedRepositorySpec(MavenArtifactRepository repository) {
+                this.repository = repository;
+            }
+
+            @Override
+            MavenArtifactRepository get(ServiceRegistry services) {
+                return repository;
+            }
+        }
     }
 }

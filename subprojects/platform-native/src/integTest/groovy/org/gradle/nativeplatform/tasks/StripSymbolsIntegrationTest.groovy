@@ -16,16 +16,14 @@
 
 package org.gradle.nativeplatform.tasks
 
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.nativeplatform.fixtures.AbstractInstalledToolChainIntegrationSpec
 import org.gradle.nativeplatform.fixtures.NativeBinaryFixture
 import org.gradle.nativeplatform.fixtures.RequiresInstalledToolChain
 import org.gradle.nativeplatform.fixtures.ToolChainRequirement
 import org.gradle.nativeplatform.fixtures.app.IncrementalCppStaleCompileOutputApp
 import org.gradle.nativeplatform.fixtures.app.SourceElement
-import org.gradle.util.Requires
-import org.gradle.util.TestPrecondition
 
-@Requires(TestPrecondition.NOT_UNKNOWN_OS)
 @RequiresInstalledToolChain(ToolChainRequirement.GCC_COMPATIBLE)
 class StripSymbolsIntegrationTest extends AbstractInstalledToolChainIntegrationSpec {
     def app = new IncrementalCppStaleCompileOutputApp()
@@ -37,7 +35,7 @@ class StripSymbolsIntegrationTest extends AbstractInstalledToolChainIntegrationS
             plugins {
                 id 'cpp-application'
             }
-            
+
             task stripSymbolsDebug(type: StripSymbols) { strip ->
                 project.application.binaries.get { !it.optimized }.configure {
                     def linkDebug = linkTask.get()
@@ -50,6 +48,7 @@ class StripSymbolsIntegrationTest extends AbstractInstalledToolChainIntegrationS
         """
     }
 
+    @ToBeFixedForConfigurationCache
     def "strips symbols from binary"() {
         when:
         succeeds ":stripSymbolsDebug"
@@ -60,6 +59,7 @@ class StripSymbolsIntegrationTest extends AbstractInstalledToolChainIntegrationS
         binary("build/stripped").assertDoesNotHaveDebugSymbolsFor(withoutHeaders(app.original))
     }
 
+    @ToBeFixedForConfigurationCache
     def "strip is skipped when there are no changes"() {
         when:
         succeeds ":stripSymbolsDebug"
@@ -75,6 +75,7 @@ class StripSymbolsIntegrationTest extends AbstractInstalledToolChainIntegrationS
         binary("build/stripped").assertDoesNotHaveDebugSymbolsFor(withoutHeaders(app.original))
     }
 
+    @ToBeFixedForConfigurationCache
     def "strip is re-executed when changes are made"() {
         when:
         succeeds ":stripSymbolsDebug"

@@ -17,11 +17,14 @@
 package org.gradle.jvm.plugins
 
 import org.gradle.integtests.fixtures.AbstractAutoTestedSamplesTest
+import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
 import org.junit.Test
 
+@UnsupportedWithConfigurationCache(because = "software model")
 class AutoTestedSamplePlatformJvmIntegrationTest extends AbstractAutoTestedSamplesTest {
     @Test
     void runSamples() {
+        executer.noDeprecationChecks()
         runSamplesFrom("subprojects/platform-jvm/src/main")
     }
 }

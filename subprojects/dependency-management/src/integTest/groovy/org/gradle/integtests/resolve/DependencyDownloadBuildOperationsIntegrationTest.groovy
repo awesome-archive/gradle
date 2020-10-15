@@ -38,17 +38,20 @@ class DependencyDownloadBuildOperationsIntegrationTest extends AbstractHttpDepen
             .publish()
 
         buildFile << """
-            apply plugin: "base"
-
             repositories {
                 maven { url "${mavenHttpRepo.uri}" }
             }
-            
-            dependencies {
-              archives "org.utils:impl:1.3"
+
+            configurations {
+                base { canBeResolved = false; canBeConsumed = false }
+                path { extendsFrom(base) }
             }
-            
-            println configurations.archives.files
+
+            dependencies {
+                base "org.utils:impl:1.3"
+            }
+
+            println configurations.path.files
         """
 
         mavenHttpRepo.server.chunkedTransfer = chunked
@@ -70,11 +73,11 @@ class DependencyDownloadBuildOperationsIntegrationTest extends AbstractHttpDepen
 
         def artifactsOps = buildOperations.all(ResolveArtifactsBuildOperationType)
         artifactsOps.size() == 1
-        artifactsOps[0].details.configurationPath == ':archives'
+        artifactsOps[0].details.configurationPath == ':path'
 
         def artifactOps = buildOperations.all(DownloadArtifactBuildOperationType)
         artifactOps.size() == 1
-        artifactOps[0].details.artifactIdentifier == 'impl.jar (org.utils:impl:1.3)'
+        artifactOps[0].details.artifactIdentifier == 'impl-1.3.jar (org.utils:impl:1.3)'
 
         when:
         executer.withArguments("--refresh-dependencies")
@@ -88,11 +91,11 @@ class DependencyDownloadBuildOperationsIntegrationTest extends AbstractHttpDepen
 
         def artifactsOps2 = buildOperations.all(ResolveArtifactsBuildOperationType)
         artifactsOps2.size() == 1
-        artifactsOps2[0].details.configurationPath == ':archives'
+        artifactsOps2[0].details.configurationPath == ':path'
 
         def artifactOps2 = buildOperations.all(DownloadArtifactBuildOperationType)
         artifactOps2.size() == 1
-        artifactOps2[0].details.artifactIdentifier == 'impl.jar (org.utils:impl:1.3)'
+        artifactOps2[0].details.artifactIdentifier == 'impl-1.3.jar (org.utils:impl:1.3)'
 
         where:
         chunked << [true, false]
@@ -115,18 +118,33 @@ class DependencyDownloadBuildOperationsIntegrationTest extends AbstractHttpDepen
         dir.allowGet()
 
         buildFile << """
-            apply plugin: "base"
-
             repositories {
-                maven { url "${emptyRepo.uri}" }
-                maven { url "${mavenHttpRepo.uri}" }
+                maven {
+                    url "${emptyRepo.uri}"
+                    metadataSources {
+                        mavenPom()
+                        artifact()
+                    }
+                }
+                maven {
+                    url "${mavenHttpRepo.uri}"
+                    metadataSources {
+                        mavenPom()
+                        artifact()
+                    }
+                }
             }
-            
+
+            configurations {
+                base { canBeResolved = false; canBeConsumed = false }
+                path { extendsFrom(base) }
+            }
+
             dependencies {
-              archives "org.utils:impl:1.+"
+              base "org.utils:impl:1.+"
             }
-            
-            println configurations.archives.files
+
+            println configurations.path.files
         """
 
         when:
@@ -153,11 +171,11 @@ class DependencyDownloadBuildOperationsIntegrationTest extends AbstractHttpDepen
 
         def artifactsOps = buildOperations.all(ResolveArtifactsBuildOperationType)
         artifactsOps.size() == 1
-        artifactsOps[0].details.configurationPath == ':archives'
+        artifactsOps[0].details.configurationPath == ':path'
 
         def artifactOps = buildOperations.all(DownloadArtifactBuildOperationType)
         artifactOps.size() == 1
-        artifactOps[0].details.artifactIdentifier == 'impl.jar (org.utils:impl:1.3)'
+        artifactOps[0].details.artifactIdentifier == 'impl-1.3.jar (org.utils:impl:1.3)'
 
         when:
         executer.withArguments("--refresh-dependencies")
@@ -183,11 +201,11 @@ class DependencyDownloadBuildOperationsIntegrationTest extends AbstractHttpDepen
 
         def artifactsOps2 = buildOperations.all(ResolveArtifactsBuildOperationType)
         artifactsOps2.size() == 1
-        artifactsOps2[0].details.configurationPath == ':archives'
+        artifactsOps2[0].details.configurationPath == ':path'
 
         def artifactOps2 = buildOperations.all(DownloadArtifactBuildOperationType)
         artifactOps2.size() == 1
-        artifactOps2[0].details.artifactIdentifier == 'impl.jar (org.utils:impl:1.3)'
+        artifactOps2[0].details.artifactIdentifier == 'impl-1.3.jar (org.utils:impl:1.3)'
     }
 
     def "emits events for dynamic dependency resolution"() {
@@ -201,17 +219,26 @@ class DependencyDownloadBuildOperationsIntegrationTest extends AbstractHttpDepen
         dir.allowGet()
 
         buildFile << """
-            apply plugin: "base"
-
             repositories {
-                maven { url "${mavenHttpRepo.uri}" }
+                maven {
+                    url "${mavenHttpRepo.uri}"
+                    metadataSources {
+                        mavenPom()
+                        artifact()
+                    }
+                }
             }
-            
+
+            configurations {
+                base { canBeResolved = false; canBeConsumed = false }
+                path { extendsFrom(base) }
+            }
+
             dependencies {
-              archives "org.utils:impl:1.+"
+              base "org.utils:impl:1.+"
             }
-            
-            println configurations.archives.files
+
+            println configurations.path.files
         """
 
         when:
@@ -235,11 +262,11 @@ class DependencyDownloadBuildOperationsIntegrationTest extends AbstractHttpDepen
 
         def artifactsOps = buildOperations.all(ResolveArtifactsBuildOperationType)
         artifactsOps.size() == 1
-        artifactsOps[0].details.configurationPath == ':archives'
+        artifactsOps[0].details.configurationPath == ':path'
 
         def artifactOps = buildOperations.all(DownloadArtifactBuildOperationType)
         artifactOps.size() == 1
-        artifactOps[0].details.artifactIdentifier == 'impl.jar (org.utils:impl:1.3)'
+        artifactOps[0].details.artifactIdentifier == 'impl-1.3.jar (org.utils:impl:1.3)'
 
         when:
         executer.withArguments("--refresh-dependencies")
@@ -262,11 +289,11 @@ class DependencyDownloadBuildOperationsIntegrationTest extends AbstractHttpDepen
 
         def artifactsOps2 = buildOperations.all(ResolveArtifactsBuildOperationType)
         artifactsOps2.size() == 1
-        artifactsOps2[0].details.configurationPath == ':archives'
+        artifactsOps2[0].details.configurationPath == ':path'
 
         def artifactOps2 = buildOperations.all(DownloadArtifactBuildOperationType)
         artifactOps2.size() == 1
-        artifactOps2[0].details.artifactIdentifier == 'impl.jar (org.utils:impl:1.3)'
+        artifactOps2[0].details.artifactIdentifier == 'impl-1.3.jar (org.utils:impl:1.3)'
     }
 
     def "emits events for an artifact once per build"() {
@@ -276,23 +303,23 @@ class DependencyDownloadBuildOperationsIntegrationTest extends AbstractHttpDepen
             .publish()
 
         buildFile << """
-            apply plugin: "base"
-
             repositories {
                 maven { url "${mavenHttpRepo.uri}" }
             }
-            
-            dependencies {
-              archives "org.utils:impl:1.3"
-            }
-            
+
             configurations {
-                moreArchives { extendsFrom archives }
+                base { canBeResolved = false; canBeConsumed = false }
+                primary { extendsFrom base }
+                more { extendsFrom base }
             }
-            
-            println configurations.archives.files
-            println configurations.archives.files
-            println configurations.moreArchives.files
+
+            dependencies {
+              base "org.utils:impl:1.3"
+            }
+
+            println configurations.primary.files
+            println configurations.primary.files
+            println configurations.more.files
         """
 
         when:
@@ -310,13 +337,13 @@ class DependencyDownloadBuildOperationsIntegrationTest extends AbstractHttpDepen
 
         def artifactsOps = buildOperations.all(ResolveArtifactsBuildOperationType)
         artifactsOps.size() == 3
-        artifactsOps[0].details.configurationPath == ':archives'
-        artifactsOps[1].details.configurationPath == ':archives'
-        artifactsOps[2].details.configurationPath == ':moreArchives'
+        artifactsOps[0].details.configurationPath == ':primary'
+        artifactsOps[1].details.configurationPath == ':primary'
+        artifactsOps[2].details.configurationPath == ':more'
 
         def artifactOps = buildOperations.all(DownloadArtifactBuildOperationType)
         artifactOps.size() == 1
-        artifactOps[0].details.artifactIdentifier == 'impl.jar (org.utils:impl:1.3)'
+        artifactOps[0].details.artifactIdentifier == 'impl-1.3.jar (org.utils:impl:1.3)'
 
         when:
         executer.withArguments("--refresh-dependencies")
@@ -332,13 +359,13 @@ class DependencyDownloadBuildOperationsIntegrationTest extends AbstractHttpDepen
 
         def artifactsOps2 = buildOperations.all(ResolveArtifactsBuildOperationType)
         artifactsOps2.size() == 3
-        artifactsOps2[0].details.configurationPath == ':archives'
-        artifactsOps2[1].details.configurationPath == ':archives'
-        artifactsOps2[2].details.configurationPath == ':moreArchives'
+        artifactsOps2[0].details.configurationPath == ':primary'
+        artifactsOps2[1].details.configurationPath == ':primary'
+        artifactsOps2[2].details.configurationPath == ':more'
 
         def artifactOps2 = buildOperations.all(DownloadArtifactBuildOperationType)
         artifactOps2.size() == 1
-        artifactOps2[0].details.artifactIdentifier == 'impl.jar (org.utils:impl:1.3)'
+        artifactOps2[0].details.artifactIdentifier == 'impl-1.3.jar (org.utils:impl:1.3)'
 
         where:
         chunked << [true, false]

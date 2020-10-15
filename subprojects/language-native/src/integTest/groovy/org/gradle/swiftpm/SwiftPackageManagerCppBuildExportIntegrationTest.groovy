@@ -16,15 +16,17 @@
 
 package org.gradle.swiftpm
 
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.nativeplatform.fixtures.app.CppAppWithLibraries
 import org.gradle.nativeplatform.fixtures.app.CppLib
 
 class SwiftPackageManagerCppBuildExportIntegrationTest extends AbstractSwiftPackageManagerExportIntegrationTest {
+    @ToBeFixedForConfigurationCache(because = "Task.getProject() during execution")
     def "produces manifest for single project C++ library that defines only the production targets"() {
         given:
         buildFile << """
-            plugins { 
-                id 'swiftpm-export' 
+            plugins {
+                id 'swiftpm-export'
                 id 'cpp-library'
                 id 'cpp-unit-test'
             }
@@ -66,13 +68,14 @@ let package = Package(
         swiftPmBuildSucceeds()
     }
 
+    @ToBeFixedForConfigurationCache(because = "Task.getProject() during execution")
     def "produces manifest for multi project C++ build"() {
         given:
         settingsFile << "include 'lib1', 'lib2'"
         buildFile << """
-            plugins { 
-                id 'swiftpm-export' 
-                id 'cpp-application' 
+            plugins {
+                id 'swiftpm-export'
+                id 'cpp-application'
             }
             subprojects {
                 apply plugin: 'cpp-library'
@@ -146,11 +149,12 @@ let package = Package(
         swiftPmBuildSucceeds()
     }
 
+    @ToBeFixedForConfigurationCache(because = "Task.getProject() during execution")
     def "produces manifest for C++ library with shared and static linkage"() {
         given:
         buildFile << """
-            plugins { 
-                id 'swiftpm-export' 
+            plugins {
+                id 'swiftpm-export'
                 id 'cpp-library'
             }
             library.linkage = [Linkage.SHARED, Linkage.STATIC]
@@ -192,13 +196,14 @@ let package = Package(
         swiftPmBuildSucceeds()
     }
 
+    @ToBeFixedForConfigurationCache(because = "Task.getProject() during execution")
     def "honors customization of component basename"() {
         given:
         settingsFile << "include 'lib1', 'lib2'"
         buildFile << """
-            plugins { 
-                id 'swiftpm-export' 
-                id 'cpp-application' 
+            plugins {
+                id 'swiftpm-export'
+                id 'cpp-application'
             }
             subprojects {
                 apply plugin: 'cpp-library'

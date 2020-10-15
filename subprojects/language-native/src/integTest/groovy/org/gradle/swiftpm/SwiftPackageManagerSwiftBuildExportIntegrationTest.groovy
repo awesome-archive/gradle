@@ -16,16 +16,20 @@
 
 package org.gradle.swiftpm
 
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
+import org.gradle.nativeplatform.fixtures.RequiresInstalledToolChain
+import org.gradle.nativeplatform.fixtures.ToolChainRequirement
 import org.gradle.nativeplatform.fixtures.app.SwiftAppWithLibraries
 import org.gradle.nativeplatform.fixtures.app.SwiftLib
 
 class SwiftPackageManagerSwiftBuildExportIntegrationTest extends AbstractSwiftPackageManagerExportIntegrationTest {
 
+    @ToBeFixedForConfigurationCache(because = "Task.getProject() during execution")
     def "produces manifest for single project Swift library that defines only the production targets"() {
         given:
         buildFile << """
-            plugins { 
-                id 'swiftpm-export' 
+            plugins {
+                id 'swiftpm-export'
                 id 'swift-library'
                 id 'xctest'
             }
@@ -65,13 +69,14 @@ let package = Package(
         swiftPmBuildSucceeds()
     }
 
+    @ToBeFixedForConfigurationCache(because = "Task.getProject() during execution")
     def "produces manifest for multi-project Swift build"() {
         given:
         settingsFile << "include 'hello', 'log'"
         buildFile << """
-            plugins { 
-                id 'swiftpm-export' 
-                id 'swift-application' 
+            plugins {
+                id 'swiftpm-export'
+                id 'swift-application'
             }
             subprojects {
                 apply plugin: 'swift-library'
@@ -141,11 +146,12 @@ let package = Package(
         swiftPmBuildSucceeds()
     }
 
+    @ToBeFixedForConfigurationCache(because = "Task.getProject() during execution")
     def "produces manifest for Swift library with shared and static linkage"() {
         given:
         buildFile << """
-            plugins { 
-                id 'swiftpm-export' 
+            plugins {
+                id 'swiftpm-export'
                 id 'swift-library'
             }
             library {
@@ -187,11 +193,14 @@ let package = Package(
         swiftPmBuildSucceeds()
     }
 
+    // See https://github.com/gradle/gradle-native/issues/1007
+    @RequiresInstalledToolChain(ToolChainRequirement.SWIFTC_4_OR_OLDER)
+    @ToBeFixedForConfigurationCache(because = "Task.getProject() during execution")
     def "produces manifest for Swift component with declared Swift language version"() {
         given:
         buildFile << """
-            plugins { 
-                id 'swiftpm-export' 
+            plugins {
+                id 'swiftpm-export'
                 id 'swift-library'
             }
             library.sourceCompatibility = SwiftVersion.SWIFT3
@@ -231,13 +240,14 @@ let package = Package(
         swiftPmBuildSucceeds()
     }
 
+    @ToBeFixedForConfigurationCache(because = "Task.getProject() during execution")
     def "honors customizations to Swift module name"() {
         given:
         settingsFile << "include 'lib1', 'lib2'"
         buildFile << """
-            plugins { 
-                id 'swiftpm-export' 
-                id 'swift-application' 
+            plugins {
+                id 'swiftpm-export'
+                id 'swift-application'
             }
             subprojects {
                 apply plugin: 'swift-library'

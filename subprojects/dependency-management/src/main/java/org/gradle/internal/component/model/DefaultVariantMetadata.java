@@ -16,25 +16,38 @@
 
 package org.gradle.internal.component.model;
 
+import com.google.common.collect.ImmutableList;
+import org.gradle.api.capabilities.CapabilitiesMetadata;
 import org.gradle.api.internal.attributes.AttributeContainerInternal;
 import org.gradle.internal.DisplayName;
 
-import java.util.List;
+import javax.annotation.Nullable;
 
 public class DefaultVariantMetadata implements VariantResolveMetadata {
+    private final String name;
+    private final Identifier identifier;
     private final DisplayName displayName;
     private final AttributeContainerInternal attributes;
-    private final List<? extends ComponentArtifactMetadata> artifacts;
+    private final ImmutableList<? extends ComponentArtifactMetadata> artifacts;
+    private final CapabilitiesMetadata capabilitiesMetadata;
 
-    public DefaultVariantMetadata(DisplayName displayName, AttributeContainerInternal attributes, List<? extends ComponentArtifactMetadata> artifacts) {
+    public DefaultVariantMetadata(String name, @Nullable Identifier identifier, DisplayName displayName, AttributeContainerInternal attributes, ImmutableList<? extends ComponentArtifactMetadata> artifacts, @Nullable CapabilitiesMetadata capabilitiesMetadata) {
+        this.name = name;
+        this.identifier = identifier;
         this.displayName = displayName;
         this.attributes = attributes;
         this.artifacts = artifacts;
+        this.capabilitiesMetadata = capabilitiesMetadata;
     }
 
     @Override
     public String getName() {
-        return displayName.getDisplayName();
+        return name;
+    }
+
+    @Override
+    public Identifier getIdentifier() {
+        return identifier;
     }
 
     @Override
@@ -48,7 +61,17 @@ public class DefaultVariantMetadata implements VariantResolveMetadata {
     }
 
     @Override
-    public List<? extends ComponentArtifactMetadata> getArtifacts() {
+    public ImmutableList<? extends ComponentArtifactMetadata> getArtifacts() {
         return artifacts;
+    }
+
+    @Override
+    public CapabilitiesMetadata getCapabilities() {
+        return capabilitiesMetadata;
+    }
+
+    @Override
+    public boolean isExternalVariant() {
+        return false;
     }
 }

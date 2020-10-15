@@ -16,14 +16,11 @@
 package org.gradle.tooling.internal.adapter;
 
 import com.google.common.base.Optional;
+import org.gradle.internal.Cast;
 import org.gradle.internal.UncheckedException;
 import org.gradle.internal.reflect.DirectInstantiator;
 import org.gradle.internal.time.CountdownTimer;
 import org.gradle.internal.time.Time;
-import org.gradle.internal.typeconversion.EnumFromCharSequenceNotationParser;
-import org.gradle.internal.typeconversion.NotationConverterToNotationParserAdapter;
-import org.gradle.internal.typeconversion.NotationParser;
-import org.gradle.internal.typeconversion.TypeConversionException;
 import org.gradle.tooling.model.DomainObjectSet;
 import org.gradle.tooling.model.internal.Exceptions;
 import org.gradle.tooling.model.internal.ImmutableDomainObjectSet;
@@ -42,6 +39,7 @@ import java.lang.reflect.WildcardType;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
@@ -49,6 +47,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Adapts some source object to some target view type.
@@ -56,10 +56,13 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 public class ProtocolToModelAdapter implements ObjectGraphAdapter {
     private static final ViewDecoration NO_OP_MAPPER = new NoOpDecoration();
     private static final TargetTypeProvider IDENTITY_TYPE_PROVIDER = new TargetTypeProvider() {
+        @Override
         public <T> Class<? extends T> getTargetType(Class<T> initialTargetType, Object protocolObject) {
             return initialTargetType;
         }
     };
+
+    private static final Pattern UPPER_LOWER_PATTERN = Pattern.compile("(?m)([A-Z]*)([a-z0-9]*)");
     private static final ReflectionMethodInvoker REFLECTION_METHOD_INVOKER = new ReflectionMethodInvoker();
     private static final TypeInspector TYPE_INSPECTOR = new TypeInspector();
     private static final CollectionMapper COLLECTION_MAPPER = new CollectionMapper();
@@ -161,22 +164,92 @@ public class ProtocolToModelAdapter implements ObjectGraphAdapter {
     }
 
     private static <T, S> T adaptToEnum(Class<T> targetType, S sourceObject) {
-        try {
-            String literal;
-            if (sourceObject instanceof Enum) {
-                literal = ((Enum<?>) sourceObject).name();
-            } else if (sourceObject instanceof String) {
-                literal = (String) sourceObject;
-            } else {
-                literal = sourceObject.toString();
-            }
-            @SuppressWarnings({"rawtypes", "unchecked"})
-            NotationParser<String, T> parser = new NotationConverterToNotationParserAdapter<String, T>(new EnumFromCharSequenceNotationParser(targetType));
-            T parsedLiteral = parser.parseNotation(literal);
-            return targetType.cast(parsedLiteral);
-        } catch (TypeConversionException e) {
-            throw new IllegalArgumentException(String.format("Can't convert '%s' to enum type '%s'", sourceObject, targetType.getSimpleName()), e);
+        String literal;
+        if (sourceObject instanceof Enum) {
+            literal = ((Enum<?>) sourceObject).name();
+        } else if (sourceObject instanceof String) {
+            literal = (String) sourceObject;
+        } else {
+            literal = sourceObject.toString();
         }
+
+        @SuppressWarnings("unchecked")
+        T result = (T) toEnum((Class<Enum>)targetType, literal);
+        return result;
+    }
+
+    // Copied from GUtils.toEnum(). We can't use that class here as it depends on Java 8 classe
+    // which breaks the TAPI build actions when the target Gradle version is running on Java 6.
+    public static <T extends Enum<T>> T toEnum(Class<? extends T> enumType, String literal) {
+            T match = findEnumValue(enumType, literal);
+            if (match != null) {
+                return match;
+            }
+
+            final String alternativeLiteral = toWords(literal, '_');
+            match = findEnumValue(enumType, alternativeLiteral);
+            if (match != null) {
+                return match;
+            }
+
+            String sep = "";
+            StringBuilder builder = new StringBuilder();
+            for (T ec : enumType.getEnumConstants()) {
+                builder.append(sep);
+                builder.append(ec.name());
+                sep = ", ";
+            }
+
+            throw new IllegalArgumentException(
+                String.format("Cannot convert string value '%s' to an enum value of type '%s' (valid case insensitive values: %s)",
+                    literal, enumType.getName(), builder.toString())
+            );
+    }
+
+    private static <T extends Enum<T>> T findEnumValue(Class<? extends T> enumType, final String literal) {
+        for (T ec : enumType.getEnumConstants()) {
+            if (ec.name().equalsIgnoreCase(literal)) {
+                return ec;
+            }
+        }
+        return null;
+    }
+
+    public static String toWords(CharSequence string, char separator) {
+        if (string == null) {
+            return null;
+        }
+        StringBuilder builder = new StringBuilder();
+        int pos = 0;
+        Matcher matcher = UPPER_LOWER_PATTERN.matcher(string);
+        while (pos < string.length()) {
+            matcher.find(pos);
+            if (matcher.end() == pos) {
+                // Not looking at a match
+                pos++;
+                continue;
+            }
+            if (builder.length() > 0) {
+                builder.append(separator);
+            }
+            String group1 = matcher.group(1).toLowerCase();
+            String group2 = matcher.group(2);
+            if (group2.length() == 0) {
+                builder.append(group1);
+            } else {
+                if (group1.length() > 1) {
+                    builder.append(group1.substring(0, group1.length() - 1));
+                    builder.append(separator);
+                    builder.append(group1.substring(group1.length() - 1));
+                } else {
+                    builder.append(group1);
+                }
+                builder.append(group2);
+            }
+            pos = matcher.end();
+        }
+
+        return builder.toString();
     }
 
     private static Object convert(Type targetType, Object sourceObject, ViewDecoration decoration, ViewGraphDetails graphDetails) {
@@ -196,10 +269,11 @@ public class ProtocolToModelAdapter implements ObjectGraphAdapter {
             }
         }
         if (targetType instanceof Class) {
-            if (((Class) targetType).isPrimitive()) {
+            Class<Object> targetClassType = Cast.uncheckedNonnullCast(targetType);
+            if (targetClassType.isPrimitive()) {
                 return sourceObject;
             }
-            return createView((Class) targetType, sourceObject, decoration, graphDetails);
+            return createView(targetClassType, sourceObject, decoration, graphDetails);
         }
         throw new UnsupportedOperationException(String.format("Cannot convert object of %s to %s.", sourceObject.getClass(), targetType));
     }
@@ -216,7 +290,7 @@ public class ProtocolToModelAdapter implements ObjectGraphAdapter {
         Collection<Object> convertedElements = COLLECTION_MAPPER.createEmptyCollection(collectionClass);
         convertCollectionInternal(convertedElements, targetElementType, sourceObject, decoration, graphDetails);
         if (collectionClass.equals(DomainObjectSet.class)) {
-            return new ImmutableDomainObjectSet(convertedElements);
+            return new ImmutableDomainObjectSet<Object>(convertedElements);
         } else {
             return convertedElements;
         }
@@ -341,6 +415,7 @@ public class ProtocolToModelAdapter implements ObjectGraphAdapter {
             return sourceObject.hashCode();
         }
 
+        @Override
         public Object invoke(Object target, Method method, Object[] params) throws Throwable {
             if (EQUALS_METHOD.equals(method)) {
                 Object param = params[0];
@@ -375,6 +450,7 @@ public class ProtocolToModelAdapter implements ObjectGraphAdapter {
             this.invokers = invokers.toArray(new MethodInvoker[0]);
         }
 
+        @Override
         public void invoke(MethodInvocation method) throws Throwable {
             for (int i = 0; !method.found() && i < invokers.length; i++) {
                 MethodInvoker invoker = invokers[i];
@@ -394,6 +470,7 @@ public class ProtocolToModelAdapter implements ObjectGraphAdapter {
             this.next = next;
         }
 
+        @Override
         public void invoke(MethodInvocation invocation) throws Throwable {
             next.invoke(invocation);
             if (invocation.found() && invocation.getResult() != null) {
@@ -582,6 +659,7 @@ public class ProtocolToModelAdapter implements ObjectGraphAdapter {
     private static class ReflectionMethodInvoker implements MethodInvoker {
         private final MethodInvocationCache lookupCache = new MethodInvocationCache();
 
+        @Override
         public void invoke(MethodInvocation invocation) throws Throwable {
             Method targetMethod = locateMethod(invocation);
             if (targetMethod == null) {
@@ -604,14 +682,15 @@ public class ProtocolToModelAdapter implements ObjectGraphAdapter {
     }
 
     private static class PropertyCachingMethodInvoker implements MethodInvoker {
-        private final Map<String, Object> properties = new HashMap<String, Object>();
-        private final Set<String> unknown = new HashSet<String>();
+        private Map<String, Object> properties = Collections.emptyMap();
+        private Set<String> unknown = Collections.emptySet();
         private final MethodInvoker next;
 
         private PropertyCachingMethodInvoker(MethodInvoker next) {
             this.next = next;
         }
 
+        @Override
         public void invoke(MethodInvocation method) throws Throwable {
             if (method.isGetter()) {
                 if (properties.containsKey(method.getName())) {
@@ -625,15 +704,29 @@ public class ProtocolToModelAdapter implements ObjectGraphAdapter {
                 Object value;
                 next.invoke(method);
                 if (!method.found()) {
-                    unknown.add(method.getName());
+                    markUnknown(method.getName());
                     return;
                 }
                 value = method.getResult();
-                properties.put(method.getName(), value);
+                cachePropertyValue(method.getName(), value);
                 return;
             }
 
             next.invoke(method);
+        }
+
+        private void markUnknown(String methodName) {
+            if (unknown.isEmpty()) {
+                unknown = new HashSet<String>();
+            }
+            unknown.add(methodName);
+        }
+
+        private void cachePropertyValue(String methodName, Object value) {
+            if (properties.isEmpty()) {
+                properties = new HashMap<String, Object>();
+            }
+            properties.put(methodName, value);
         }
     }
 
@@ -644,6 +737,7 @@ public class ProtocolToModelAdapter implements ObjectGraphAdapter {
             this.next = next;
         }
 
+        @Override
         public void invoke(MethodInvocation invocation) throws Throwable {
             next.invoke(invocation);
             if (invocation.found() || invocation.getParameterTypes().length != 1 || !invocation.isIsOrGet()) {
@@ -667,6 +761,7 @@ public class ProtocolToModelAdapter implements ObjectGraphAdapter {
             this.next = next;
         }
 
+        @Override
         public void invoke(MethodInvocation invocation) throws Throwable {
             next.invoke(invocation);
             if (invocation.found()) {
@@ -726,6 +821,7 @@ public class ProtocolToModelAdapter implements ObjectGraphAdapter {
             this.next = next;
         }
 
+        @Override
         public void invoke(MethodInvocation invocation) throws Throwable {
             if (current.get() != null) {
                 // Already invoking a method on the mix-in

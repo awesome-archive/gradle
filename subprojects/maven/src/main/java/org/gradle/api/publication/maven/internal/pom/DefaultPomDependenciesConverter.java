@@ -23,12 +23,25 @@ import org.apache.maven.artifact.versioning.DefaultArtifactVersion;
 import org.apache.maven.model.Dependency;
 import org.apache.maven.model.Exclusion;
 import org.gradle.api.GradleException;
-import org.gradle.api.artifacts.*;
+import org.gradle.api.artifacts.Configuration;
+import org.gradle.api.artifacts.DependencyArtifact;
+import org.gradle.api.artifacts.ExcludeRule;
+import org.gradle.api.artifacts.ModuleDependency;
+import org.gradle.api.artifacts.ProjectDependency;
+import org.gradle.api.artifacts.PublishArtifact;
 import org.gradle.api.artifacts.maven.Conf2ScopeMapping;
 import org.gradle.api.artifacts.maven.Conf2ScopeMappingContainer;
+import org.gradle.api.internal.project.ProjectInternal;
 import org.gradle.api.publication.maven.internal.VersionRangeMapper;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import static com.google.common.base.Strings.emptyToNull;
 
@@ -42,6 +55,7 @@ class DefaultPomDependenciesConverter implements PomDependenciesConverter {
         this.versionRangeMapper = versionRangeMapper;
     }
 
+    @Override
     public List<Dependency> convert(Conf2ScopeMappingContainer conf2ScopeMappingContainer, Set<Configuration> configurations) {
         Map<ModuleDependency, Set<Configuration>> dependencyToConfigurations = createDependencyToConfigurationsMap(configurations);
         Map<ModuleDependency, Conf2ScopeMapping> dependenciesMap = createDependencyToScopeMap(conf2ScopeMappingContainer, dependencyToConfigurations);
@@ -125,21 +139,25 @@ class DefaultPomDependenciesConverter implements PomDependenciesConverter {
     private void addMavenDependencies(Map<Dependency, Integer> dependenciesWithPriorities,
                                       ModuleDependency dependency, String name, String type, String scope, String classifier, Integer priority,
                                       Set<Configuration> configurations) {
-        List<Dependency> mavenDependencies = new ArrayList<Dependency>();
+        final List<Dependency> mavenDependencies = new ArrayList<Dependency>();
 
         if (dependency instanceof ProjectDependency) {
-            ProjectDependency projectDependency = (ProjectDependency) dependency;
-            final String artifactId = determineProjectDependencyArtifactId((ProjectDependency) dependency);
+            // TODO: Combine with ProjectDependencyPublicationResolver
+            final ProjectDependency projectDependency = (ProjectDependency) dependency;
+            ((ProjectInternal) projectDependency.getDependencyProject()).getMutationState().applyToMutableState(p -> {
+                String artifactId = determineProjectDependencyArtifactId(projectDependency);
 
-            Configuration dependencyConfig = getTargetConfiguration(projectDependency);
-            for (PublishArtifact artifactToPublish : dependencyConfig.getAllArtifacts()) {
-                Dependency mavenDependency = new Dependency();
-                mavenDependency.setArtifactId(artifactId);
-                if (artifactToPublish.getClassifier() != null && !artifactToPublish.getClassifier().equals("")) {
-                    mavenDependency.setClassifier(artifactToPublish.getClassifier());
+                Configuration dependencyConfig = getTargetConfiguration(projectDependency);
+
+                for (PublishArtifact artifactToPublish : dependencyConfig.getAllArtifacts()) {
+                    Dependency mavenDependency = new Dependency();
+                    mavenDependency.setArtifactId(artifactId);
+                    if (artifactToPublish.getClassifier() != null && !artifactToPublish.getClassifier().equals("")) {
+                        mavenDependency.setClassifier(artifactToPublish.getClassifier());
+                    }
+                    mavenDependencies.add(mavenDependency);
                 }
-                mavenDependencies.add(mavenDependency);
-            }
+            });
         } else {
             Dependency mavenDependency = new Dependency();
             mavenDependency.setArtifactId(name);

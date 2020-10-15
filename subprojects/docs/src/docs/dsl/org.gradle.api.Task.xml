@@ -35,6 +35,9 @@
                 <td>outputs</td>
             </tr>
             <tr>
+                <td>localState</td>
+            </tr>
+            <tr>
                 <td>destroyables</td>
             </tr>
             <tr>
@@ -48,6 +51,9 @@
             </tr>
             <tr>
                 <td>mustRunAfter</td>
+            </tr>
+            <tr>
+                <td>shouldRunAfter</td>
             </tr>
             <tr>
                 <td>finalizedBy</td>
@@ -70,6 +76,9 @@
             <tr>
                 <td>logging</td>
             </tr>
+            <tr>
+                <td>timeout</td>
+            </tr>
         </table>
     </section>
     <section>
@@ -87,6 +96,9 @@
                 <td>mustRunAfter</td>
             </tr>
             <tr>
+                <td>shouldRunAfter</td>
+            </tr>
+            <tr>
                 <td>finalizedBy</td>
             </tr>
             <tr>
@@ -97,12 +109,6 @@
             </tr>
             <tr>
                 <td>doLast</td>
-            </tr>
-            <tr>
-                <td>leftShift</td>
-            </tr>
-            <tr>
-                <td>deleteAllActions</td>
             </tr>
             <tr>
                 <td>property</td>

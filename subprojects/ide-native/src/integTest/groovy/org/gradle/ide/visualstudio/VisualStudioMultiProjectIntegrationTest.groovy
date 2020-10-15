@@ -18,6 +18,7 @@ package org.gradle.ide.visualstudio
 
 import groovy.transform.NotYetImplemented
 import org.gradle.ide.visualstudio.fixtures.AbstractVisualStudioIntegrationSpec
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.nativeplatform.fixtures.app.CppAppWithLibrary
 import org.gradle.nativeplatform.fixtures.app.CppHelloWorldApp
 import org.gradle.nativeplatform.fixtures.app.ExeWithLibraryUsingLibraryHelloWorldApp
@@ -39,6 +40,7 @@ class VisualStudioMultiProjectIntegrationTest extends AbstractVisualStudioIntegr
         """
     }
 
+    @ToBeFixedForConfigurationCache
     def "create visual studio solution for build without any C++ components"() {
         when:
         settingsFile << """
@@ -57,6 +59,7 @@ class VisualStudioMultiProjectIntegrationTest extends AbstractVisualStudioIntegr
         mainSolution.assertHasProjects()
     }
 
+    @ToBeFixedForConfigurationCache
     def "includes a visual studio project for every project with a C++ component"() {
         when:
         settingsFile << """
@@ -96,6 +99,7 @@ class VisualStudioMultiProjectIntegrationTest extends AbstractVisualStudioIntegr
         mainSolution.assertReferencesProject(twoProject, projectConfigurations)
     }
 
+    @ToBeFixedForConfigurationCache
     def "create visual studio solution for executable that depends on a library in another project"() {
         when:
         app.executable.writeSources(file("exe/src/main"))
@@ -106,7 +110,7 @@ class VisualStudioMultiProjectIntegrationTest extends AbstractVisualStudioIntegr
         """
         file("exe", "build.gradle") << """
             apply plugin: 'cpp-application'
-            
+
             dependencies {
                 implementation project(':lib')
             }
@@ -149,6 +153,7 @@ class VisualStudioMultiProjectIntegrationTest extends AbstractVisualStudioIntegr
         mainSolution.assertReferencesProject(dllProject, projectConfigurations)
     }
 
+    @ToBeFixedForConfigurationCache
     def "visual studio solution does not reference the components of a project if it does not have visual studio plugin applied"() {
         when:
         app.executable.writeSources(file("exe/src/main"))
@@ -167,7 +172,7 @@ class VisualStudioMultiProjectIntegrationTest extends AbstractVisualStudioIntegr
         """
         file("exe", "build.gradle") << """
             apply plugin: 'cpp-application'
-            
+
             dependencies {
                 implementation project(':lib')
             }
@@ -216,6 +221,7 @@ class VisualStudioMultiProjectIntegrationTest extends AbstractVisualStudioIntegr
         file("other").listFiles().every { !(it.name.endsWith(".vcxproj") || it.name.endsWith(".vcxproj.filters")) }
     }
 
+    @ToBeFixedForConfigurationCache
     def "create visual studio solution for executable that transitively depends on multiple projects"() {
         given:
         def app = new ExeWithLibraryUsingLibraryHelloWorldApp()
@@ -228,21 +234,21 @@ class VisualStudioMultiProjectIntegrationTest extends AbstractVisualStudioIntegr
         buildFile << """
             project(":exe") {
                 apply plugin: "cpp-application"
-                
+
                 dependencies {
                     implementation project(':lib')
                 }
             }
             project(":lib") {
                 apply plugin: "cpp-library"
-                
+
                 dependencies {
                     implementation project(':greet')
                 }
             }
             project(":greet") {
                 apply plugin: "cpp-library"
-                
+
                 library {
                     linkage = [Linkage.STATIC]
                 }
@@ -277,6 +283,7 @@ class VisualStudioMultiProjectIntegrationTest extends AbstractVisualStudioIntegr
         greetLibProject.projectConfigurations['debug'].includePath == filePath("src/main/public", "src/main/headers")
     }
 
+    @ToBeFixedForConfigurationCache
     def "create visual studio solution for executable with a transitive api dependency"() {
         given:
         def app = new ExeWithLibraryUsingLibraryHelloWorldApp()
@@ -289,21 +296,21 @@ class VisualStudioMultiProjectIntegrationTest extends AbstractVisualStudioIntegr
         buildFile << """
             project(":exe") {
                 apply plugin: "cpp-application"
-                
+
                 dependencies {
                     implementation project(':lib')
                 }
             }
             project(":lib") {
                 apply plugin: "cpp-library"
-                
+
                 dependencies {
                     api project(':greet')
                 }
             }
             project(":greet") {
                 apply plugin: "cpp-library"
-                
+
                 library {
                     linkage = [Linkage.STATIC]
                 }
@@ -352,14 +359,14 @@ class VisualStudioMultiProjectIntegrationTest extends AbstractVisualStudioIntegr
         """
         file("exe", "build.gradle") << """
             apply plugin: 'cpp-application'
-            
+
             dependencies {
                 implementation project(':lib')
             }
         """
         file("lib", "build.gradle") << """
             apply plugin: 'cpp-library'
-            
+
             library {
                 linkage = [Linkage.STATIC]
             }
@@ -374,9 +381,64 @@ class VisualStudioMultiProjectIntegrationTest extends AbstractVisualStudioIntegr
             .succeeds()
 
         then:
-        resultDebug.assertTasksExecuted(':exe:compileDebugCpp', ':exe:linkDebug', ':exe:installDebug', ':lib:compileDebugCpp', ':lib:createDebug')
-        resultDebug.assertTasksNotSkipped(':exe:compileDebugCpp', ':exe:linkDebug', ':exe:installDebug', ':lib:compileDebugCpp', ':lib:createDebug')
+        resultDebug.size() == 1
+        resultDebug[0].assertTasksExecuted(':exe:compileDebugCpp', ':exe:linkDebug', ':exe:installDebug', ':lib:compileDebugCpp', ':lib:createDebug')
         installation('exe/build/install/main/debug').assertInstalled()
+    }
+
+    @Requires(TestPrecondition.MSBUILD)
+    def "skip unbuildable static library project when building solution from visual studio"() {
+        useMsbuildTool()
+        def app = new CppAppWithLibrary()
+
+        given:
+        app.greeter.writeToProject(file("lib"))
+        app.main.writeToProject(file("exe"))
+
+        settingsFile << """
+            include ':exe', ':lib'
+        """
+        file("exe", "build.gradle") << """
+            apply plugin: 'cpp-application'
+
+            dependencies {
+                implementation project(':lib')
+            }
+        """
+        file("lib", "build.gradle") << """
+            apply plugin: 'cpp-library'
+
+            library {
+                linkage = [Linkage.STATIC]
+                targetMachines = [machines.os('os-family')]
+            }
+        """
+        succeeds ":visualStudio"
+
+        when:
+        def resultUnbuildableSolution = msbuild
+                .withSolution(solutionFile('app.sln'))
+                .withConfiguration('unbuildable')
+                .succeeds()
+
+        then:
+        resultUnbuildableSolution.size() == 1
+        resultUnbuildableSolution[0].assertTasksExecuted()
+        resultUnbuildableSolution[0].assertOutputContains('The project "exe" is not selected for building in solution configuration "unbuildable|Win32".')
+        resultUnbuildableSolution[0].assertOutputContains('The project "libLib" is not selected for building in solution configuration "unbuildable|Win32".')
+        installation('exe/build/install/main/debug').assertNotInstalled()
+
+        when:
+        def resultDebug = msbuild
+                .withSolution(solutionFile('app.sln'))
+                .withConfiguration('debug')
+                .fails()
+
+        then:
+        resultDebug.assertTasksExecuted()
+        resultDebug.assertHasCause("Could not resolve all task dependencies for configuration ':exe:nativeRuntimeDebug'.")
+        resultDebug.assertHasCause("Could not resolve project :lib.")
+        installation('exe/build/install/main/debug').assertNotInstalled()
     }
 
     @NotYetImplemented
@@ -392,14 +454,14 @@ class VisualStudioMultiProjectIntegrationTest extends AbstractVisualStudioIntegr
         buildFile << """
             project(":exe") {
                 apply plugin: "cpp-application"
-                
+
                 dependencies {
                     implementation project(':some:lib')
                 }
             }
             project(":some:lib") {
                 apply plugin: "cpp-library"
-                
+
                 dependencies {
                     implementation project(':other:lib')
                 }

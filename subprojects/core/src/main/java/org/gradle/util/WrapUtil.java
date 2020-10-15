@@ -16,22 +16,31 @@
 package org.gradle.util;
 
 import org.gradle.api.DomainObjectSet;
-import org.gradle.api.Named;
-import org.gradle.api.NamedDomainObjectSet;
+import org.gradle.api.internal.CollectionCallbackActionDecorator;
 import org.gradle.api.internal.DefaultDomainObjectSet;
-import org.gradle.api.internal.DefaultNamedDomainObjectSet;
-import org.gradle.internal.reflect.DirectInstantiator;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.SortedSet;
+import java.util.TreeSet;
 
 /**
  * Common methods to wrap objects in generic collections.
- *
  */
 public class WrapUtil {
     /**
      * Wraps the given items in a mutable unordered set.
      */
+    @SafeVarargs
+    @SuppressWarnings("varargs")
     public static <T> Set<T> toSet(T... items) {
         Set<T> coll = new HashSet<T>();
         Collections.addAll(coll, items);
@@ -41,22 +50,19 @@ public class WrapUtil {
     /**
      * Wraps the given items in a mutable domain object set.
      */
+    @SafeVarargs
+    @SuppressWarnings("varargs")
     public static <T> DomainObjectSet<T> toDomainObjectSet(Class<T> type, T... items) {
-        return new DefaultDomainObjectSet<T>(type, toSet(items));
-    }
-
-    /**
-     * Wraps the given items in a named domain object set.
-     */
-    public static <T extends Named> NamedDomainObjectSet<T> toNamedDomainObjectSet(Class<T> type, T... items) {
-        DefaultNamedDomainObjectSet<T> domainObjectSet = new DefaultNamedDomainObjectSet<T>(type, DirectInstantiator.INSTANCE);
-        CollectionUtils.addAll(domainObjectSet, items);
-        return domainObjectSet;
+        DefaultDomainObjectSet<T> set = new DefaultDomainObjectSet<T>(type, CollectionCallbackActionDecorator.NOOP);
+        set.addAll(Arrays.asList(items));
+        return set;
     }
 
     /**
      * Wraps the given items in a mutable ordered set.
      */
+    @SafeVarargs
+    @SuppressWarnings("varargs")
     public static <T> Set<T> toLinkedSet(T... items) {
         Set<T> coll = new LinkedHashSet<T>();
         Collections.addAll(coll, items);
@@ -66,6 +72,8 @@ public class WrapUtil {
     /**
      * Wraps the given items in a mutable sorted set.
      */
+    @SafeVarargs
+    @SuppressWarnings("varargs")
     public static <T> SortedSet<T> toSortedSet(T... items) {
         SortedSet<T> coll = new TreeSet<T>();
         Collections.addAll(coll, items);
@@ -75,6 +83,8 @@ public class WrapUtil {
     /**
      * Wraps the given items in a mutable sorted set using the given comparator.
      */
+    @SafeVarargs
+    @SuppressWarnings("varargs")
     public static <T> SortedSet<T> toSortedSet(Comparator<T> comp, T... items) {
         SortedSet<T> coll = new TreeSet<T>(comp);
         Collections.addAll(coll, items);
@@ -84,6 +94,8 @@ public class WrapUtil {
     /**
      * Wraps the given items in a mutable list.
      */
+    @SafeVarargs
+    @SuppressWarnings("varargs")
     public static <T> List<T> toList(T... items) {
         ArrayList<T> coll = new ArrayList<T>();
         Collections.addAll(coll, items);
@@ -110,38 +122,10 @@ public class WrapUtil {
         return map;
     }
 
-    /**
-     * Wraps the given key and value in a mutable sorted map.
-     */
-    public static <K, V> SortedMap<K, V> toSortedMap(K key, V value) {
-        SortedMap<K, V> map = new TreeMap<K, V>();
-        map.put(key, value);
-        return map;
-    }
-
-    /**
-     * Wraps the given key and value in a mutable ordered map.
-     */
-    public static <K, V> Map<K, V> toLinkedMap(K key, V value) {
-        Map<K, V> map = new LinkedHashMap<K, V>();
-        map.put(key, value);
-        return map;
-    }
-
-    /**
-     * Wraps the given key and value in a mutable properties instance.
-     */
-    public static Properties toProperties(String key, String value) {
-        Properties props = new Properties();
-        props.setProperty(key, value);
-        return props;
-    }
-
+    @SafeVarargs
+    @SuppressWarnings("varargs")
     public static <T> T[] toArray(T... items) {
         return items;
     }
-    
-    public static <T> Set<T> asSet(Collection<T> c) {
-        return new LinkedHashSet<T>(c);
-    }
+
 }

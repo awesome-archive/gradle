@@ -30,8 +30,8 @@ import spock.lang.Specification
 
 import java.util.concurrent.TimeUnit
 
-import static org.hamcrest.Matchers.equalTo
-import static org.junit.Assert.assertThat
+import static org.hamcrest.CoreMatchers.equalTo
+import static org.hamcrest.MatcherAssert.assertThat
 import static org.junit.Assert.fail
 
 class DefaultWorkerProcessSpec extends Specification {

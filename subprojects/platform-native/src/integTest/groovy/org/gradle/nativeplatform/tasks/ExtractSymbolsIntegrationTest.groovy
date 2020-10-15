@@ -16,16 +16,14 @@
 
 package org.gradle.nativeplatform.tasks
 
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.nativeplatform.fixtures.AbstractInstalledToolChainIntegrationSpec
 import org.gradle.nativeplatform.fixtures.NativeBinaryFixture
 import org.gradle.nativeplatform.fixtures.RequiresInstalledToolChain
 import org.gradle.nativeplatform.fixtures.ToolChainRequirement
 import org.gradle.nativeplatform.fixtures.app.IncrementalCppStaleCompileOutputApp
 import org.gradle.nativeplatform.fixtures.app.SourceElement
-import org.gradle.util.Requires
-import org.gradle.util.TestPrecondition
 
-@Requires(TestPrecondition.NOT_UNKNOWN_OS)
 @RequiresInstalledToolChain(ToolChainRequirement.GCC_COMPATIBLE)
 class ExtractSymbolsIntegrationTest extends AbstractInstalledToolChainIntegrationSpec {
     def app = new IncrementalCppStaleCompileOutputApp()
@@ -37,7 +35,7 @@ class ExtractSymbolsIntegrationTest extends AbstractInstalledToolChainIntegratio
             plugins {
                 id 'cpp-application'
             }
-            
+
             task extractSymbolsDebug(type: ExtractSymbols) { extract ->
                 project.application.binaries.get { !it.optimized }.configure {
                     def linkDebug = linkTask.get()
@@ -50,6 +48,7 @@ class ExtractSymbolsIntegrationTest extends AbstractInstalledToolChainIntegratio
         """
     }
 
+    @ToBeFixedForConfigurationCache
     def "extracts symbols from binary"() {
         when:
         succeeds ":extractSymbolsDebug"
@@ -59,6 +58,7 @@ class ExtractSymbolsIntegrationTest extends AbstractInstalledToolChainIntegratio
         fixture("build/symbols").assertHasDebugSymbolsFor(withoutHeaders(app.original))
     }
 
+    @ToBeFixedForConfigurationCache
     def "extract is skipped when there are no changes"() {
         when:
         succeeds ":extractSymbolsDebug"
@@ -74,6 +74,7 @@ class ExtractSymbolsIntegrationTest extends AbstractInstalledToolChainIntegratio
         fixture("build/symbols").assertHasDebugSymbolsFor(withoutHeaders(app.original))
     }
 
+    @ToBeFixedForConfigurationCache
     def "extract is re-executed when changes are made"() {
         when:
         succeeds ":extractSymbolsDebug"

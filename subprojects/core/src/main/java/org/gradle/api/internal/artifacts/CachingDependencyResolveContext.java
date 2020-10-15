@@ -17,6 +17,7 @@
 package org.gradle.api.internal.artifacts;
 
 import org.gradle.api.file.FileCollection;
+import org.gradle.api.internal.file.FileCollectionInternal;
 import org.gradle.api.internal.file.UnionFileCollection;
 import org.gradle.internal.graph.CachingDirectedGraphWalker;
 import org.gradle.internal.graph.DirectedGraph;
@@ -28,7 +29,7 @@ import java.util.Map;
 
 public class CachingDependencyResolveContext implements DependencyResolveContext {
     private final List<Object> queue = new ArrayList<Object>();
-    private final CachingDirectedGraphWalker<Object, FileCollection> walker = new CachingDirectedGraphWalker<Object, FileCollection>(new DependencyGraph());
+    private final CachingDirectedGraphWalker<Object, FileCollectionInternal> walker = new CachingDirectedGraphWalker<Object, FileCollectionInternal>(new DependencyGraph());
     private final boolean transitive;
     private final Map<String, String> attributes;
 
@@ -37,6 +38,7 @@ public class CachingDependencyResolveContext implements DependencyResolveContext
         this.attributes = attributes;
     }
 
+    @Override
     public boolean isTransitive() {
         return transitive;
     }
@@ -55,14 +57,16 @@ public class CachingDependencyResolveContext implements DependencyResolveContext
         }
     }
 
+    @Override
     public void add(Object dependency) {
         queue.add(dependency);
     }
 
-    private class DependencyGraph implements DirectedGraph<Object, FileCollection> {
-        public void getNodeValues(Object node, Collection<? super FileCollection> values, Collection<? super Object> connectedNodes) {
-            if (node instanceof FileCollection) {
-                FileCollection fileCollection = (FileCollection) node;
+    private class DependencyGraph implements DirectedGraph<Object, FileCollectionInternal> {
+        @Override
+        public void getNodeValues(Object node, Collection<? super FileCollectionInternal> values, Collection<? super Object> connectedNodes) {
+            if (node instanceof FileCollectionInternal) {
+                FileCollectionInternal fileCollection = (FileCollectionInternal) node;
                 values.add(fileCollection);
             } else if (node instanceof ResolvableDependency) {
                 ResolvableDependency resolvableDependency = (ResolvableDependency) node;

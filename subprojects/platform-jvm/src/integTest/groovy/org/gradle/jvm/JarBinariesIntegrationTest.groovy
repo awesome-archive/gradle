@@ -18,10 +18,11 @@ package org.gradle.jvm
 
 import org.gradle.api.reporting.model.ModelReportOutput
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
 import org.gradle.util.Requires
 import org.gradle.util.TestPrecondition
-import org.hamcrest.Matchers
 
+@UnsupportedWithConfigurationCache(because = "software model")
 class JarBinariesIntegrationTest extends AbstractIntegrationSpec {
     def setup() {
         buildFile << """
@@ -29,6 +30,8 @@ class JarBinariesIntegrationTest extends AbstractIntegrationSpec {
                 id 'jvm-component'
             }
         """
+        executer.expectDocumentedDeprecationWarning("The jvm-component plugin has been deprecated. This is scheduled to be removed in Gradle 7.0. " +
+            "Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_6.html#upgrading_jvm_plugins")
     }
 
     @Requires(TestPrecondition.JDK8_OR_EARLIER)
@@ -79,15 +82,20 @@ class JarBinariesIntegrationTest extends AbstractIntegrationSpec {
 
         then:
         failureDescriptionContains("Execution failed for task ':assemble'.")
-        failure.assertThatCause(Matchers.<String>allOf(
-                Matchers.startsWith("No buildable binaries found:"),
-                Matchers.containsString("Jar 'myJvmLib1:jar': Could not target platform: 'Java SE 9' using tool chain:"),
-                Matchers.containsString("Jar 'myJvmLib2:jar': Could not target platform: 'Java SE 9' using tool chain:"),
-                Matchers.containsString("Jar 'myJvmLib3:jar': Disabled by user")
-        ))
+        failure.assertHasCause("""No buildable binaries found:
+  - Jar 'myJvmLib1:jar':
+      - Could not target platform: 'Java SE 9' using tool chain: 'JDK 8 (1.8)'.
+  - Jar 'myJvmLib2:jar':
+      - Could not target platform: 'Java SE 9' using tool chain: 'JDK 8 (1.8)'.
+  - Jar 'myJvmLib3:jar': Disabled by user""")
     }
 
     def "model report should display configured components and binaries"() {
+        executer.expectDocumentedDeprecationWarning("The java-lang plugin has been deprecated. This is scheduled to be removed in Gradle 7.0. " +
+            "Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_6.html#upgrading_jvm_plugins")
+        executer.expectDocumentedDeprecationWarning("The jvm-resources plugin has been deprecated. This is scheduled to be removed in Gradle 7.0. " +
+            "Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_6.html#upgrading_jvm_plugins")
+
         given:
         buildFile << """
             plugins {

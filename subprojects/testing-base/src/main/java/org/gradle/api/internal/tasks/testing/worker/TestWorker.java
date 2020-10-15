@@ -21,11 +21,13 @@ import org.gradle.api.internal.tasks.testing.TestClassProcessor;
 import org.gradle.api.internal.tasks.testing.TestClassRunInfo;
 import org.gradle.api.internal.tasks.testing.TestResultProcessor;
 import org.gradle.api.internal.tasks.testing.WorkerTestClassProcessorFactory;
+import org.gradle.internal.Cast;
 import org.gradle.internal.UncheckedException;
 import org.gradle.internal.actor.ActorFactory;
 import org.gradle.internal.actor.internal.DefaultActorFactory;
 import org.gradle.internal.concurrent.DefaultExecutorFactory;
 import org.gradle.internal.concurrent.ExecutorFactory;
+import org.gradle.internal.concurrent.Stoppable;
 import org.gradle.internal.dispatch.ContextClassLoaderProxy;
 import org.gradle.internal.id.CompositeIdGenerator;
 import org.gradle.internal.id.IdGenerator;
@@ -42,7 +44,7 @@ import java.io.Serializable;
 import java.security.AccessControlException;
 import java.util.concurrent.CountDownLatch;
 
-public class TestWorker implements Action<WorkerProcessContext>, RemoteTestClassProcessor, Serializable {
+public class TestWorker implements Action<WorkerProcessContext>, RemoteTestClassProcessor, Serializable, Stoppable {
     private static final Logger LOGGER = LoggerFactory.getLogger(TestWorker.class);
     public static final String WORKER_ID_SYS_PROPERTY = "org.gradle.test.worker";
     private final WorkerTestClassProcessorFactory factory;
@@ -58,6 +60,7 @@ public class TestWorker implements Action<WorkerProcessContext>, RemoteTestClass
     public void execute(final WorkerProcessContext workerProcessContext) {
         LOGGER.info("{} started executing tests.", workerProcessContext.getDisplayName());
 
+        SecurityManager securityManager = System.getSecurityManager();
         completed = new CountDownLatch(1);
 
         System.setProperty(WORKER_ID_SYS_PROPERTY, workerProcessContext.getWorkerId().toString());
@@ -69,19 +72,26 @@ public class TestWorker implements Action<WorkerProcessContext>, RemoteTestClass
             try {
                 completed.await();
             } catch (InterruptedException e) {
-                throw new UncheckedException(e);
+                throw UncheckedException.throwAsUncheckedException(e);
             }
         } finally {
             LOGGER.info("{} finished executing tests.", workerProcessContext.getDisplayName());
-            // Clean out any security manager the tests might have installed
-            System.setSecurityManager(null);
+
+            if (System.getSecurityManager() != securityManager) {
+                try {
+                    // Reset security manager the tests seem to have installed
+                    System.setSecurityManager(securityManager);
+                } catch (SecurityException e) {
+                    LOGGER.warn("Unable to reset SecurityManager. Continuing anyway...", e);
+                }
+            }
             testServices.close();
         }
     }
 
     private void startReceivingTests(WorkerProcessContext workerProcessContext, ServiceRegistry testServices) {
         TestClassProcessor targetProcessor = factory.create(testServices);
-        IdGenerator<Object> idGenerator = testServices.get(IdGenerator.class);
+        IdGenerator<Object> idGenerator = Cast.uncheckedNonnullCast(testServices.get(IdGenerator.class));
 
         targetProcessor = new WorkerTestClassProcessor(targetProcessor, idGenerator.generateId(),
                 workerProcessContext.getDisplayName(), testServices.get(Clock.class));

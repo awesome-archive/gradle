@@ -20,15 +20,25 @@ import com.google.common.base.Objects;
 import org.gradle.api.artifacts.component.BuildIdentifier;
 
 public class DefaultBuildIdentifier implements BuildIdentifier {
+    public static final BuildIdentifier ROOT = new DefaultBuildIdentifier(":");
     private final String name;
 
     public DefaultBuildIdentifier(String name) {
         this.name = name;
     }
 
+    public String getIdName() {
+        return name;
+    }
+
     @Override
     public String getName() {
         return name;
+    }
+
+    @Override
+    public boolean isCurrentBuild() {
+        return true;
     }
 
     @Override
@@ -40,7 +50,7 @@ public class DefaultBuildIdentifier implements BuildIdentifier {
             return false;
         }
         DefaultBuildIdentifier that = (DefaultBuildIdentifier) o;
-        return Objects.equal(name, that.name);
+        return name.equals(that.name);
     }
 
     @Override

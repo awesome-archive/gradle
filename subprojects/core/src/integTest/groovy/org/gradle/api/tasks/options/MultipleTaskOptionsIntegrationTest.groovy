@@ -99,11 +99,11 @@ class MultipleTaskOptionsIntegrationTest extends AbstractIntegrationSpec {
         """
 
         when:
-        run 'someTask', '--second', 'foo', 'tasks', '--all'
+        run 'someTask', '--second', 'foo', 'help'
 
         then:
         output.contains 'second=foo'
-        result.assertTasksExecuted(":someTask", ":tasks")
+        result.assertTasksExecuted(":someTask", ":help")
     }
 
     def "task name that matches command value is not included in execution"() {

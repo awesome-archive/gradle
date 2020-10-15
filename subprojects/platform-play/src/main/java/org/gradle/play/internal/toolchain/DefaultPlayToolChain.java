@@ -23,18 +23,22 @@ import org.gradle.api.artifacts.ConfigurationContainer;
 import org.gradle.api.artifacts.Dependency;
 import org.gradle.api.artifacts.ResolveException;
 import org.gradle.api.artifacts.dsl.DependencyHandler;
-import org.gradle.api.internal.changedetection.state.ClasspathSnapshotter;
-import org.gradle.api.internal.file.FileResolver;
-import org.gradle.internal.text.TreeFormatter;
+import org.gradle.api.internal.ClassPathRegistry;
+import org.gradle.api.internal.file.FileCollectionFactory;
+import org.gradle.initialization.ClassLoaderRegistry;
+import org.gradle.internal.fingerprint.FileCollectionFingerprinter;
+import org.gradle.internal.logging.text.DiagnosticsVisitor;
+import org.gradle.internal.logging.text.TreeFormatter;
 import org.gradle.language.base.internal.compile.CompileSpec;
 import org.gradle.play.internal.javascript.GoogleClosureCompiler;
-import org.gradle.play.internal.routes.RoutesCompilerFactory;
-import org.gradle.play.internal.twirl.TwirlCompilerFactory;
+import org.gradle.play.internal.routes.RoutesCompilerAdapterFactory;
+import org.gradle.play.internal.twirl.TwirlCompilerAdapterFactory;
 import org.gradle.play.platform.PlayPlatform;
+import org.gradle.process.internal.JavaForkOptionsFactory;
 import org.gradle.process.internal.worker.WorkerProcessFactory;
 import org.gradle.process.internal.worker.child.WorkerDirectoryProvider;
 import org.gradle.util.CollectionUtils;
-import org.gradle.util.TreeVisitor;
+import org.gradle.workers.internal.ActionExecutionSpecFactory;
 import org.gradle.workers.internal.WorkerDaemonFactory;
 
 import java.io.File;
@@ -42,22 +46,30 @@ import java.util.List;
 import java.util.Set;
 
 public class DefaultPlayToolChain implements PlayToolChainInternal {
-    private FileResolver fileResolver;
-    private WorkerDaemonFactory workerDaemonFactory;
+    private final JavaForkOptionsFactory forkOptionsFactory;
+    private final WorkerDaemonFactory workerDaemonFactory;
     private final ConfigurationContainer configurationContainer;
     private final DependencyHandler dependencyHandler;
     private final WorkerProcessFactory workerProcessBuilderFactory;
     private final WorkerDirectoryProvider workerDirectoryProvider;
-    private final ClasspathSnapshotter snapshotter;
+    private final FileCollectionFingerprinter fingerprinter;
+    private final ClassPathRegistry classPathRegistry;
+    private final ClassLoaderRegistry classLoaderRegistry;
+    private final ActionExecutionSpecFactory actionExecutionSpecFactory;
+    private final FileCollectionFactory fileCollectionFactory;
 
-    public DefaultPlayToolChain(FileResolver fileResolver, WorkerDaemonFactory workerDaemonFactory, ConfigurationContainer configurationContainer, DependencyHandler dependencyHandler, WorkerProcessFactory workerProcessBuilderFactory, WorkerDirectoryProvider workerDirectoryProvider, ClasspathSnapshotter snapshotter) {
-        this.fileResolver = fileResolver;
+    public DefaultPlayToolChain(JavaForkOptionsFactory forkOptionsFactory, WorkerDaemonFactory workerDaemonFactory, ConfigurationContainer configurationContainer, DependencyHandler dependencyHandler, WorkerProcessFactory workerProcessBuilderFactory, WorkerDirectoryProvider workerDirectoryProvider, FileCollectionFingerprinter fingerprinter, ClassPathRegistry classPathRegistry, ClassLoaderRegistry classLoaderRegistry, ActionExecutionSpecFactory actionExecutionSpecFactory, FileCollectionFactory fileCollectionFactory) {
+        this.forkOptionsFactory = forkOptionsFactory;
         this.workerDaemonFactory = workerDaemonFactory;
         this.configurationContainer = configurationContainer;
         this.dependencyHandler = dependencyHandler;
         this.workerProcessBuilderFactory = workerProcessBuilderFactory;
         this.workerDirectoryProvider = workerDirectoryProvider;
-        this.snapshotter = snapshotter;
+        this.fingerprinter = fingerprinter;
+        this.classPathRegistry = classPathRegistry;
+        this.classLoaderRegistry = classLoaderRegistry;
+        this.actionExecutionSpecFactory = actionExecutionSpecFactory;
+        this.fileCollectionFactory = fileCollectionFactory;
     }
 
     @Override
@@ -73,10 +85,10 @@ public class DefaultPlayToolChain implements PlayToolChainInternal {
     @Override
     public PlayToolProvider select(PlayPlatform targetPlatform) {
         try {
-            Set<File> twirlClasspath = resolveToolClasspath(TwirlCompilerFactory.createAdapter(targetPlatform).getDependencyNotation().toArray()).resolve();
-            Set<File> routesClasspath = resolveToolClasspath(RoutesCompilerFactory.createAdapter(targetPlatform).getDependencyNotation()).resolve();
+            Set<File> twirlClasspath = resolveToolClasspath(TwirlCompilerAdapterFactory.createAdapter(targetPlatform).getDependencyNotation().toArray()).resolve();
+            Set<File> routesClasspath = resolveToolClasspath(RoutesCompilerAdapterFactory.createAdapter(targetPlatform).getDependencyNotation()).resolve();
             Set<File> javascriptClasspath = resolveToolClasspath(GoogleClosureCompiler.getDependencyNotation()).resolve();
-            return new DefaultPlayToolProvider(fileResolver, workerDirectoryProvider.getIdleWorkingDirectory(), workerDaemonFactory, workerProcessBuilderFactory, targetPlatform, twirlClasspath, routesClasspath, javascriptClasspath, snapshotter);
+            return new DefaultPlayToolProvider(forkOptionsFactory, workerDirectoryProvider.getWorkingDirectory(), workerDaemonFactory, workerProcessBuilderFactory, targetPlatform, twirlClasspath, routesClasspath, javascriptClasspath, fingerprinter, classPathRegistry, classLoaderRegistry, actionExecutionSpecFactory, fileCollectionFactory);
         } catch (ResolveException e) {
             return new UnavailablePlayToolProvider(e);
         }
@@ -84,6 +96,7 @@ public class DefaultPlayToolChain implements PlayToolChainInternal {
 
     private Configuration resolveToolClasspath(Object... dependencyNotations) {
         List<Dependency> dependencies = CollectionUtils.collect(dependencyNotations, new Transformer<Dependency, Object>() {
+            @Override
             public Dependency transform(Object dependencyNotation) {
                 return dependencyHandler.create(dependencyNotation);
             }
@@ -121,7 +134,7 @@ public class DefaultPlayToolChain implements PlayToolChainInternal {
         }
 
         @Override
-        public void explain(TreeVisitor<? super String> visitor) {
+        public void explain(DiagnosticsVisitor visitor) {
             visitor.node("Cannot provide Play tool provider");
             visitor.startChildren();
             visitor.node(exception.getCause().getMessage());

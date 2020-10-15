@@ -17,20 +17,15 @@
 package org.gradle.internal.work
 
 import org.gradle.api.Action
+import org.gradle.internal.Factory
 import org.gradle.internal.concurrent.DefaultParallelismConfiguration
-import org.gradle.internal.concurrent.ParallelismConfigurationManager
-import org.gradle.internal.concurrent.ParallelismConfigurationManagerFixture
 import org.gradle.internal.resources.DefaultResourceLockCoordinationService
-import org.gradle.internal.resources.ResourceLockCoordinationService
 import org.gradle.internal.resources.TestTrackedResourceLock
 import spock.lang.Specification
 
-import java.util.concurrent.Callable
-
-
 class DefaultWorkerLeaseServiceTest extends Specification {
     def coordinationService = new DefaultResourceLockCoordinationService()
-    def workerLeaseService = new DefaultWorkerLeaseService(coordinationService, new ParallelismConfigurationManagerFixture(true, 1))
+    def workerLeaseService = new DefaultWorkerLeaseService(coordinationService, new DefaultParallelismConfiguration(true, 1))
 
     def "can use withLocks to execute a runnable with resources locked"() {
         boolean executed = false
@@ -60,7 +55,7 @@ class DefaultWorkerLeaseServiceTest extends Specification {
         def lock2 = resourceLock("lock2", false)
 
         when:
-        executed = workerLeaseService.withLocks([lock1, lock2], callable {
+        executed = workerLeaseService.withLocks([lock1, lock2], factory {
             assert lock1.lockedState
             assert lock2.lockedState
             assert lock1.doIsLockedByCurrentThread()
@@ -113,7 +108,7 @@ class DefaultWorkerLeaseServiceTest extends Specification {
         workerLeaseService.withLocks([lock1, lock2]) {
             assert lock1.lockedState
             assert lock2.lockedState
-            executed = workerLeaseService.withoutLocks([lock1, lock2], callable {
+            executed = workerLeaseService.withoutLocks([lock1, lock2], factory {
                 assert !lock1.lockedState
                 assert !lock2.lockedState
                 assert !lock1.doIsLockedByCurrentThread()
@@ -157,37 +152,7 @@ class DefaultWorkerLeaseServiceTest extends Specification {
         !lock2.lockedState
     }
 
-    def "registers/deregisters a listener for parallelism configuration changes"() {
-        ParallelismConfigurationManager parallelExecutionManager = new ParallelismConfigurationManagerFixture(true, 1)
-
-        when:
-        workerLeaseService = new DefaultWorkerLeaseService(Mock(ResourceLockCoordinationService), parallelExecutionManager)
-
-        then:
-        parallelExecutionManager.listeners.size() == 1
-
-        when:
-        workerLeaseService.stop()
-
-        then:
-        parallelExecutionManager.listeners.size() == 0
-    }
-
-    def "adjusts max worker count on parallelism configuration change"() {
-        when:
-        workerLeaseService.onParallelismConfigurationChange(new DefaultParallelismConfiguration(true, 2))
-
-        then:
-        workerLeaseService.getMaxWorkerCount() == 2
-
-        when:
-        workerLeaseService.onParallelismConfigurationChange(new DefaultParallelismConfiguration(false, 4))
-
-        then:
-        workerLeaseService.getMaxWorkerCount() == 4
-    }
-
-    TestTrackedResourceLock resourceLock(String displayName, boolean locked, boolean hasLock=false) {
+    TestTrackedResourceLock resourceLock(String displayName, boolean locked, boolean hasLock = false) {
         return new TestTrackedResourceLock(displayName, coordinationService, Mock(Action), Mock(Action), locked, hasLock)
     }
 
@@ -204,10 +169,10 @@ class DefaultWorkerLeaseServiceTest extends Specification {
         }
     }
 
-    Callable callable(Closure closure) {
-        return new Callable() {
+    Factory factory(Closure closure) {
+        return new Factory() {
             @Override
-            Object call() throws Exception {
+            Object create() {
                 return closure.call()
             }
         }

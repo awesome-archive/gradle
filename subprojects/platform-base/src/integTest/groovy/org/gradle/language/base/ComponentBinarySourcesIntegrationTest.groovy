@@ -15,9 +15,12 @@
  */
 
 package org.gradle.language.base
+
 import groovy.transform.NotYetImplemented
 import org.gradle.api.reporting.model.ModelReportOutput
+import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
 
+@UnsupportedWithConfigurationCache(because = "software model")
 class ComponentBinarySourcesIntegrationTest extends AbstractComponentModelIntegrationTest {
     def setup() {
         withCustomComponentType()

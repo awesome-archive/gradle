@@ -19,6 +19,7 @@ package org.gradle.process.internal.worker;
 import org.gradle.api.Action;
 import org.gradle.api.logging.LogLevel;
 import org.gradle.internal.id.IdGenerator;
+import org.gradle.internal.jvm.Jvm;
 import org.gradle.internal.logging.events.OutputEventListener;
 import org.gradle.internal.remote.Address;
 import org.gradle.internal.remote.ConnectionAcceptor;
@@ -50,12 +51,14 @@ import java.util.concurrent.TimeUnit;
 public class DefaultWorkerProcessBuilder implements WorkerProcessBuilder {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultWorkerProcessBuilder.class);
     private final MessagingServer server;
-    private final IdGenerator<?> idGenerator;
+    private final IdGenerator<Long> idGenerator;
     private final ApplicationClassesInSystemClassLoaderWorkerImplementationFactory workerImplementationFactory;
     private final OutputEventListener outputEventListener;
     private final JavaExecHandleBuilder javaCommand;
-    private final Set<String> packages = new HashSet<String>();
-    private final Set<File> applicationClasspath = new LinkedHashSet<File>();
+    private final Set<String> packages = new HashSet<>();
+    private final Set<File> applicationClasspath = new LinkedHashSet<>();
+    private final Set<File> applicationModulePath = new LinkedHashSet<>();
+
     private final MemoryManager memoryManager;
     private Action<? super WorkerProcessContext> action;
     private LogLevel logLevel = LogLevel.LIFECYCLE;
@@ -63,10 +66,12 @@ public class DefaultWorkerProcessBuilder implements WorkerProcessBuilder {
     private File gradleUserHomeDir;
     private int connectTimeoutSeconds;
     private List<URL> implementationClassPath;
+    private List<URL> implementationModulePath;
     private boolean shouldPublishJvmMemoryInfo;
 
-    DefaultWorkerProcessBuilder(JavaExecHandleFactory execHandleFactory, MessagingServer server, IdGenerator<?> idGenerator, ApplicationClassesInSystemClassLoaderWorkerImplementationFactory workerImplementationFactory, OutputEventListener outputEventListener, MemoryManager memoryManager) {
+    DefaultWorkerProcessBuilder(JavaExecHandleFactory execHandleFactory, MessagingServer server, IdGenerator<Long> idGenerator, ApplicationClassesInSystemClassLoaderWorkerImplementationFactory workerImplementationFactory, OutputEventListener outputEventListener, MemoryManager memoryManager) {
         this.javaCommand = execHandleFactory.newJavaExec();
+        this.javaCommand.setExecutable(Jvm.current().getJavaExecutable());
         this.server = server;
         this.idGenerator = idGenerator;
         this.workerImplementationFactory = workerImplementationFactory;
@@ -82,34 +87,52 @@ public class DefaultWorkerProcessBuilder implements WorkerProcessBuilder {
         this.connectTimeoutSeconds = connectTimeoutSeconds;
     }
 
+    @Override
     public WorkerProcessBuilder setBaseName(String baseName) {
         this.baseName = baseName;
         return this;
     }
 
+    @Override
     public String getBaseName() {
         return baseName;
     }
 
+    @Override
     public WorkerProcessBuilder applicationClasspath(Iterable<File> files) {
         GUtil.addToCollection(applicationClasspath, files);
         return this;
     }
 
+    @Override
     public Set<File> getApplicationClasspath() {
         return applicationClasspath;
     }
 
+    @Override
+    public WorkerProcessBuilder applicationModulePath(Iterable<File> files) {
+        GUtil.addToCollection(applicationModulePath, files);
+        return this;
+    }
+
+    @Override
+    public Set<File> getApplicationModulePath() {
+        return applicationModulePath;
+    }
+
+    @Override
     public WorkerProcessBuilder sharedPackages(String... packages) {
         sharedPackages(Arrays.asList(packages));
         return this;
     }
 
+    @Override
     public WorkerProcessBuilder sharedPackages(Iterable<String> packages) {
         GUtil.addToCollection(this.packages, packages);
         return this;
     }
 
+    @Override
     public Set<String> getSharedPackages() {
         return packages;
     }
@@ -119,18 +142,22 @@ public class DefaultWorkerProcessBuilder implements WorkerProcessBuilder {
         return this;
     }
 
+    @Override
     public Action<? super WorkerProcessContext> getWorker() {
         return action;
     }
 
+    @Override
     public JavaExecHandleBuilder getJavaCommand() {
         return javaCommand;
     }
 
+    @Override
     public LogLevel getLogLevel() {
         return logLevel;
     }
 
+    @Override
     public WorkerProcessBuilder setLogLevel(LogLevel logLevel) {
         this.logLevel = logLevel;
         return this;
@@ -144,12 +171,14 @@ public class DefaultWorkerProcessBuilder implements WorkerProcessBuilder {
         this.gradleUserHomeDir = gradleUserHomeDir;
     }
 
+    @Override
     public void setImplementationClasspath(List<URL> implementationClassPath) {
         this.implementationClassPath = implementationClassPath;
     }
 
-    public List<URL> getImplementationClassPath() {
-        return implementationClassPath;
+    @Override
+    public void setImplementationModulePath(List<URL> implementationModulePath) {
+        this.implementationModulePath = implementationModulePath;
     }
 
     @Override
@@ -162,6 +191,7 @@ public class DefaultWorkerProcessBuilder implements WorkerProcessBuilder {
         final WorkerJvmMemoryStatus memoryStatus = shouldPublishJvmMemoryInfo ? new WorkerJvmMemoryStatus() : null;
         final DefaultWorkerProcess workerProcess = new DefaultWorkerProcess(connectTimeoutSeconds, TimeUnit.SECONDS, memoryStatus);
         ConnectionAcceptor acceptor = server.accept(new Action<ObjectConnection>() {
+            @Override
             public void execute(final ObjectConnection connection) {
                 workerProcess.onConnect(connection, new Runnable() {
                     @Override
@@ -181,19 +211,24 @@ public class DefaultWorkerProcessBuilder implements WorkerProcessBuilder {
         Address localAddress = acceptor.getAddress();
 
         // Build configuration for GradleWorkerMain
-        Object id = idGenerator.generateId();
+        long id = idGenerator.generateId();
         String displayName = getBaseName() + " " + id;
 
         LOGGER.debug("Creating {}", displayName);
         LOGGER.debug("Using application classpath {}", applicationClasspath);
+        LOGGER.debug("Using application module path {}", applicationModulePath);
         LOGGER.debug("Using implementation classpath {}", implementationClassPath);
+        LOGGER.debug("Using implementation module path {}", implementationModulePath);
 
         JavaExecHandleBuilder javaCommand = getJavaCommand();
         javaCommand.setDisplayName(displayName);
 
-        workerImplementationFactory.prepareJavaCommand(id, displayName, this, implementationClassPath, localAddress, javaCommand, shouldPublishJvmMemoryInfo);
+        workerImplementationFactory.prepareJavaCommand(id, displayName, this, implementationClassPath, implementationModulePath, localAddress, javaCommand, shouldPublishJvmMemoryInfo);
 
         javaCommand.args("'" + displayName + "'");
+        if (javaCommand.getMaxHeapSize() == null) {
+            javaCommand.setMaxHeapSize("512m");
+        }
         ExecHandle execHandle = javaCommand.build();
 
         workerProcess.setExecHandle(execHandle);

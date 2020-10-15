@@ -16,16 +16,12 @@
 
 package org.gradle.api.plugins;
 
-import org.gradle.api.Action;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
-import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.artifacts.ConfigurationContainer;
 import org.gradle.api.artifacts.Dependency;
 import org.gradle.api.artifacts.ModuleVersionIdentifier;
-import org.gradle.api.artifacts.PublishArtifact;
 import org.gradle.api.artifacts.repositories.IvyArtifactRepository;
-import org.gradle.api.internal.ConventionMapping;
 import org.gradle.api.internal.artifacts.ImmutableModuleIdentifierFactory;
 import org.gradle.api.internal.artifacts.Module;
 import org.gradle.api.internal.artifacts.configurations.ConfigurationInternal;
@@ -35,16 +31,20 @@ import org.gradle.api.internal.plugins.BuildConfigurationRule;
 import org.gradle.api.internal.plugins.DefaultArtifactPublicationSet;
 import org.gradle.api.internal.plugins.UploadRule;
 import org.gradle.api.internal.project.ProjectInternal;
+import org.gradle.api.plugins.internal.DefaultBasePluginConvention;
 import org.gradle.api.tasks.Upload;
 import org.gradle.api.tasks.bundling.AbstractArchiveTask;
 import org.gradle.configuration.project.ProjectConfigurationActionContainer;
 import org.gradle.internal.Describables;
+import org.gradle.internal.deprecation.DeprecatableConfiguration;
+import org.gradle.internal.deprecation.DeprecationLogger;
 import org.gradle.jvm.tasks.Jar;
 import org.gradle.language.base.plugins.LifecycleBasePlugin;
 
 import javax.inject.Inject;
-import java.io.File;
-import java.util.concurrent.Callable;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+import static org.gradle.api.internal.lambdas.SerializableLambdas.action;
 
 /**
  * <p>A  {@link org.gradle.api.Plugin}  which defines a basic project lifecycle and some common convention properties.</p>
@@ -68,10 +68,11 @@ public class BasePlugin implements Plugin<Project> {
         this.moduleIdentifierFactory = moduleIdentifierFactory;
     }
 
-    public void apply(Project project) {
+    @Override
+    public void apply(final Project project) {
         project.getPluginManager().apply(LifecycleBasePlugin.class);
 
-        BasePluginConvention convention = new BasePluginConvention(project);
+        BasePluginConvention convention = new DefaultBasePluginConvention(project);
         project.getConvention().getPlugins().put("base", convention);
 
         configureBuildConfigurationRule(project);
@@ -83,38 +84,20 @@ public class BasePlugin implements Plugin<Project> {
     }
 
     private void configureArchiveDefaults(final Project project, final BasePluginConvention pluginConvention) {
-        project.getTasks().withType(AbstractArchiveTask.class, new Action<AbstractArchiveTask>() {
-            public void execute(AbstractArchiveTask task) {
-                ConventionMapping taskConventionMapping = task.getConventionMapping();
-
-                Callable<File> destinationDir;
-                if (task instanceof Jar) {
-                    destinationDir = new Callable<File>() {
-                        public File call() throws Exception {
-                            return pluginConvention.getLibsDir();
-                        }
-                    };
-                } else {
-                    destinationDir = new Callable<File>() {
-                        public File call() throws Exception {
-                            return pluginConvention.getDistsDir();
-                        }
-                    };
-                }
-                taskConventionMapping.map("destinationDir", destinationDir);
-
-                taskConventionMapping.map("version", new Callable<String>() {
-                    public String call() throws Exception {
-                        return project.getVersion() == Project.DEFAULT_VERSION ? null : project.getVersion().toString();
-                    }
-                });
-
-                taskConventionMapping.map("baseName", new Callable<String>() {
-                    public String call() throws Exception {
-                        return pluginConvention.getArchivesBaseName();
-                    }
-                });
+        project.getTasks().withType(AbstractArchiveTask.class).configureEach(task -> {
+            if (task instanceof Jar) {
+                task.getDestinationDirectory().convention(pluginConvention.getLibsDirectory());
+            } else {
+                task.getDestinationDirectory().convention(pluginConvention.getDistsDirectory());
             }
+
+            task.getArchiveVersion().convention(
+                project.provider(() -> project.getVersion() == Project.DEFAULT_VERSION ? null : project.getVersion().toString())
+            );
+
+            task.getArchiveBaseName().convention(
+                project.provider(() -> pluginConvention.getArchivesBaseName())
+            );
         });
     }
 
@@ -127,23 +110,29 @@ public class BasePlugin implements Plugin<Project> {
     }
 
     private void configureUploadArchivesTask() {
-        configurationActionContainer.add(new Action<Project>() {
-            public void execute(Project project) {
-                Upload uploadArchives = project.getTasks().withType(Upload.class).findByName(UPLOAD_ARCHIVES_TASK_NAME);
-                if (uploadArchives == null) {
-                    return;
-                }
-
-                boolean hasIvyRepo = !uploadArchives.getRepositories().withType(IvyArtifactRepository.class).isEmpty();
-                if (!hasIvyRepo) {
-                    return;
-                } // Maven repos are handled by MavenPlugin
-
-                ConfigurationInternal configuration = (ConfigurationInternal) uploadArchives.getConfiguration();
-                Module module = configuration.getModule();
-                ModuleVersionIdentifier publicationId = moduleIdentifierFactory.moduleWithVersion(module.getGroup(), module.getName(), module.getVersion());
-                publicationRegistry.registerPublication(module.getProjectPath(), new DefaultProjectPublication(Describables.of("Ivy publication"), publicationId, true));
+        configurationActionContainer.add(project -> {
+            Upload uploadArchives = project.getTasks().withType(Upload.class).findByName(UPLOAD_ARCHIVES_TASK_NAME);
+            if (uploadArchives == null) {
+                return;
             }
+            AtomicBoolean usesMaven = new AtomicBoolean();
+            project.getPluginManager().withPlugin("maven", p -> usesMaven.set(true));
+            uploadArchives.doFirst(action(task -> DeprecationLogger
+                .deprecateTask(UPLOAD_ARCHIVES_TASK_NAME)
+                .withAdvice("Use the " + (usesMaven.get() ? "'maven-publish'" : "'ivy-publish'") + " plugin instead.")
+                .willBeRemovedInGradle7()
+                .withUpgradeGuideSection(5, "legacy_publication_system_is_deprecated_and_replaced_with_the_publish_plugins")
+                .nagUser()
+            ));
+            boolean hasIvyRepo = !uploadArchives.getRepositories().withType(IvyArtifactRepository.class).isEmpty();
+            if (!hasIvyRepo) {
+                return;
+            } // Maven repos are handled by MavenPlugin
+
+            ConfigurationInternal configuration = (ConfigurationInternal) uploadArchives.getConfiguration();
+            Module module = configuration.getModule();
+            ModuleVersionIdentifier publicationId = moduleIdentifierFactory.moduleWithVersion(module.getGroup(), module.getName(), module.getVersion());
+            publicationRegistry.registerPublication(project, new DefaultProjectPublication(Describables.of("Ivy publication"), publicationId, true));
         });
     }
 
@@ -151,20 +140,25 @@ public class BasePlugin implements Plugin<Project> {
         ConfigurationContainer configurations = project.getConfigurations();
         project.setStatus("integration");
 
-        Configuration archivesConfiguration = configurations.maybeCreate(Dependency.ARCHIVES_CONFIGURATION).
-                setDescription("Configuration for archive artifacts.");
+        final DeprecatableConfiguration archivesConfiguration = (DeprecatableConfiguration) configurations.maybeCreate(Dependency.ARCHIVES_CONFIGURATION).
+            setDescription("Configuration for archive artifacts.");
 
-        configurations.maybeCreate(Dependency.DEFAULT_CONFIGURATION).
-                setDescription("Configuration for default artifacts.");
+        final DeprecatableConfiguration defaultConfiguration = (DeprecatableConfiguration) configurations.maybeCreate(Dependency.DEFAULT_CONFIGURATION).
+            setDescription("Configuration for default artifacts.");
 
         final DefaultArtifactPublicationSet defaultArtifacts = project.getExtensions().create(
-                "defaultArtifacts", DefaultArtifactPublicationSet.class, archivesConfiguration.getArtifacts()
+            "defaultArtifacts", DefaultArtifactPublicationSet.class, archivesConfiguration.getArtifacts()
         );
 
-        configurations.all(new Action<Configuration>() {
-            public void execute(Configuration configuration) {
-                configuration.getArtifacts().all(new Action<PublishArtifact>() {
-                    public void execute(PublishArtifact artifact) {
+        archivesConfiguration.deprecateForResolution(JavaPlugin.COMPILE_CLASSPATH_CONFIGURATION_NAME, JavaPlugin.RUNTIME_CLASSPATH_CONFIGURATION_NAME);
+        defaultConfiguration.deprecateForResolution(JavaPlugin.COMPILE_CLASSPATH_CONFIGURATION_NAME, JavaPlugin.RUNTIME_CLASSPATH_CONFIGURATION_NAME);
+        archivesConfiguration.deprecateForDeclaration(JavaPlugin.IMPLEMENTATION_CONFIGURATION_NAME, JavaPlugin.API_CONFIGURATION_NAME);
+        defaultConfiguration.deprecateForDeclaration(JavaPlugin.IMPLEMENTATION_CONFIGURATION_NAME, JavaPlugin.API_CONFIGURATION_NAME);
+
+        configurations.all(configuration -> {
+            if (!configuration.equals(archivesConfiguration)) {
+                configuration.getArtifacts().configureEach(artifact -> {
+                    if (configuration.isVisible()) {
                         defaultArtifacts.addCandidate(artifact);
                     }
                 });
@@ -173,6 +167,8 @@ public class BasePlugin implements Plugin<Project> {
     }
 
     private void configureAssemble(final ProjectInternal project) {
-        project.getTasks().getByName(ASSEMBLE_TASK_NAME).dependsOn(project.getConfigurations().getByName(Dependency.ARCHIVES_CONFIGURATION).getAllArtifacts().getBuildDependencies());
+        project.getTasks().named(ASSEMBLE_TASK_NAME, task -> {
+            task.dependsOn(task.getProject().getConfigurations().getByName(Dependency.ARCHIVES_CONFIGURATION).getAllArtifacts().getBuildDependencies());
+        });
     }
 }

@@ -38,7 +38,7 @@ public class CachedStoreFactory<T> implements Closeable {
 
     private final Cache<Object, T> cache;
     private final Stats stats;
-    private String displayName;
+    private final String displayName;
 
     public CachedStoreFactory(String displayName) {
         this.displayName = displayName;
@@ -47,9 +47,10 @@ public class CachedStoreFactory<T> implements Closeable {
     }
 
     public Store<T> createCachedStore(final Object id) {
-        return new SimpleStore<T>(cache, id, stats);
+        return new SimpleStore<>(cache, id, stats);
     }
 
+    @Override
     public void close() {
         LOG.debug(displayName + " cache closed. Cache reads: "
                 + stats.readsFromCache + ", disk reads: "
@@ -79,9 +80,9 @@ public class CachedStoreFactory<T> implements Closeable {
     }
 
     private static class SimpleStore<T> implements Store<T> {
-        private Cache<Object, T> cache;
+        private final Cache<Object, T> cache;
         private final Object id;
-        private Stats stats;
+        private final Stats stats;
 
         public SimpleStore(Cache<Object, T> cache, Object id, Stats stats) {
             this.cache = cache;
@@ -89,6 +90,7 @@ public class CachedStoreFactory<T> implements Closeable {
             this.stats = stats;
         }
 
+        @Override
         public T load(Factory<T> createIfNotPresent) {
             T out = cache.getIfPresent(id);
             if (out != null) {

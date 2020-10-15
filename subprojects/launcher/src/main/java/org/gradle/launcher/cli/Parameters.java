@@ -16,40 +16,30 @@
 
 package org.gradle.launcher.cli;
 
-import org.gradle.StartParameter;
 import org.gradle.api.internal.StartParameterInternal;
-import org.gradle.initialization.BuildLayoutParameters;
+import org.gradle.launcher.configuration.BuildLayoutResult;
 import org.gradle.launcher.daemon.configuration.DaemonParameters;
 
 public class Parameters {
-    private BuildLayoutParameters layout;
-    private StartParameter startParameter;
-    private DaemonParameters daemonParameters;
+    private final BuildLayoutResult layout;
+    private final StartParameterInternal startParameter;
+    private final DaemonParameters daemonParameters;
 
-    public Parameters() {
-        this.layout = new BuildLayoutParameters();
-        this.startParameter = new StartParameterInternal();
-        this.daemonParameters = new DaemonParameters(layout);
-    }
-
-    public Parameters(StartParameter startParameter) {
-        this();
+    public Parameters(BuildLayoutResult layout, StartParameterInternal startParameter, DaemonParameters daemonParameters) {
+        this.layout = layout;
         this.startParameter = startParameter;
+        this.daemonParameters = daemonParameters;
     }
 
     public DaemonParameters getDaemonParameters() {
         return daemonParameters;
     }
 
-    public StartParameter getStartParameter() {
+    public StartParameterInternal getStartParameter() {
         return startParameter;
     }
 
-    public BuildLayoutParameters getLayout() {
+    public BuildLayoutResult getLayout() {
         return layout;
-    }
-
-    public void setDaemonParameters(DaemonParameters daemonParameters) {
-        this.daemonParameters = daemonParameters;
     }
 }

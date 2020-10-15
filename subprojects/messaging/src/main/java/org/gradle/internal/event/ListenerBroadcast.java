@@ -136,7 +136,21 @@ public class ListenerBroadcast<T> implements Dispatch<MethodInvocation> {
      *
      * @param event The event
      */
+    @Override
     public void dispatch(MethodInvocation event) {
         broadcast.dispatch(event);
+    }
+
+    public void visitListeners(Action<T> visitor) {
+        broadcast.visitListeners(visitor);
+    }
+
+    /**
+     * Returns a new {@link ListenerBroadcast} with the same {@link BroadcastDispatch} as this class.
+     */
+    public ListenerBroadcast<T> copy() {
+        ListenerBroadcast<T> result = new ListenerBroadcast<T>(type);
+        result.broadcast = this.broadcast;
+        return result;
     }
 }

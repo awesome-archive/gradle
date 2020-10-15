@@ -17,6 +17,11 @@
 package org.gradle.internal.resource;
 
 import org.gradle.api.resources.MissingResourceException;
+import org.gradle.api.resources.ResourceException;
+import org.gradle.internal.DisplayName;
+import org.gradle.internal.hash.HashCode;
+import org.gradle.internal.hash.Hashing;
+import org.gradle.internal.hash.PrimitiveHasher;
 
 import java.io.File;
 import java.io.Reader;
@@ -24,8 +29,10 @@ import java.io.StringReader;
 import java.nio.charset.Charset;
 
 public class CachingTextResource implements TextResource {
+    private static final HashCode SIGNATURE = Hashing.signature(CachingTextResource.class);
     private final TextResource resource;
     private String content;
+    private HashCode contentHash;
 
     public CachingTextResource(TextResource resource) {
         this.resource = resource;
@@ -34,6 +41,16 @@ public class CachingTextResource implements TextResource {
     @Override
     public String getDisplayName() {
         return resource.getDisplayName();
+    }
+
+    @Override
+    public DisplayName getLongDisplayName() {
+        return resource.getLongDisplayName();
+    }
+
+    @Override
+    public DisplayName getShortDisplayName() {
+        return resource.getShortDisplayName();
     }
 
     @Override
@@ -79,6 +96,12 @@ public class CachingTextResource implements TextResource {
     }
 
     @Override
+    public HashCode getContentHash() throws ResourceException {
+        maybeFetch();
+        return contentHash;
+    }
+
+    @Override
     public Reader getAsReader() {
         maybeFetch();
         return new StringReader(content);
@@ -87,6 +110,10 @@ public class CachingTextResource implements TextResource {
     private void maybeFetch() {
         if (content == null) {
             content = resource.getText();
+            PrimitiveHasher hasher = Hashing.newPrimitiveHasher();
+            hasher.putHash(SIGNATURE);
+            hasher.putString(content);
+            contentHash = hasher.hash();
         }
     }
 }

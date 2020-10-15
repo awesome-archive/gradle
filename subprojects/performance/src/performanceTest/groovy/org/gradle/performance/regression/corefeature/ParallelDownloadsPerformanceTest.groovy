@@ -16,16 +16,13 @@
 
 package org.gradle.performance.regression.corefeature
 
+import org.eclipse.jetty.webapp.WebAppContext
 import org.gradle.performance.AbstractCrossVersionPerformanceTest
 import org.gradle.performance.WithExternalRepository
-import org.gradle.performance.fixture.BuildExperimentInvocationInfo
-import org.gradle.performance.fixture.BuildExperimentListener
-import org.gradle.performance.fixture.BuildExperimentListenerAdapter
-import org.gradle.performance.measure.MeasuredOperation
-import org.mortbay.jetty.Handler
-import org.mortbay.jetty.servlet.Context
-import org.mortbay.jetty.webapp.WebAppContext
+import org.gradle.profiler.BuildContext
+import org.gradle.profiler.BuildMutator
 
+import javax.servlet.DispatcherType
 import javax.servlet.Filter
 import javax.servlet.FilterChain
 import javax.servlet.FilterConfig
@@ -36,8 +33,6 @@ import javax.servlet.http.HttpServletRequest
 import java.util.concurrent.atomic.AtomicInteger
 
 class ParallelDownloadsPerformanceTest extends AbstractCrossVersionPerformanceTest implements WithExternalRepository {
-    private final static String TEST_PROJECT_NAME = 'springBootApp'
-
     File tmpRepoDir = temporaryFolder.createDir('repository')
 
     @Override
@@ -46,31 +41,34 @@ class ParallelDownloadsPerformanceTest extends AbstractCrossVersionPerformanceTe
     }
 
     def setup() {
-        runner.targetVersions = ["4.7-20180308002700+0000"]
+        runner.targetVersions = ["6.7-20200723220251+0000"]
+        // Example project requires TaskContainer.register
+        runner.minimumBaseVersion = "4.9"
         runner.warmUpRuns = 5
         runner.runs = 15
-        runner.addBuildExperimentListener(new BuildExperimentListenerAdapter() {
-            @Override
-            void afterInvocation(BuildExperimentInvocationInfo invocationInfo, MeasuredOperation operation, BuildExperimentListener.MeasurementCallback measurementCallback) {
-                cleanupCache(invocationInfo.gradleUserHome)
-            }
+        runner.addBuildMutator { invocationSettings ->
+            new BuildMutator() {
+                @Override
+                void afterBuild(BuildContext context, Throwable error) {
+                    cleanupCache(invocationSettings.gradleUserHome)
+                }
 
-            private void cleanupCache(File userHomeDir) {
-                ['modules-2', 'external-resources'].each {
-                    new File("$userHomeDir/caches/$it").deleteDir()
+                private void cleanupCache(File userHomeDir) {
+                    ['modules-2', 'external-resources'].each {
+                        new File("$userHomeDir/caches/$it").deleteDir()
+                    }
                 }
             }
-        })
+        }
     }
 
     def "resolves dependencies from external repository"() {
-        runner.testProject = TEST_PROJECT_NAME
         startServer()
 
         given:
         runner.tasksToRun = ['resolveDependencies']
         runner.gradleOpts = ["-Xms1g", "-Xmx1g"]
-        runner.args = ['-I', 'init.gradle', "-PmirrorPath=${repoDir.absolutePath}", "-PmavenRepoURL=http://localhost:${serverPort}/"]
+        runner.args = ['-I', 'init.gradle', "-PmirrorPath=${repoDir.absolutePath}", "-PmavenRepoURL=http://127.0.0.1:${serverPort}/"]
 
         when:
         def result = runner.run()
@@ -83,13 +81,12 @@ class ParallelDownloadsPerformanceTest extends AbstractCrossVersionPerformanceTe
     }
 
     def "resolves dependencies from external repository (parallel)"() {
-        runner.testProject = TEST_PROJECT_NAME
         startServer()
 
         given:
         runner.tasksToRun = ['resolveDependencies']
         runner.gradleOpts = ["-Xms1g", "-Xmx1g"]
-        runner.args = ['-I', 'init.gradle', "-PmirrorPath=${repoDir.absolutePath}", "-PmavenRepoURL=http://localhost:${serverPort}/", '--parallel']
+        runner.args = ['-I', 'init.gradle', "-PmirrorPath=${repoDir.absolutePath}", "-PmavenRepoURL=http://127.0.0.1:${serverPort}/", '--parallel']
 
         when:
         def result = runner.run()
@@ -103,9 +100,9 @@ class ParallelDownloadsPerformanceTest extends AbstractCrossVersionPerformanceTe
 
 
     @Override
-    Context createContext() {
+    WebAppContext createContext() {
         def context = new WebAppContext()
-        context.addFilter(SimulatedDownloadLatencyFilter, '/*', Handler.DEFAULT)
+        context.addFilter(SimulatedDownloadLatencyFilter, '/*', EnumSet.of(DispatcherType.REQUEST))
         context
     }
 
@@ -153,3 +150,4 @@ class ParallelDownloadsPerformanceTest extends AbstractCrossVersionPerformanceTe
     }
 
 }
+

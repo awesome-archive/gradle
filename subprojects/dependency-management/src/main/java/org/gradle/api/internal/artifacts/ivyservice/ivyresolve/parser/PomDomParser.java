@@ -71,7 +71,7 @@ public final class PomDomParser {
     }
 
     public static List<Element> getAllChilds(Element parent) {
-        List<Element> r = new LinkedList<Element>();
+        List<Element> r = new LinkedList<>();
         if (parent != null) {
             NodeList childs = parent.getChildNodes();
             for (int i = 0; i < childs.getLength(); i++) {
@@ -128,6 +128,7 @@ public final class PomDomParser {
             }
         }
 
+        @Override
         public int read() throws IOException {
             if (count < prefix.length) {
                 return prefix[count++];
@@ -136,6 +137,7 @@ public final class PomDomParser {
             return super.read();
         }
 
+        @Override
         public int read(byte[] b, int off, int len) throws IOException {
             if (b == null) {
                 throw new NullPointerException();

@@ -19,7 +19,13 @@ package org.gradle.testfixtures
 import org.gradle.api.DefaultTask
 import org.gradle.api.Project
 import org.gradle.api.internal.project.DefaultProject
+import org.gradle.api.logging.configuration.WarningMode
+import org.gradle.internal.deprecation.DeprecationLogger
+import org.gradle.internal.featurelifecycle.UsageLocationReporter
+import org.gradle.internal.operations.BuildOperationProgressEventEmitter
+import org.gradle.test.fixtures.file.LeaksFileHandles
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
+import org.gradle.util.IncubationLogger
 import org.gradle.util.Resources
 import org.junit.Rule
 import spock.lang.Ignore
@@ -30,7 +36,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 class ProjectBuilderTest extends Specification {
     @Rule
-    public final TestNameTestDirectoryProvider temporaryFolder = new TestNameTestDirectoryProvider()
+    public final TestNameTestDirectoryProvider temporaryFolder = new TestNameTestDirectoryProvider(getClass())
     @Rule
     public final Resources resources = new Resources()
 
@@ -115,6 +121,7 @@ class ProjectBuilderTest extends Specification {
         task.property == 'some value'
     }
 
+    @LeaksFileHandles("script jar is held open")
     def canApplyABuildScript() {
         when:
         def project = buildProject()
@@ -162,6 +169,26 @@ class ProjectBuilderTest extends Specification {
         then:
         noExceptionThrown()
         latch.get()
+    }
+
+    def "ProjectBuilder can not be directly instantiated"() {
+        expect:
+        ProjectBuilder.constructors.size() == 0
+    }
+
+    def "does not emit deprecation warning when using the builder() method"() {
+        given:
+        def broadcaster = Mock(BuildOperationProgressEventEmitter)
+        DeprecationLogger.init(Mock(UsageLocationReporter), WarningMode.None, broadcaster)
+
+        when:
+        ProjectBuilder.builder()
+
+        then:
+        0 * broadcaster.progress(_)
+
+        cleanup:
+        IncubationLogger.reset()
     }
 }
 

@@ -24,6 +24,7 @@ import org.gradle.api.file.FileVisitDetails;
 import org.gradle.api.internal.file.collections.MinimalFileTree;
 import org.gradle.api.internal.file.collections.SingleIncludePatternFileTree;
 import org.gradle.internal.UncheckedException;
+import org.gradle.internal.hash.ChecksumService;
 import org.gradle.util.GFileUtils;
 import org.gradle.util.RelativePathUtil;
 
@@ -50,6 +51,8 @@ import static org.gradle.internal.FileUtils.hasExtension;
 @NonNullApi
 public class DefaultPathKeyFileStore implements PathKeyFileStore {
 
+    private final ChecksumService checksumService;
+
     /*
         When writing a file into the filestore a marker file with this suffix is written alongside,
         then removed after the write. This is used to detect partially written files (due to a serious crash)
@@ -59,7 +62,8 @@ public class DefaultPathKeyFileStore implements PathKeyFileStore {
 
     private File baseDir;
 
-    public DefaultPathKeyFileStore(File baseDir) {
+    public DefaultPathKeyFileStore(ChecksumService checksumService, File baseDir) {
+        this.checksumService = checksumService;
         this.baseDir = baseDir;
     }
 
@@ -67,11 +71,15 @@ public class DefaultPathKeyFileStore implements PathKeyFileStore {
         return baseDir;
     }
 
-    private File getFile(String path) {
-        return new File(baseDir, path);
+    private File getFile(String... path) {
+        File result = baseDir;
+        for (String p : path) {
+            result = new File(result, p);
+        }
+        return result;
     }
 
-    private File getFileWhileCleaningInProgress(String path) {
+    private File getFileWhileCleaningInProgress(String... path) {
         File file = getFile(path);
         File markerFile = getInProgressMarkerFile(file);
         if (markerFile.exists()) {
@@ -109,6 +117,7 @@ public class DefaultPathKeyFileStore implements PathKeyFileStore {
 
         try {
             return doAdd(path, new Action<File>() {
+                @Override
                 public void execute(File file) {
                     if (source.isDirectory()) {
                         GFileUtils.moveExistingDirectory(source, file);
@@ -151,6 +160,7 @@ public class DefaultPathKeyFileStore implements PathKeyFileStore {
 
         final Set<LocallyAvailableResource> entries = new HashSet<LocallyAvailableResource>();
         findFiles(pattern).visit(new EmptyFileVisitor() {
+            @Override
             public void visitFile(FileVisitDetails fileDetails) {
                 final File file = fileDetails.getFile();
                 // We cannot clean in progress markers, or in progress files here because
@@ -185,14 +195,14 @@ public class DefaultPathKeyFileStore implements PathKeyFileStore {
     }
 
     protected LocallyAvailableResource entryAt(final String path) {
-        return new DefaultLocallyAvailableResource(getFile(path));
+        return new DefaultLocallyAvailableResource(getFile(path), checksumService);
     }
 
     @Override
-    public LocallyAvailableResource get(String key) {
-        final File file = getFileWhileCleaningInProgress(key);
+    public LocallyAvailableResource get(String... path) {
+        final File file = getFileWhileCleaningInProgress(path);
         if (file.exists()) {
-            return new DefaultLocallyAvailableResource(getFile(key));
+            return new DefaultLocallyAvailableResource(getFile(path), checksumService);
         } else {
             return null;
         }

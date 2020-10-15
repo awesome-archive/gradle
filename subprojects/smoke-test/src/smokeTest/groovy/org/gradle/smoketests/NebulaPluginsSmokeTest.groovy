@@ -16,18 +16,22 @@
 
 package org.gradle.smoketests
 
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
+import org.gradle.util.Requires
+import org.gradle.util.TestPrecondition
 import spock.lang.Issue
 import spock.lang.Unroll
 
 class NebulaPluginsSmokeTest extends AbstractSmokeTest {
 
     @Issue('https://plugins.gradle.org/plugin/nebula.dependency-recommender')
+    @ToBeFixedForConfigurationCache
     def 'nebula recommender plugin'() {
         when:
         buildFile << """
             plugins {
                 id "java"
-                id "nebula.dependency-recommender" version "5.1.0"
+                id "nebula.dependency-recommender" version "${TestedVersions.nebulaDependencyRecommender}"
             }
 
             ${jcenterRepository()}
@@ -47,11 +51,12 @@ class NebulaPluginsSmokeTest extends AbstractSmokeTest {
     }
 
     @Issue('https://plugins.gradle.org/plugin/nebula.plugin-plugin')
+    @ToBeFixedForConfigurationCache(because = "Gradle.addBuildListener")
     def 'nebula plugin plugin'() {
         when:
         buildFile << """
             plugins {
-                id 'nebula.plugin-plugin' version '6.2.0'
+                id 'nebula.plugin-plugin' version '${TestedVersions.nebulaPluginPlugin}'
             }
         """
 
@@ -71,6 +76,7 @@ class NebulaPluginsSmokeTest extends AbstractSmokeTest {
     }
 
     @Issue('https://plugins.gradle.org/plugin/nebula.lint')
+    @ToBeFixedForConfigurationCache
     def 'nebula lint plugin'() {
         given:
         buildFile << """
@@ -79,7 +85,7 @@ class NebulaPluginsSmokeTest extends AbstractSmokeTest {
             }
 
             plugins {
-                id "nebula.lint" version "8.3.1"
+                id "nebula.lint" version "${TestedVersions.nebulaLint}"
             }
 
             apply plugin: 'java'
@@ -113,11 +119,12 @@ testCompile('junit:junit:4.7')""")
     }
 
     @Issue('https://plugins.gradle.org/plugin/nebula.dependency-lock')
+    @ToBeFixedForConfigurationCache(because = ":buildEnvironment")
     def 'nebula dependency lock plugin'() {
         when:
         buildFile << """
             plugins {
-                id "nebula.dependency-lock" version "5.0.3"
+                id "nebula.dependency-lock" version "${TestedVersions.nebulaDependencyLock.latest()}"
             }
         """.stripIndent()
 
@@ -127,6 +134,7 @@ testCompile('junit:junit:4.7')""")
 
     @Issue("gradle/gradle#3798")
     @Unroll
+    @ToBeFixedForConfigurationCache
     def "nebula dependency lock plugin version #version binary compatibility"() {
         when:
         buildFile << """
@@ -134,13 +142,13 @@ testCompile('junit:junit:4.7')""")
                 id 'java-library'
                 id 'nebula.dependency-lock' version '$version'
             }
-            
+
             ${jcenterRepository()}
-            
+
             dependencies {
                 api 'org.apache.commons:commons-math3:3.6.1'
             }
-            
+
             task resolve {
                 doFirst {
                     configurations.compileClasspath.each { println it.name }
@@ -186,10 +194,12 @@ testCompile('junit:junit:4.7')""")
         runner('resolve').build()
 
         where:
-        version << ['4.9.5', '5.0.3']
+        version << TestedVersions.nebulaDependencyLock
     }
 
     @Issue('https://plugins.gradle.org/plugin/nebula.resolution-rules')
+    @Requires(TestPrecondition.JDK11_OR_EARLIER)
+    @ToBeFixedForConfigurationCache
     def 'nebula resolution rules plugin'() {
         when:
         file('rules.json') << """
@@ -208,14 +218,14 @@ testCompile('junit:junit:4.7')""")
         buildFile << """
             plugins {
                 id 'java-library'
-                id 'nebula.resolution-rules' version '5.1.0'
+                id 'nebula.resolution-rules' version '${TestedVersions.nebulaResolutionRules}'
             }
-            
-            ${jcenterRepository()}                        
+
+            ${jcenterRepository()}
 
             dependencies {
                 resolutionRules files('rules.json')
-                
+
                 // Need a non-empty configuration to trigger the plugin
                 api 'org.apache.commons:commons-math3:3.6.1'
             }

@@ -24,7 +24,6 @@ import org.gradle.nativeplatform.platform.internal.OperatingSystemInternal
 import org.gradle.nativeplatform.toolchain.internal.SystemLibraries
 import org.gradle.nativeplatform.toolchain.internal.ToolType
 import org.gradle.nativeplatform.toolchain.internal.gcc.metadata.GccMetadata
-import org.gradle.nativeplatform.toolchain.internal.gcc.metadata.SystemLibraryDiscovery
 import org.gradle.nativeplatform.toolchain.internal.metadata.CompilerMetaDataProvider
 import org.gradle.nativeplatform.toolchain.internal.tools.CommandLineToolSearchResult
 import org.gradle.nativeplatform.toolchain.internal.tools.DefaultGccCommandLineToolConfiguration
@@ -46,9 +45,8 @@ class GccPlatformToolProviderTest extends Specification {
     def namingSchemeFactory = Mock(CompilerOutputFileNamingSchemeFactory)
     def workerLeaseService = Mock(WorkerLeaseService)
     def metaDataProvider = Mock(CompilerMetaDataProvider)
-    def systemLibraryDiscovery = Mock(SystemLibraryDiscovery)
     def targetPlatform = Mock(NativePlatformInternal)
-    def platformToolProvider = new GccPlatformToolProvider(targetPlatform, buildOperationExecuter, operatingSystem, toolSearchPath, toolRegistry, execActionFactory, namingSchemeFactory, true, workerLeaseService, metaDataProvider, systemLibraryDiscovery)
+    def platformToolProvider = new GccPlatformToolProvider(buildOperationExecuter, operatingSystem, toolSearchPath, toolRegistry, execActionFactory, namingSchemeFactory, true, workerLeaseService, metaDataProvider)
 
     @Unroll
     def "arguments #args are passed to metadata provider for #toolType.toolName"() {
@@ -61,12 +59,12 @@ class GccPlatformToolProviderTest extends Specification {
         then:
         result == libs
         1 * metaDataProvider.getCompilerMetaData(_, _) >> {
-            assert arguments[1] == args
+            arguments[1].execute(assertingCompilerExecSpecArguments(args))
             new ComponentFound(metaData)
         }
-        1 * systemLibraryDiscovery.getSystemLibraries(metaData, targetPlatform) >> libs
         1 * toolRegistry.getTool(toolType) >> new DefaultGccCommandLineToolConfiguration(toolType, 'exe')
         1 * toolSearchPath.locate(toolType, 'exe') >> Mock(CommandLineToolSearchResult)
+        _ * metaData.systemLibraries >> libs
 
         where:
         toolType                       | args
@@ -84,7 +82,7 @@ class GccPlatformToolProviderTest extends Specification {
 
         then:
         1 * metaDataProvider.getCompilerMetaData(_, _) >> {
-            assert arguments[1] == args
+            arguments[1].execute(assertingCompilerExecSpecArguments(args))
             Mock(SearchResult)
         }
         1 * toolRegistry.getTool(toolType) >> new DefaultGccCommandLineToolConfiguration(toolType, 'exe')
@@ -97,5 +95,25 @@ class GccPlatformToolProviderTest extends Specification {
         ToolType.OBJECTIVEC_COMPILER   | ['-x', 'objective-c']
         ToolType.OBJECTIVECPP_COMPILER | ['-x', 'objective-c++']
         ToolType.ASSEMBLER             | []
+    }
+
+    CompilerMetaDataProvider.CompilerExecSpec assertingCompilerExecSpecArguments(Iterable<String> expectedArgs) {
+        return new CompilerMetaDataProvider.CompilerExecSpec() {
+            @Override
+            CompilerMetaDataProvider.CompilerExecSpec environment(String key, String value) {
+                return this
+            }
+
+            @Override
+            CompilerMetaDataProvider.CompilerExecSpec executable(File executable) {
+                return this
+            }
+
+            @Override
+            CompilerMetaDataProvider.CompilerExecSpec args(Iterable<String> args) {
+                assert args == expectedArgs
+                return this
+            }
+        }
     }
 }

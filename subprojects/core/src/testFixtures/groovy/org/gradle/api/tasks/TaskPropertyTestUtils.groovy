@@ -20,11 +20,14 @@ import org.gradle.api.file.FileCollection
 import org.gradle.api.internal.AbstractTask
 import org.gradle.api.internal.TaskInternal
 import org.gradle.api.internal.file.CompositeFileCollection
-import org.gradle.api.internal.file.collections.FileCollectionResolveContext
+import org.gradle.api.internal.file.FileCollectionFactory
+import org.gradle.api.internal.file.FileCollectionInternal
 import org.gradle.api.internal.tasks.TaskPropertyUtils
 import org.gradle.api.internal.tasks.properties.GetInputFilesVisitor
 import org.gradle.api.internal.tasks.properties.GetInputPropertiesVisitor
 import org.gradle.api.internal.tasks.properties.PropertyWalker
+
+import java.util.function.Consumer
 
 class TaskPropertyTestUtils {
     static Map<String, Object> getProperties(AbstractTask task) {
@@ -32,14 +35,14 @@ class TaskPropertyTestUtils {
     }
 
     static Map<String, Object> getProperties(TaskInternal task, PropertyWalker propertyWalker) {
-        GetInputPropertiesVisitor visitor = new GetInputPropertiesVisitor(task.getName());
-        TaskPropertyUtils.visitProperties(propertyWalker, task, visitor);
-        //noinspection ConstantConditions
-        return visitor.getPropertyValuesFactory().create();
+        GetInputPropertiesVisitor visitor = new GetInputPropertiesVisitor()
+        TaskPropertyUtils.visitProperties(propertyWalker, task, visitor)
+        return visitor.getProperties().collectEntries { [it.propertyName, it.value.call()] }
     }
 
     static FileCollection getInputFiles(AbstractTask task) {
-        GetInputFilesVisitor visitor = new GetInputFilesVisitor()
+        def fileCollectionFactory = task.getServices().get(FileCollectionFactory)
+        GetInputFilesVisitor visitor = new GetInputFilesVisitor(task.toString(), fileCollectionFactory)
         def walker = task.getServices().get(PropertyWalker)
         TaskPropertyUtils.visitProperties(walker, task, visitor)
         return new CompositeFileCollection() {
@@ -49,9 +52,9 @@ class TaskPropertyTestUtils {
             }
 
             @Override
-            void visitContents(FileCollectionResolveContext context) {
+            protected void visitChildren(Consumer<FileCollectionInternal> consumer) {
                 for (def filePropertySpec : visitor.fileProperties) {
-                    context.add(filePropertySpec.getPropertyFiles())
+                    consumer.accept(filePropertySpec.getPropertyFiles())
                 }
             }
         }

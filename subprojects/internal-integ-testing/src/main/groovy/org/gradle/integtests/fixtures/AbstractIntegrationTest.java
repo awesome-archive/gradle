@@ -21,6 +21,7 @@ import org.gradle.integtests.fixtures.executer.GradleBackedArtifactBuilder;
 import org.gradle.integtests.fixtures.executer.GradleContextualExecuter;
 import org.gradle.integtests.fixtures.executer.GradleDistribution;
 import org.gradle.integtests.fixtures.executer.GradleExecuter;
+import org.gradle.integtests.fixtures.executer.InProcessGradleExecuter;
 import org.gradle.integtests.fixtures.executer.IntegrationTestBuildContext;
 import org.gradle.integtests.fixtures.executer.UnderDevelopmentGradleDistribution;
 import org.gradle.test.fixtures.file.TestFile;
@@ -35,10 +36,16 @@ import java.io.File;
 
 public abstract class AbstractIntegrationTest {
     @Rule
-    public final TestNameTestDirectoryProvider testDirectoryProvider = new TestNameTestDirectoryProvider();
+    public final TestNameTestDirectoryProvider testDirectoryProvider = new TestNameTestDirectoryProvider(getClass());
+
+    @Rule
+    public final UnsupportedWithConfigurationCacheRule unsupportedWithConfigurationCache = new UnsupportedWithConfigurationCacheRule();
+
+    @Rule
+    public final ToBeFixedForConfigurationCacheRule toBeFixedForConfigurationCache = new ToBeFixedForConfigurationCacheRule();
 
     public final GradleDistribution distribution = new UnderDevelopmentGradleDistribution(getBuildContext());
-    public final GradleContextualExecuter executer = new GradleContextualExecuter(distribution, testDirectoryProvider, getBuildContext());
+    public final GradleContextualExecuter executer = createExecuter();
 
     public IntegrationTestBuildContext getBuildContext() {
         return IntegrationTestBuildContext.INSTANCE;
@@ -53,6 +60,10 @@ public abstract class AbstractIntegrationTest {
     @After
     public void cleanup() {
         executer.cleanup();
+    }
+
+    protected GradleContextualExecuter createExecuter() {
+        return new GradleContextualExecuter(distribution, testDirectoryProvider, getBuildContext());
     }
 
     protected GradleDistribution getDistribution() {
@@ -96,7 +107,7 @@ public abstract class AbstractIntegrationTest {
     }
 
     protected ArtifactBuilder artifactBuilder() {
-        GradleExecuter gradleExecuter = getDistribution().executer(testDirectoryProvider, getBuildContext());
+        GradleExecuter gradleExecuter = new InProcessGradleExecuter(distribution, testDirectoryProvider);
         gradleExecuter.withGradleUserHomeDir(getExecuter().getGradleUserHomeDir());
         return new GradleBackedArtifactBuilder(gradleExecuter, getTestDirectory().file("artifacts"));
     }

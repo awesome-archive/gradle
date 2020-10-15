@@ -16,9 +16,10 @@
 package org.gradle.integtests.resolve.maven
 
 import org.gradle.integtests.fixtures.AbstractDependencyResolutionTest
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 
 class MavenFileRepoResolveIntegrationTest extends AbstractDependencyResolutionTest {
-    public void "can resolve snapshots uncached from local Maven repository"() {
+    void "can resolve snapshots uncached from local Maven repository"() {
         given:
         def moduleA = mavenRepo().module('group', 'projectA', '1.2-SNAPSHOT')
         def moduleB = mavenRepo().module('group', 'projectB', '9.1')
@@ -55,7 +56,7 @@ task retrieve(type: Sync) {
         buildDir.file('projectB-9.1.jar').assertIsCopyOf(moduleB.artifactFile)
     }
 
-    public void "does not cache artifacts and metadata from local Maven repository"() {
+    void "does not cache artifacts and metadata from local Maven repository"() {
         given:
         def moduleA = mavenRepo().module('group', 'projectA', '1.2')
         def moduleB = mavenRepo().module('group', 'projectB', '9.1')
@@ -92,7 +93,7 @@ task retrieve(type: Sync) {
         buildDir.file('projectB-9.1.jar').assertIsCopyOf(moduleB.artifactFile)
     }
 
-    public void "uses artifactUrls to resolve artifacts"() {
+    void "uses artifactUrls to resolve artifacts"() {
         given:
         def moduleA = mavenRepo().module('group', 'projectA', '1.2')
         def moduleB = mavenRepo().module('group', 'projectB', '9.1')
@@ -134,6 +135,7 @@ task retrieve(type: Sync) {
         buildDir.file('projectB-9.1.jar').assertIsCopyOf(moduleB.artifactFile)
     }
 
+    @ToBeFixedForConfigurationCache
     def "cannot define authentication for local file repo"() {
         given:
         def repo = mavenRepo()

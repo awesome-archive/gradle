@@ -62,11 +62,12 @@ public class DefaultTestReport implements TestReporter {
     private AllTestResults loadModelFromProvider(TestResultsProvider resultsProvider) {
         final AllTestResults model = new AllTestResults();
         resultsProvider.visitClasses(new Action<TestClassResult>() {
+            @Override
             public void execute(TestClassResult classResult) {
-                model.addTestClass(classResult.getId(), classResult.getClassName());
+                model.addTestClass(classResult.getId(), classResult.getClassName(), classResult.getClassDisplayName());
                 List<TestMethodResult> collectedResults = classResult.getResults();
                 for (TestMethodResult collectedResult : collectedResults) {
-                    final TestResult testResult = model.addTest(classResult.getId(), classResult.getClassName(), collectedResult.getName(), collectedResult.getDuration());
+                    final TestResult testResult = model.addTest(classResult.getId(), classResult.getClassName(), classResult.getClassDisplayName(), collectedResult.getName(), collectedResult.getDisplayName(), collectedResult.getDuration());
                     if (collectedResult.getResultType() == SKIPPED) {
                         testResult.setIgnored();
                     } else {

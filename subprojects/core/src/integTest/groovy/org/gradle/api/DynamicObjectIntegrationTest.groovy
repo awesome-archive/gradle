@@ -16,6 +16,7 @@
 package org.gradle.api
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import spock.lang.Issue
 
 class DynamicObjectIntegrationTest extends AbstractIntegrationSpec {
@@ -23,6 +24,7 @@ class DynamicObjectIntegrationTest extends AbstractIntegrationSpec {
         file('settings.gradle') << "rootProject.name = 'test'"
     }
 
+    @ToBeFixedForConfigurationCache(because = "Task.getProject() during execution")
     def canAddDynamicPropertiesToProject() {
         file("settings.gradle").writelns("include 'child'")
         file("build.gradle").writelns(
@@ -68,6 +70,7 @@ class DynamicObjectIntegrationTest extends AbstractIntegrationSpec {
         succeeds("testTask")
     }
 
+    @ToBeFixedForConfigurationCache(because = "Task.getProject() during execution")
     def canAddDynamicMethodsToProject() {
 
         file("settings.gradle").writelns("include 'child'")
@@ -401,6 +404,7 @@ assert 'overridden value' == global
         succeeds()
     }
 
+    @ToBeFixedForConfigurationCache(because = "Task.getProject() during execution")
     def canAddExtensionsToDynamicExtensions() {
 
         file('build.gradle') << '''
@@ -554,7 +558,7 @@ task print(type: MyTask) {
 
         expect:
         succeeds("print")
-        result.output.contains("transform(Class)")
+        outputContains("transform(Class)")
     }
 
     def failsWhenTryingToCallMethodWithClassValue() {
@@ -630,6 +634,36 @@ task print(type: MyTask) {
     }
 
     def failsWhenGettingUnknownPropertyOnDecoratedObject() {
+        buildFile << """
+            class Thing {
+            }
+            def thing = objects.newInstance(Thing)
+            assert !thing.hasProperty("p1")
+            println thing.p1
+        """
+
+        expect:
+        fails()
+        failure.assertHasLineNumber(6)
+        failure.assertHasCause("Could not get unknown property 'p1' for object of type Thing.")
+    }
+
+    def failsWhenGettingUnknownPropertyOnExtensionObject() {
+        buildFile << """
+            class Thing {
+            }
+            extensions.add('thing', Thing)
+            assert !thing.hasProperty("p1")
+            println thing.p1
+        """
+
+        expect:
+        fails()
+        failure.assertHasLineNumber(6)
+        failure.assertHasCause("Could not get unknown property 'p1' for extension 'thing' of type Thing.")
+    }
+
+    def failsWhenGettingUnknownPropertyOnExtensionObjectWithToStringImplementation() {
         buildFile << """
             class Thing {
                 String toString() { "<thing>" }
@@ -984,6 +1018,7 @@ task print(type: MyTask) {
         succeeds()
     }
 
+    @ToBeFixedForConfigurationCache(because = "Task.getProject() during execution")
     def findPropertyShouldReturnValueIfFound() {
         buildFile << """
             task run {
@@ -998,6 +1033,7 @@ task print(type: MyTask) {
         succeeds("run")
     }
 
+    @ToBeFixedForConfigurationCache(because = "Task.getProject() during execution")
     def findPropertyShouldReturnNullIfNotFound() {
         buildFile << """
             task run {

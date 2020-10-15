@@ -14,13 +14,15 @@
  * limitations under the License.
  */
 package org.gradle.scala
+
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.integtests.fixtures.ZincScalaCompileFixture
 import org.gradle.integtests.fixtures.MultiVersionIntegrationSpec
 import org.gradle.integtests.fixtures.TargetCoverage
 import org.gradle.integtests.fixtures.ScalaCoverage
 import org.junit.Rule
 
-import static org.hamcrest.Matchers.startsWith
+import static org.hamcrest.CoreMatchers.startsWith
 
 @TargetCoverage({ScalaCoverage.DEFAULT})
 class ScalaBasePluginIntegrationTest extends MultiVersionIntegrationSpec {
@@ -37,7 +39,7 @@ class ScalaBasePluginIntegrationTest extends MultiVersionIntegrationSpec {
         ${mavenCentralRepository()}
 
         dependencies {
-           customCompile "org.scala-lang:scala-library:$version"
+           customImplementation "org.scala-lang:scala-library:$version"
         }
 
         task scaladoc(type: ScalaDoc) {
@@ -67,7 +69,7 @@ sourceSets {
 ${mavenCentralRepository()}
 
 dependencies {
-    customCompile "org.scala-lang:scala-library:$version"
+    customImplementation "org.scala-lang:scala-library:$version"
 }
 
 task scaladoc(type: ScalaDoc) {
@@ -86,6 +88,7 @@ task verify {
         succeeds("verify")
     }
 
+    @ToBeFixedForConfigurationCache
     def "not specifying a scala runtime produces decent error message"() {
         given:
         buildFile << """
@@ -98,7 +101,7 @@ task verify {
             ${mavenCentralRepository()}
 
             dependencies {
-                compile "com.google.guava:guava:11.0.2"
+                implementation "com.google.guava:guava:11.0.2"
             }
         """
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2013 the original author or authors.
+ * Copyright 2018 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,51 +16,56 @@
 
 package org.gradle.internal.featurelifecycle;
 
+import com.google.common.annotations.VisibleForTesting;
+
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 /**
  * An immutable description of the usage of a deprecated feature.
  */
-public class FeatureUsage {
-    private final String message;
-    private final List<StackTraceElement> stack;
+public abstract class FeatureUsage {
+
+    private final String summary;
     private final Class<?> calledFrom;
+    private final Exception traceException;
 
-    public FeatureUsage(String message, Class<?> calledFrom) {
-        this.message = message;
+    private List<StackTraceElement> stack;
+
+    protected FeatureUsage(String summary, Class<?> calledFrom) {
+        this(summary, calledFrom, new Exception());
+    }
+
+    @VisibleForTesting
+    protected FeatureUsage(String summary, Class<?> calledFrom, Exception traceException) {
+        this.summary = summary;
         this.calledFrom = calledFrom;
-        this.stack = Collections.emptyList();
-    }
-
-    FeatureUsage(FeatureUsage usage, List<StackTraceElement> stack) {
-        if (stack == null) {
-            throw new NullPointerException("stack");
-        }
-        this.message = usage.message;
-        this.calledFrom = usage.calledFrom;
-        this.stack = Collections.unmodifiableList(new ArrayList<StackTraceElement>(stack));
-    }
-
-    public String getMessage() {
-        return message;
-    }
-
-    public List<StackTraceElement> getStack() {
-        return stack;
+        this.traceException = traceException;
     }
 
     /**
-     * Creates a copy of this usage with the stack trace populated. Implementation is a bit limited in that it assumes that
-     * this method is called from the same thread that triggered the usage.
+     * A concise sentence summarising the usage.
+     *
+     * Example: Method Foo.bar() has been deprecated.
      */
-    public FeatureUsage withStackTrace() {
-        if (!stack.isEmpty()) {
-            return this;
-        }
+    public String getSummary() {
+        return summary;
+    }
 
-        StackTraceElement[] originalStack = new Exception().getStackTrace();
+    protected Class<?> getCalledFrom() {
+        return calledFrom;
+    }
+
+    public List<StackTraceElement> getStack() {
+        if (stack == null) {
+            stack = calculateStack(calledFrom, traceException);
+        }
+        return stack;
+    }
+
+    private static List<StackTraceElement> calculateStack(Class<?> calledFrom, Exception traceRoot) {
+        StackTraceElement[] originalStack = traceRoot.getStackTrace();
+        List<StackTraceElement> result = new ArrayList<StackTraceElement>();
         final String calledFromName = calledFrom.getName();
         boolean calledFromFound = false;
         int caller;
@@ -76,28 +81,26 @@ public class FeatureUsage {
                 }
             }
         }
-
-        caller = skipSystemStackElements(originalStack, caller);
-
-        List<StackTraceElement> result = new ArrayList<StackTraceElement>();
         for (; caller < originalStack.length; caller++) {
-            result.add(originalStack[caller]);
-        }
-        return new FeatureUsage(this, result);
-    }
-
-    private static int skipSystemStackElements(StackTraceElement[] stackTrace, int caller) {
-        for (; caller < stackTrace.length; caller++) {
-            String currentClassName = stackTrace[caller].getClassName();
-            if (!currentClassName.startsWith("org.codehaus.groovy.")
-                && !currentClassName.startsWith("org.gradle.internal.metaobject.")
-                && !currentClassName.startsWith("groovy.")
-                && !currentClassName.startsWith("java.")
-                && !currentClassName.startsWith("jdk.internal.")
-                ) {
-                break;
+            StackTraceElement stackTraceElement = originalStack[caller];
+            if (!isSystemStackFrame(stackTraceElement.getClassName())) {
+                result.add(stackTraceElement);
             }
         }
-        return caller;
+        return result;
     }
+
+    private static boolean isSystemStackFrame(String className) {
+        return className.startsWith("jdk.internal.") ||
+            className.startsWith("sun.") ||
+            className.startsWith("com.sun.") ||
+            className.startsWith("org.codehaus.groovy.") ||
+            className.startsWith("org.gradle.internal.metaobject.") ||
+            className.startsWith("org.gradle.kotlin.dsl.execution.");
+    }
+
+    public String formattedMessage() {
+        return summary;
+    }
+
 }

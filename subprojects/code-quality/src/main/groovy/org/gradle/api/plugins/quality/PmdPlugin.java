@@ -15,27 +15,25 @@
  */
 package org.gradle.api.plugins.quality;
 
-import com.google.common.util.concurrent.Callables;
-import org.gradle.api.Action;
 import org.gradle.api.JavaVersion;
 import org.gradle.api.artifacts.Configuration;
-import org.gradle.api.artifacts.DependencySet;
-import org.gradle.api.file.FileCollection;
+import org.gradle.api.file.ProjectLayout;
+import org.gradle.api.file.RegularFile;
 import org.gradle.api.internal.ConventionMapping;
 import org.gradle.api.plugins.quality.internal.AbstractCodeQualityPlugin;
-import org.gradle.api.reporting.SingleFileReport;
-import org.gradle.api.resources.TextResource;
+import org.gradle.api.provider.Provider;
+import org.gradle.api.provider.ProviderFactory;
 import org.gradle.api.tasks.SourceSet;
 import org.gradle.util.VersionNumber;
 
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
-import java.util.concurrent.Callable;
+
+import static org.gradle.api.internal.lambdas.SerializableLambdas.action;
 
 /**
- * A plugin for the <a href="http://pmd.sourceforge.net/">PMD</a> source code analyzer.
+ * A plugin for the <a href="https://pmd.github.io/">PMD</a> source code analyzer.
  * <p>
  * Declares a <tt>pmd</tt> configuration which needs to be configured with the PMD library to be used.
  * <p>
@@ -48,7 +46,7 @@ import java.util.concurrent.Callable;
  */
 public class PmdPlugin extends AbstractCodeQualityPlugin<Pmd> {
 
-    public static final String DEFAULT_PMD_VERSION = "5.6.1";
+    public static final String DEFAULT_PMD_VERSION = "6.26.0";
     private PmdExtension extension;
 
     @Override
@@ -65,14 +63,10 @@ public class PmdPlugin extends AbstractCodeQualityPlugin<Pmd> {
     protected CodeQualityExtension createExtension() {
         extension = project.getExtensions().create("pmd", PmdExtension.class, project);
         extension.setToolVersion(DEFAULT_PMD_VERSION);
-        extension.setRuleSets(new ArrayList<String>(Arrays.asList("java-basic")));
-        extension.setRuleSetFiles(project.files());
-        conventionMappingOf(extension).map("targetJdk", new Callable<Object>() {
-            @Override
-            public Object call() {
-                return getDefaultTargetJdk(getJavaPluginConvention().getSourceCompatibility());
-            }
-        });
+        extension.setRuleSets(new ArrayList<>(Arrays.asList("category/java/errorprone.xml")));
+        extension.setRuleSetFiles(project.getLayout().files());
+        conventionMappingOf(extension).map("targetJdk", () ->
+            getDefaultTargetJdk(getJavaPluginConvention().getSourceCompatibility()));
         return extension;
     }
 
@@ -87,85 +81,54 @@ public class PmdPlugin extends AbstractCodeQualityPlugin<Pmd> {
     }
 
     @Override
-    protected void configureTaskDefaults(Pmd task, String baseName) {
-        Configuration configuration = project.getConfigurations().getAt("pmd");
+    protected void configureConfiguration(Configuration configuration) {
         configureDefaultDependencies(configuration);
+    }
+
+    @Override
+    protected void configureTaskDefaults(Pmd task, String baseName) {
+        Configuration configuration = project.getConfigurations().getAt(getConfigurationName());
         configureTaskConventionMapping(configuration, task);
         configureReportsConventionMapping(task, baseName);
     }
 
     private void configureDefaultDependencies(Configuration configuration) {
-        configuration.defaultDependencies(new Action<DependencySet>() {
-            @Override
-            public void execute(DependencySet dependencies) {
+        configuration.defaultDependencies(dependencies -> {
                 VersionNumber version = VersionNumber.parse(extension.getToolVersion());
                 String dependency = calculateDefaultDependencyNotation(version);
                 dependencies.add(project.getDependencies().create(dependency));
             }
-        });
+        );
     }
 
-    private void configureTaskConventionMapping(Configuration configuration, Pmd task) {
+    private void configureTaskConventionMapping(Configuration configuration, final Pmd task) {
         ConventionMapping taskMapping = task.getConventionMapping();
-        taskMapping.map("pmdClasspath", Callables.returning(configuration));
-        taskMapping.map("ruleSets", new Callable<List<String>>() {
-            @Override
-            public List<String> call() {
-                return extension.getRuleSets();
-            }
-        });
-        taskMapping.map("ruleSetConfig", new Callable<TextResource>() {
-            @Override
-            public TextResource call() {
-                return extension.getRuleSetConfig();
-            }
-        });
-        taskMapping.map("ruleSetFiles", new Callable<FileCollection>() {
-            @Override
-            public FileCollection call() {
-                return extension.getRuleSetFiles();
-            }
-        });
-        taskMapping.map("ignoreFailures", new Callable<Boolean>() {
-            @Override
-            public Boolean call() {
-                return extension.isIgnoreFailures();
-            }
-        });
-        taskMapping.map("rulePriority", new Callable<Integer>() {
-            @Override
-            public Integer call() {
-                return extension.getRulePriority();
-            }
-        });
-        taskMapping.map("consoleOutput", new Callable<Boolean>() {
-            @Override
-            public Boolean call() {
-                return extension.isConsoleOutput();
-            }
-        });
-        taskMapping.map("targetJdk", new Callable<TargetJdk>() {
-            @Override
-            public TargetJdk call() {
-                return extension.getTargetJdk();
-            }
-        });
+        taskMapping.map("pmdClasspath", () -> configuration);
+        taskMapping.map("ruleSets", () -> extension.getRuleSets());
+        taskMapping.map("ruleSetConfig", () -> extension.getRuleSetConfig());
+        taskMapping.map("ruleSetFiles", () -> extension.getRuleSetFiles());
+        taskMapping.map("ignoreFailures", () -> extension.isIgnoreFailures());
+        taskMapping.map("consoleOutput", () -> extension.isConsoleOutput());
+        taskMapping.map("targetJdk", () -> extension.getTargetJdk());
+
+        task.getRulesMinimumPriority().convention(extension.getRulesMinimumPriority());
+        task.getMaxFailures().convention(extension.getMaxFailures());
+        task.getIncrementalAnalysis().convention(extension.getIncrementalAnalysis());
     }
 
     private void configureReportsConventionMapping(Pmd task, final String baseName) {
-        task.getReports().all(new Action<SingleFileReport>() {
-            @Override
-            public void execute(final SingleFileReport report) {
-                ConventionMapping reportMapping = AbstractCodeQualityPlugin.conventionMappingOf(report);
-                reportMapping.map("enabled", Callables.returning(true));
-                reportMapping.map("destination", new Callable<File>() {
-                    @Override
-                    public File call() {
-                        return new File(extension.getReportsDir(), baseName + "." + report.getName());
-                    }
-                });
-            }
-        });
+        ProjectLayout layout = project.getLayout();
+        ProviderFactory providers = project.getProviders();
+        Provider<RegularFile> reportsDir = layout.file(providers.provider(() -> extension.getReportsDir()));
+        task.getReports().all(action(report -> {
+            report.getRequired().convention(true);
+            report.getOutputLocation().convention(
+                layout.getProjectDirectory().file(providers.provider(() -> {
+                    String reportFileName = baseName + "." + report.getName();
+                    return new File(reportsDir.get().getAsFile(), reportFileName).getAbsolutePath();
+                }))
+            );
+        }));
     }
 
     private String calculateDefaultDependencyNotation(VersionNumber toolVersion) {
@@ -182,11 +145,7 @@ public class PmdPlugin extends AbstractCodeQualityPlugin<Pmd> {
         task.setDescription("Run PMD analysis for " + sourceSet.getName() + " classes");
         task.setSource(sourceSet.getAllJava());
         ConventionMapping taskMapping = task.getConventionMapping();
-        taskMapping.map("classpath", new Callable<FileCollection>() {
-            @Override
-            public FileCollection call() {
-                return sourceSet.getOutput().plus(sourceSet.getCompileClasspath());
-            }
-        });
+        taskMapping.map("classpath", () ->
+            sourceSet.getOutput().plus(sourceSet.getCompileClasspath()));
     }
 }

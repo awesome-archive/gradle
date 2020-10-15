@@ -19,6 +19,7 @@ package org.gradle.launcher.daemon.configuration;
 import org.gradle.internal.buildoption.BooleanBuildOption;
 import org.gradle.internal.buildoption.BooleanCommandLineOptionConfiguration;
 import org.gradle.internal.buildoption.BuildOption;
+import org.gradle.internal.buildoption.BuildOptionSet;
 import org.gradle.internal.buildoption.CommandLineOptionConfiguration;
 import org.gradle.internal.buildoption.EnabledOnlyBooleanBuildOption;
 import org.gradle.internal.buildoption.Origin;
@@ -32,8 +33,9 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 
-public class DaemonBuildOptions {
+public class DaemonBuildOptions extends BuildOptionSet<DaemonParameters> {
 
     private static List<BuildOption<DaemonParameters>> options;
 
@@ -49,6 +51,7 @@ public class DaemonBuildOptions {
         options.add(new ForegroundOption());
         options.add(new StopOption());
         options.add(new StatusOption());
+        options.add(new PriorityOption());
         DaemonBuildOptions.options = Collections.unmodifiableList(options);
     }
 
@@ -56,8 +59,9 @@ public class DaemonBuildOptions {
         return options;
     }
 
-    private DaemonBuildOptions() {
-
+    @Override
+    public List<? extends BuildOption<? super DaemonParameters>> getAllOptions() {
+        return options;
     }
 
     public static class IdleTimeoutOption extends StringBuildOption<DaemonParameters> {
@@ -70,7 +74,7 @@ public class DaemonBuildOptions {
         @Override
         public void applyTo(String value, DaemonParameters settings, Origin origin) {
             try {
-                settings.setIdleTimeout(new Integer(value));
+                settings.setIdleTimeout(Integer.valueOf(value));
             } catch (NumberFormatException e) {
                 origin.handleInvalidValue(value, "the value should be an int");
             }
@@ -87,7 +91,7 @@ public class DaemonBuildOptions {
         @Override
         public void applyTo(String value, DaemonParameters settings, Origin origin) {
             try {
-                settings.setPeriodicCheckInterval(new Integer(value));
+                settings.setPeriodicCheckInterval(Integer.valueOf(value));
             } catch (NumberFormatException e) {
                 origin.handleInvalidValue(value, "the value should be an int");
             }
@@ -171,7 +175,7 @@ public class DaemonBuildOptions {
 
     public static class ForegroundOption extends EnabledOnlyBooleanBuildOption<DaemonParameters> {
         public ForegroundOption() {
-            super(null, CommandLineOptionConfiguration.create("foreground", "Starts the Gradle Daemon in the foreground.").incubating());
+            super(null, CommandLineOptionConfiguration.create("foreground", "Starts the Gradle Daemon in the foreground."));
         }
 
         @Override
@@ -199,6 +203,23 @@ public class DaemonBuildOptions {
         @Override
         public void applyTo(DaemonParameters settings, Origin origin) {
             settings.setStatus(true);
+        }
+    }
+
+    public static class PriorityOption extends StringBuildOption<DaemonParameters> {
+        public static final String GRADLE_PROPERTY = "org.gradle.priority";
+
+        public PriorityOption() {
+            super(GRADLE_PROPERTY, CommandLineOptionConfiguration.create("priority", "Specifies the scheduling priority for the Gradle daemon and all processes launched by it. Values are 'normal' (default) or 'low'").incubating());
+        }
+
+        @Override
+        public void applyTo(String value, DaemonParameters settings, Origin origin) {
+            try {
+                settings.setPriority(DaemonParameters.Priority.valueOf(value.toUpperCase(Locale.ROOT)));
+            } catch (IllegalArgumentException e) {
+                origin.handleInvalidValue(value);
+            }
         }
     }
 }

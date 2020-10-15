@@ -17,8 +17,10 @@
 package org.gradle.model
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
 import org.gradle.language.base.LanguageSourceSet
 
+@UnsupportedWithConfigurationCache(because = "software model")
 class RuleSourceAppliedByRuleMethodIntegrationTest extends AbstractIntegrationSpec {
     def "@Rule method can apply rules to a particular target"() {
         buildFile << '''

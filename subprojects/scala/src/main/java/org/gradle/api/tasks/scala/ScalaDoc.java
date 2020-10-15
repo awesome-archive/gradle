@@ -15,13 +15,16 @@
  */
 package org.gradle.api.tasks.scala;
 
+import org.gradle.api.Incubating;
 import org.gradle.api.file.FileCollection;
 import org.gradle.api.file.FileTree;
 import org.gradle.api.internal.project.IsolatedAntBuilder;
-import org.gradle.api.internal.tasks.scala.AntScalaDoc;
+import org.gradle.api.model.ObjectFactory;
+import org.gradle.api.provider.Property;
 import org.gradle.api.tasks.CacheableTask;
 import org.gradle.api.tasks.Classpath;
 import org.gradle.api.tasks.Input;
+import org.gradle.api.tasks.Internal;
 import org.gradle.api.tasks.Nested;
 import org.gradle.api.tasks.Optional;
 import org.gradle.api.tasks.OutputDirectory;
@@ -29,14 +32,19 @@ import org.gradle.api.tasks.PathSensitive;
 import org.gradle.api.tasks.PathSensitivity;
 import org.gradle.api.tasks.SourceTask;
 import org.gradle.api.tasks.TaskAction;
+import org.gradle.api.tasks.scala.internal.GenerateScaladoc;
 import org.gradle.util.GUtil;
+import org.gradle.workers.WorkQueue;
+import org.gradle.workers.WorkerExecutor;
 
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 import java.io.File;
+import java.util.List;
 
 /**
  * Generates HTML API documentation for Scala source files.
+ *
  */
 @CacheableTask
 public class ScalaDoc extends SourceTask {
@@ -47,9 +55,24 @@ public class ScalaDoc extends SourceTask {
     private FileCollection scalaClasspath;
     private ScalaDocOptions scalaDocOptions = new ScalaDocOptions();
     private String title;
+    private final Property<String> maxMemory;
+
+    public ScalaDoc() {
+        this.maxMemory = getObjectFactory().property(String.class);
+    }
 
     @Inject
     protected IsolatedAntBuilder getAntBuilder() {
+        throw new UnsupportedOperationException();
+    }
+
+    @Inject
+    public WorkerExecutor getWorkerExecutor() {
+        throw new UnsupportedOperationException();
+    }
+
+    @Inject
+    public ObjectFactory getObjectFactory() {
         throw new UnsupportedOperationException();
     }
 
@@ -124,14 +147,66 @@ public class ScalaDoc extends SourceTask {
         this.title = title;
     }
 
+    /**
+     * Returns the amount of memory allocated to this task.
+     * Ex. 512m, 1G
+     *
+     * @since 6.5
+     */
+    @Incubating
+    @Internal
+    public Property<String> getMaxMemory() {
+        return maxMemory;
+    }
+
     @TaskAction
     protected void generate() {
         ScalaDocOptions options = getScalaDocOptions();
         if (!GUtil.isTrue(options.getDocTitle())) {
             options.setDocTitle(getTitle());
         }
-        AntScalaDoc antScalaDoc = new AntScalaDoc(getAntBuilder());
-        antScalaDoc.execute(getSource(), getDestinationDir(), getClasspath(), getScalaClasspath(), options);
-    }
 
+        WorkQueue queue = getWorkerExecutor().processIsolation(worker -> {
+            worker.getClasspath().from(getScalaClasspath());
+            if(getMaxMemory().isPresent()) {
+                worker.forkOptions(forkOptions -> forkOptions.setMaxHeapSize(getMaxMemory().get()));
+            }
+        });
+        queue.submit(GenerateScaladoc.class, parameters -> {
+            parameters.getClasspath().from(getClasspath());
+            parameters.getOutputDirectory().set(getDestinationDir());
+            parameters.getSources().from(getSource());
+
+            if (options.isDeprecation()) {
+                parameters.getOptions().add("-deprecation");
+            }
+
+            if (options.isUnchecked()) {
+                parameters.getOptions().add("-unchecked");
+            }
+
+            String footer = options.getFooter();
+            if (footer!=null) {
+                parameters.getOptions().add("-doc-footer");
+                parameters.getOptions().add(footer);
+            }
+
+            String docTitle = options.getDocTitle();
+            if (docTitle!=null) {
+                parameters.getOptions().add("-doc-title");
+                parameters.getOptions().add(docTitle);
+            }
+
+            // None of these options work for Scala >=2.8
+            // options.getBottom();;
+            // options.getTop();
+            // options.getHeader();
+            // options.getWindowTitle();
+
+            List<String> additionalParameters = options.getAdditionalParameters();
+            if (additionalParameters!=null) {
+                parameters.getOptions().addAll(additionalParameters);
+            }
+        });
+    }
 }

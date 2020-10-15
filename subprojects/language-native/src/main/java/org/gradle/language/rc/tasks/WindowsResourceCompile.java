@@ -21,6 +21,7 @@ import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.FileCollection;
 import org.gradle.api.internal.provider.Providers;
 import org.gradle.api.model.ObjectFactory;
+import org.gradle.api.provider.ListProperty;
 import org.gradle.api.provider.Property;
 import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.InputFiles;
@@ -29,9 +30,9 @@ import org.gradle.api.tasks.Nested;
 import org.gradle.api.tasks.OutputDirectory;
 import org.gradle.api.tasks.PathSensitive;
 import org.gradle.api.tasks.PathSensitivity;
+import org.gradle.api.tasks.SkipWhenEmpty;
 import org.gradle.api.tasks.TaskAction;
 import org.gradle.api.tasks.WorkResult;
-import org.gradle.api.tasks.incremental.IncrementalTaskInputs;
 import org.gradle.internal.Cast;
 import org.gradle.internal.operations.logging.BuildOperationLogger;
 import org.gradle.internal.operations.logging.BuildOperationLoggerFactory;
@@ -46,12 +47,12 @@ import org.gradle.nativeplatform.toolchain.NativeToolChain;
 import org.gradle.nativeplatform.toolchain.internal.NativeCompileSpec;
 import org.gradle.nativeplatform.toolchain.internal.NativeToolChainInternal;
 import org.gradle.nativeplatform.toolchain.internal.PlatformToolProvider;
+import org.gradle.work.Incremental;
+import org.gradle.work.InputChanges;
 
 import javax.inject.Inject;
 import java.io.File;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
 
@@ -67,19 +68,20 @@ public class WindowsResourceCompile extends DefaultTask {
     private ConfigurableFileCollection includes;
     private ConfigurableFileCollection source;
     private Map<String, String> macros = new LinkedHashMap<String, String>();
-    private List<String> compilerArgs = new ArrayList<String>();
+    private final ListProperty<String> compilerArgs;
     private final IncrementalCompilerBuilder.IncrementalCompiler incrementalCompiler;
 
     public WindowsResourceCompile() {
         ObjectFactory objectFactory = getProject().getObjects();
         includes = getProject().files();
         source = getProject().files();
+        this.compilerArgs = getProject().getObjects().listProperty(String.class);
         this.targetPlatform = objectFactory.property(NativePlatform.class);
         this.toolChain = objectFactory.property(NativeToolChain.class);
-        incrementalCompiler = getIncrementalCompilerBuilder().newCompiler(this, source, includes, Providers.FALSE);
+        incrementalCompiler = getIncrementalCompilerBuilder().newCompiler(this, source, includes, macros, Providers.FALSE);
         getInputs().property("outputType", new Callable<String>() {
             @Override
-            public String call() throws Exception {
+            public String call() {
                 NativeToolChainInternal nativeToolChain = (NativeToolChainInternal) toolChain.get();
                 NativePlatformInternal nativePlatform = (NativePlatformInternal) targetPlatform.get();
                 return NativeToolChainInternal.Identifier.identify(nativeToolChain, nativePlatform);
@@ -98,7 +100,7 @@ public class WindowsResourceCompile extends DefaultTask {
     }
 
     @TaskAction
-    public void compile(IncrementalTaskInputs inputs) {
+    public void compile(InputChanges inputs) {
         BuildOperationLogger operationLogger = getOperationLoggerFactory().newOperationLogger(getName(), getTemporaryDir());
 
         NativeCompileSpec spec = new DefaultWindowsResourceCompileSpec();
@@ -107,7 +109,7 @@ public class WindowsResourceCompile extends DefaultTask {
         spec.include(getIncludes());
         spec.source(getSource());
         spec.setMacros(getMacros());
-        spec.args(getCompilerArgs());
+        spec.args(getCompilerArgs().get());
         spec.setIncrementalCompile(inputs.isIncremental());
         spec.setOperationLogger(operationLogger);
 
@@ -161,6 +163,8 @@ public class WindowsResourceCompile extends DefaultTask {
     /**
      * Returns the header directories to be used for compilation.
      */
+    @Incremental
+    @PathSensitive(PathSensitivity.RELATIVE)
     @InputFiles
     public ConfigurableFileCollection getIncludes() {
         return includes;
@@ -176,6 +180,8 @@ public class WindowsResourceCompile extends DefaultTask {
     /**
      * Returns the source files to be compiled.
      */
+    @SkipWhenEmpty
+    @PathSensitive(PathSensitivity.RELATIVE)
     @InputFiles
     public ConfigurableFileCollection getSource() {
         return source;
@@ -201,22 +207,22 @@ public class WindowsResourceCompile extends DefaultTask {
     }
 
     /**
-     * Additional arguments to provide to the compiler.
+     * <em>Additional</em> arguments to provide to the compiler.
+     *
+     * @since 5.1
      */
     @Input
-    public List<String> getCompilerArgs() {
+    public ListProperty<String> getCompilerArgs() {
         return compilerArgs;
     }
 
-    public void setCompilerArgs(List<String> compilerArgs) {
-        this.compilerArgs = compilerArgs;
-    }
 
     /**
      * The set of dependent headers. This is used for up-to-date checks only.
      *
      * @since 4.5
      */
+    @Incremental
     @InputFiles
     @PathSensitive(PathSensitivity.NAME_ONLY)
     protected FileCollection getHeaderDependencies() {

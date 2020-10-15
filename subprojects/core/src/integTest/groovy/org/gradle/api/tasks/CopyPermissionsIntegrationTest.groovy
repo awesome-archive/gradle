@@ -25,6 +25,7 @@ import spock.lang.Unroll
 
 import static org.junit.Assert.assertTrue
 
+@Unroll
 class CopyPermissionsIntegrationTest extends AbstractIntegrationSpec {
 
     @Requires(TestPrecondition.FILE_PERMISSIONS)
@@ -48,27 +49,6 @@ class CopyPermissionsIntegrationTest extends AbstractIntegrationSpec {
         where:
         mode << [0746, 0746]
         testFileName << ["reference.txt", "\u0627\u0644\u0627\u0655\u062F\u0627\u0631\u0629.txt"]
-    }
-
-    @Requires(TestPrecondition.FILE_PERMISSIONS)
-    def "file permissions can be modified with eachFile closure"() {
-        given:
-        def testSourceFile = file("reference.txt") << 'test file"'
-        testSourceFile.mode = 0746
-        and:
-        buildFile << """
-            task copy(type: Copy) {
-                from "reference.txt"
-                eachFile {
-		            it.setMode(0755)
-	            }
-                into ("build/tmp")
-            }
-            """
-        when:
-        run "copy"
-        then:
-        file("build/tmp/reference.txt").mode == 0755
     }
 
     @Requires(TestPrecondition.FILE_PERMISSIONS)
@@ -115,8 +95,57 @@ class CopyPermissionsIntegrationTest extends AbstractIntegrationSpec {
         then:
         file("build/tmp/reference.txt").mode == mode
 
+        when:
+        run "copy"
+
+        then:
+        skipped(":copy")
+        file("build/tmp/reference.txt").mode == mode
+
+        when:
+        file("reference.txt").text = "new"
+        run "copy"
+
+        then:
+        executedAndNotSkipped(":copy")
+        file("build/tmp/reference.txt").mode == mode
+
         where:
         mode << [0755, 0776]
+    }
+
+    @Requires(TestPrecondition.FILE_PERMISSIONS)
+    def "file permissions can be modified with eachFile closure"() {
+        given:
+        def testSourceFile = file("reference.txt") << 'test file"'
+        testSourceFile.mode = 0746
+        and:
+        buildFile << """
+            task copy(type: Copy) {
+                from "reference.txt"
+                eachFile {
+		            it.setMode(0755)
+	            }
+                into ("build/tmp")
+            }
+            """
+        when:
+        run "copy"
+        then:
+        file("build/tmp/reference.txt").mode == 0755
+
+        when:
+        run "copy"
+        then:
+        skipped(":copy")
+        file("build/tmp/reference.txt").mode == 0755
+
+        when:
+        testSourceFile.text = "new"
+        run "copy"
+        then:
+        executedAndNotSkipped(":copy")
+        file("build/tmp/reference.txt").mode == 0755
     }
 
     @Requires(TestPrecondition.FILE_PERMISSIONS)
@@ -169,6 +198,20 @@ class CopyPermissionsIntegrationTest extends AbstractIntegrationSpec {
         run "copy"
         then:
         file("build/tmp/testchild").mode == mode
+
+        when:
+        run "copy"
+        then:
+        skipped(":copy")
+        file("build/tmp/testchild").mode == mode
+
+        when:
+        parent.file("other/file.txt") << "test file"
+        run "copy"
+        then:
+        executedAndNotSkipped(":copy")
+        file("build/tmp/other").mode == mode
+
         where:
         mode << [0755, 0776]
     }
@@ -221,5 +264,35 @@ class CopyPermissionsIntegrationTest extends AbstractIntegrationSpec {
 
         cleanup:
         file('src/unauthorized').mode = 0777
+    }
+
+    @Requires(TestPrecondition.FILE_PERMISSIONS)
+    @Issue('https://github.com/gradle/gradle/issues/9576')
+    def "unreadable #type not produced by task is ignored"() {
+        given:
+        def input = file("readableFile.txt").createFile()
+
+        def outputDirectory = file("output")
+        def unreadableOutput = create(file("${outputDirectory.name}/unreadable${type.capitalize()}")).makeUnreadable()
+
+        buildFile << """
+            task copy(type: Copy) {
+                from '${input.name}'
+                into '${outputDirectory.name}'
+            }
+        """
+
+        when:
+        succeeds 'copy'
+        then:
+        outputDirectory.list().contains input.name
+
+        cleanup:
+        unreadableOutput.makeReadable()
+
+        where:
+        type        | create
+        'file'      | { it.createFile() }
+        'directory' | { it.createDir() }
     }
 }

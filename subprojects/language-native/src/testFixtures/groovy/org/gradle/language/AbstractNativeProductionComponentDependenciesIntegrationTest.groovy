@@ -16,14 +16,17 @@
 
 package org.gradle.language
 
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
+
 abstract class AbstractNativeProductionComponentDependenciesIntegrationTest extends AbstractNativeDependenciesIntegrationTest {
+    @ToBeFixedForConfigurationCache(bottomSpecs = ['CppLibraryDependenciesIntegrationTest', 'CppApplicationDependenciesIntegrationTest'])
     def "can define different implementation dependencies on each binary"() {
         given:
         settingsFile << 'include "lib"'
         makeComponentWithLibrary()
         buildFile << """
             ${componentUnderTestDsl} {
-                binaries.getByName('mainDebug').configure {                
+                binaries.getByName('mainDebug').configure {
                     dependencies {
                         implementation project(':lib')
                     }
@@ -44,12 +47,16 @@ abstract class AbstractNativeProductionComponentDependenciesIntegrationTest exte
         result.assertTasksExecuted(assembleReleaseTasks, ':assembleRelease')
     }
 
+    @ToBeFixedForConfigurationCache(bottomSpecs = [
+        'CppLibraryDependenciesIntegrationTest',
+        'CppApplicationDependenciesIntegrationTest',
+    ])
     def "can define an included build implementation dependency on a binary"() {
         settingsFile << 'includeBuild "lib"'
         makeComponentWithIncludedBuildLibrary()
         buildFile << """
             ${componentUnderTestDsl} {
-                binaries.getByName('mainDebug').configure {                
+                binaries.getByName('mainDebug').configure {
                     dependencies {
                         implementation 'org.gradle.test:lib:1.0'
                     }

@@ -16,6 +16,7 @@
 package org.gradle.language.nativeplatform.internal.incremental.sourceparser
 
 import com.google.common.collect.ImmutableList
+import com.google.common.collect.Lists
 import org.gradle.language.nativeplatform.internal.Expression
 import org.gradle.language.nativeplatform.internal.Include
 import org.gradle.language.nativeplatform.internal.IncludeDirectives
@@ -30,7 +31,7 @@ import spock.lang.Unroll
 
 class RegexBackedCSourceParserTest extends Specification {
     @Rule
-    final TestNameTestDirectoryProvider temporaryFolder = new TestNameTestDirectoryProvider()
+    final TestNameTestDirectoryProvider temporaryFolder = new TestNameTestDirectoryProvider(getClass())
     CSourceParser parser = new RegexBackedCSourceParser()
 
     protected TestFile getSourceFile() {
@@ -118,19 +119,19 @@ class RegexBackedCSourceParserTest extends Specification {
     }
 
     Macro unresolvedMacro(String name) {
-        return new UnresolveableMacro(name)
+        return new UnresolvableMacro(name)
     }
 
     MacroFunction unresolvedMacroFunction(String name, int parameters = 0) {
-        return new UnresolveableMacroFunction(name, parameters)
+        return new UnresolvableMacroFunction(name, parameters)
     }
 
     List<Macro> getMacros() {
-        return parsedSource.macros
+        return Lists.newArrayList(parsedSource.allMacros)
     }
 
     List<MacroFunction> getMacroFunctions() {
-        return parsedSource.macrosFunctions
+        return Lists.newArrayList(parsedSource.allMacroFunctions)
     }
 
     def "parses file with no includes"() {
@@ -525,11 +526,11 @@ class RegexBackedCSourceParserTest extends Specification {
 #include <system3> /*
    A comment here
 */
-#include MACRO1  // A comment here 
+#include MACRO1  // A comment here
 #include MACRO2 /*
    A comment here
 */
-#include MACRO1()  // A comment here 
+#include MACRO1()  // A comment here
 #include MACRO2() /*
    A comment here
 */
@@ -858,16 +859,16 @@ st3"
         when:
         sourceFile << """
   #   define     SOME_STRING         "abc"      // some extra
-  /*    
-  
+  /*
+
   */  \\
   #/*
-  
-  
+
+
   */\u0000define \\
         /*
          */STRING_2\\
-/*         
+/*
 */"123"\\
     /* */   // some extra"""
 
@@ -1239,16 +1240,16 @@ st3"
         when:
         sourceFile << """
   #   define     SOME_STRING(     )     "abc"      // some extra
-  /*    
-  
+  /*
+
   */  \\
   #/*
-  
-  
+
+
   */ define \\
         /*
          */STRING_2(\\
-/*         
+/*
 */)/* */"123"\\
     /* */  "some extra"""
 

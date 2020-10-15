@@ -17,6 +17,7 @@
 package org.gradle.play.prepare
 
 import org.gradle.integtests.fixtures.MultiVersionIntegrationSpec
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.play.integtest.fixtures.PlayMultiVersionIntegrationTest
 import org.gradle.play.integtest.fixtures.app.AdvancedPlayApp
 import org.gradle.play.integtest.fixtures.app.BasicPlayApp
@@ -26,6 +27,7 @@ import org.gradle.play.integtest.fixtures.app.WithFailingTestsApp
 
 class PopulateRepositoryPreparationTest extends PlayMultiVersionIntegrationTest {
 
+    @ToBeFixedForConfigurationCache(because = "uses configurations at execution time")
     void "populates repository"() {
         playApp.writeSources(testDirectory)
         buildFile << """
@@ -43,7 +45,7 @@ allprojects {
         doFirst {
            configurations.all {
                if (it.canBeResolved) {
-                  println "Pre-emptively download all files for configuration \${it.name}"
+                  println "Preemptively download all files for configuration \${it.name}"
                   println it.resolve()*.name
                }
            }
@@ -56,6 +58,6 @@ allprojects {
         run 'resolveAll'
 
         where:
-        playApp << [new BasicPlayApp(), new AdvancedPlayApp(), new PlayAppWithDependencies(), new PlayCompositeBuild(), new WithFailingTestsApp()]
+        playApp << [new BasicPlayApp(versionNumber), new AdvancedPlayApp(versionNumber), new PlayAppWithDependencies(versionNumber), new PlayCompositeBuild(versionNumber), new WithFailingTestsApp(versionNumber)]
     }
 }

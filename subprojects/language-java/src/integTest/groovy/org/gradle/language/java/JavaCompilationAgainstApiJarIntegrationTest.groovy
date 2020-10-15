@@ -17,14 +17,16 @@
 package org.gradle.language.java
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
 import org.gradle.util.Requires
+import org.gradle.util.TestPrecondition
 import spock.lang.Ignore
-import spock.lang.Issue
 import spock.lang.Unroll
 
 import static org.gradle.language.java.JavaIntegrationTesting.applyJavaPlugin
-import static org.gradle.util.TestPrecondition.FIX_TO_WORK_ON_JAVA9
+import static org.gradle.language.java.JavaIntegrationTesting.expectJavaLangPluginDeprecationWarnings
 
+@UnsupportedWithConfigurationCache(because = "software model")
 class JavaCompilationAgainstApiJarIntegrationTest extends AbstractIntegrationSpec {
 
     private void mainLibraryDependingOnApi(DependencyScope scope = DependencyScope.SOURCES, boolean declaresApi = true) {
@@ -72,7 +74,7 @@ public class TestApp {
     @Unroll
     def "fails compilation when referencing a non-API class from a #scope dependency"() {
         given:
-        applyJavaPlugin(buildFile)
+        applyJavaPlugin(buildFile, executer)
         mainLibraryDependingOnApi(scope)
 
         file('src/myLib/java/com/acme/Person.java') << '''package com.acme;
@@ -99,6 +101,7 @@ public class TestApp {
         succeeds ':myLibJar'
 
         and:
+        expectJavaLangPluginDeprecationWarnings(executer)
         fails ':mainJar'
         failure.assertHasDescription("Execution failed for task ':compileMainJarMainJava'.")
         failure.assertHasCause("Compilation failed; see the compiler error output for details.")
@@ -110,7 +113,7 @@ public class TestApp {
     @Unroll
     def "changing API class in ABI breaking way should trigger recompilation of a consuming library with #scope dependency when an API is #apiDeclared"() {
         given:
-        applyJavaPlugin(buildFile)
+        applyJavaPlugin(buildFile, executer)
         mainLibraryDependingOnApi(scope, api)
 
         file('src/myLib/java/com/acme/Person.java') << '''package com.acme;
@@ -130,6 +133,7 @@ public class PersonInternal extends Person {}
         succeeds ':myLibJar'
 
         and:
+        expectJavaLangPluginDeprecationWarnings(executer)
         succeeds ':mainJar'
 
         when:
@@ -140,6 +144,7 @@ public class Person {
 }
 ''')
         then:
+        expectJavaLangPluginDeprecationWarnings(executer)
         succeeds ':mainJar'
 
         and:
@@ -157,7 +162,7 @@ public class Person {
     @Unroll
     def "changing non-API class should not trigger recompilation of a consuming library with #scope dependency when API is declared"() {
         given:
-        applyJavaPlugin(buildFile)
+        applyJavaPlugin(buildFile, executer)
         mainLibraryDependingOnApi(scope)
 
         file('src/myLib/java/com/acme/Person.java') << '''package com.acme;
@@ -177,6 +182,7 @@ public class PersonInternal extends Person {}
         succeeds ':myLibJar'
 
         and:
+        expectJavaLangPluginDeprecationWarnings(executer)
         succeeds ':mainJar'
 
         when:
@@ -188,6 +194,7 @@ public class PersonInternal extends Person {
 }
 ''')
         then:
+        expectJavaLangPluginDeprecationWarnings(executer)
         succeeds ':mainJar'
 
         and:
@@ -199,10 +206,9 @@ public class PersonInternal extends Person {
     }
 
     @Unroll
-    @Issue('Need to investigate the reason for the Java 9 failure')
     def "changing comment in API class should not trigger recompilation of the consuming library when API is #apiDeclared"() {
         given:
-        applyJavaPlugin(buildFile)
+        applyJavaPlugin(buildFile, executer)
         mainLibraryDependingOnApi(DependencyScope.SOURCES, api)
 
         file('src/myLib/java/com/acme/Person.java') << '''package com.acme;
@@ -220,6 +226,7 @@ public class Person {
         succeeds ':myLibJar'
 
         and:
+        expectJavaLangPluginDeprecationWarnings(executer)
         succeeds ':mainJar'
 
         when:
@@ -234,6 +241,7 @@ public class Person {
 }
 ''')
         then:
+        expectJavaLangPluginDeprecationWarnings(executer)
         succeeds ':mainJar'
 
         and:
@@ -248,10 +256,10 @@ public class Person {
     }
 
     @Unroll
-    @Requires(FIX_TO_WORK_ON_JAVA9)
+    @Requires(TestPrecondition.JDK8_OR_EARLIER) // behavior changed with Java 9; we do not investigate as this tests a deprecated feature to be removed in Gradle 7.0
     def "changing method body of API class should not trigger recompilation of the consuming library when API is #apiDeclared"() {
         given:
-        applyJavaPlugin(buildFile)
+        applyJavaPlugin(buildFile, executer)
         mainLibraryDependingOnApi(DependencyScope.SOURCES, api)
 
         file('src/myLib/java/com/acme/Person.java') << '''package com.acme;
@@ -269,6 +277,7 @@ public class Person {
         succeeds ':myLibJar'
 
         and:
+        expectJavaLangPluginDeprecationWarnings(executer)
         succeeds ':mainJar'
 
         when:
@@ -280,6 +289,7 @@ public class Person {
 }
 ''')
         then:
+        expectJavaLangPluginDeprecationWarnings(executer)
         succeeds ':mainJar'
 
         and:
@@ -296,7 +306,7 @@ public class Person {
     @Ignore("Requires a better definition of what ABI means")
     def "consuming source is not recompiled when overriding a method from a superclass in source dependency"() {
         given:
-        applyJavaPlugin(buildFile)
+        applyJavaPlugin(buildFile, executer)
         mainLibraryDependingOnApi()
         file('src/myLib/java/com/acme/Person.java') << '''package com.acme;
 
@@ -312,6 +322,7 @@ public class Person {
         succeeds ':myLibJar'
 
         and:
+        expectJavaLangPluginDeprecationWarnings(executer)
         succeeds ':mainJar'
 
         when:
@@ -323,6 +334,7 @@ public class Person {
 }
 ''')
         then:
+        expectJavaLangPluginDeprecationWarnings(executer)
         succeeds ':mainJar'
 
         and:
@@ -332,7 +344,7 @@ public class Person {
 
     def "changing signature of public method of API class should trigger recompilation of the consuming library"() {
         given:
-        applyJavaPlugin(buildFile)
+        applyJavaPlugin(buildFile, executer)
         mainLibraryDependingOnApi()
         file('src/myLib/java/com/acme/Person.java') << '''package com.acme;
 
@@ -351,6 +363,7 @@ public class Person {
         succeeds ':myLibJar'
 
         and:
+        expectJavaLangPluginDeprecationWarnings(executer)
         succeeds ':mainJar'
 
         when:
@@ -364,6 +377,7 @@ public class Person {
 }
 ''')
         then:
+        expectJavaLangPluginDeprecationWarnings(executer)
         succeeds ':mainJar'
 
         and:
@@ -374,7 +388,7 @@ public class Person {
     @Unroll
     def "extraction of private method in API class should not trigger recompilation of the consuming library when API is #apiDeclared"() {
         given:
-        applyJavaPlugin(buildFile)
+        applyJavaPlugin(buildFile, executer)
         mainLibraryDependingOnApi(DependencyScope.SOURCES, api)
 
         file('src/myLib/java/com/acme/Person.java') << '''package com.acme;
@@ -398,6 +412,7 @@ public class Person {
         succeeds ':myLibJar'
 
         and:
+        expectJavaLangPluginDeprecationWarnings(executer)
         succeeds ':mainJar'
 
         when:
@@ -411,6 +426,7 @@ public class Person {
 }
 ''')
         then:
+        expectJavaLangPluginDeprecationWarnings(executer)
         succeeds ':mainJar'
 
         and:
@@ -427,7 +443,7 @@ public class Person {
     @Unroll
     def "changing the order of public methods of API class should not trigger recompilation of the consuming library when API is #apiDeclared"() {
         given:
-        applyJavaPlugin(buildFile)
+        applyJavaPlugin(buildFile, executer)
         mainLibraryDependingOnApi(DependencyScope.SOURCES, api)
 
         file('src/myLib/java/com/acme/Person.java') << '''package com.acme;
@@ -451,6 +467,7 @@ public class Person {
         succeeds ':myLibJar'
 
         and:
+        expectJavaLangPluginDeprecationWarnings(executer)
         succeeds ':mainJar'
 
         when:
@@ -469,6 +486,7 @@ public class Person {
 }
 ''')
         then:
+        expectJavaLangPluginDeprecationWarnings(executer)
         succeeds ':mainJar'
 
         and:
@@ -485,7 +503,7 @@ public class Person {
     @Unroll
     def "adding a private field to an API class should not trigger recompilation of the consuming library when API is #apiDeclared"() {
         given:
-        applyJavaPlugin(buildFile)
+        applyJavaPlugin(buildFile, executer)
         mainLibraryDependingOnApi(DependencyScope.SOURCES, api)
         file('src/myLib/java/com/acme/Person.java') << '''package com.acme;
 
@@ -504,6 +522,7 @@ public class Person {
         succeeds ':myLibJar'
 
         and:
+        expectJavaLangPluginDeprecationWarnings(executer)
         succeeds ':mainJar'
 
         when:
@@ -519,6 +538,7 @@ public class Person {
 }
 ''')
         then:
+        expectJavaLangPluginDeprecationWarnings(executer)
         succeeds ':mainJar'
 
         and:
@@ -535,7 +555,7 @@ public class Person {
     @Unroll
     def "adding a private method to an API class should not trigger recompilation of the consuming library when API is #apiDeclared"() {
         given:
-        applyJavaPlugin(buildFile)
+        applyJavaPlugin(buildFile, executer)
         mainLibraryDependingOnApi(DependencyScope.SOURCES, api)
         file('src/myLib/java/com/acme/Person.java') << '''package com.acme;
 
@@ -554,6 +574,7 @@ public class Person {
         succeeds ':myLibJar'
 
         and:
+        expectJavaLangPluginDeprecationWarnings(executer)
         succeeds ':mainJar'
 
         when:
@@ -570,6 +591,7 @@ public class Person {
 }
 ''')
         then:
+        expectJavaLangPluginDeprecationWarnings(executer)
         succeeds ':mainJar'
 
         and:
@@ -586,7 +608,7 @@ public class Person {
     @Unroll
     def "changing the order of members of API class should not trigger recompilation of the consuming library when API is #apiDeclared"() {
         given:
-        applyJavaPlugin(buildFile)
+        applyJavaPlugin(buildFile, executer)
         mainLibraryDependingOnApi(DependencyScope.SOURCES, api)
         file('src/myLib/java/com/acme/Person.java') << '''package com.acme;
 
@@ -611,6 +633,7 @@ public class Person {
         succeeds ':myLibJar'
 
         and:
+        expectJavaLangPluginDeprecationWarnings(executer)
         succeeds ':mainJar'
 
         when:
@@ -630,6 +653,7 @@ public class Person {
 }
 ''')
         then:
+        expectJavaLangPluginDeprecationWarnings(executer)
         succeeds ':mainJar'
 
         and:
@@ -646,7 +670,7 @@ public class Person {
     @Unroll
     def "changing an API field of an API class should trigger recompilation of the consuming library when API is #apiDeclared"() {
         given:
-        applyJavaPlugin(buildFile)
+        applyJavaPlugin(buildFile, executer)
         mainLibraryDependingOnApi(DependencyScope.SOURCES, api)
         file('src/myLib/java/com/acme/Person.java') << '''package com.acme;
 
@@ -666,6 +690,7 @@ public class Person {
         succeeds ':myLibJar'
 
         and:
+        expectJavaLangPluginDeprecationWarnings(executer)
         succeeds ':mainJar'
 
         when:
@@ -682,6 +707,7 @@ public class Person {
 }
 ''')
         then:
+        expectJavaLangPluginDeprecationWarnings(executer)
         succeeds ':mainJar'
 
         and:
@@ -698,7 +724,7 @@ public class Person {
     @Unroll
     def "changing the superclass of an API class should trigger recompilation of the consuming library when API is #apiDeclared"() {
         given:
-        applyJavaPlugin(buildFile)
+        applyJavaPlugin(buildFile, executer)
         mainLibraryDependingOnApi(DependencyScope.SOURCES, api)
         file('src/myLib/java/com/acme/Person.java') << '''package com.acme;
 
@@ -723,6 +749,7 @@ public class Named {
         succeeds ':myLibJar'
 
         and:
+        expectJavaLangPluginDeprecationWarnings(executer)
         succeeds ':mainJar'
 
         when:
@@ -736,6 +763,7 @@ public class Person {
 }
 ''')
         then:
+        expectJavaLangPluginDeprecationWarnings(executer)
         succeeds ':mainJar'
 
         and:
@@ -752,7 +780,7 @@ public class Person {
     @Unroll
     def "changing the interfaces of an API class should trigger recompilation of the consuming library when API is #apiDeclared"() {
         given:
-        applyJavaPlugin(buildFile)
+        applyJavaPlugin(buildFile, executer)
         mainLibraryDependingOnApi(DependencyScope.SOURCES, api)
         file('src/myLib/java/com/acme/Person.java') << '''package com.acme;
 
@@ -778,6 +806,7 @@ public interface Named {
         succeeds ':myLibJar'
 
         and:
+        expectJavaLangPluginDeprecationWarnings(executer)
         succeeds ':mainJar'
 
         when:
@@ -791,6 +820,7 @@ public class Person {
 }
 ''')
         then:
+        expectJavaLangPluginDeprecationWarnings(executer)
         succeeds ':mainJar'
 
         and:
@@ -807,7 +837,7 @@ public class Person {
     @Unroll
     def "changing order of annotations on API class should not trigger recompilation of the consuming library when API is #apiDeclared"() {
         given:
-        applyJavaPlugin(buildFile)
+        applyJavaPlugin(buildFile, executer)
         mainLibraryDependingOnApi(DependencyScope.SOURCES, api)
         file('src/myLib/java/com/acme/Ann1.java') << '''package com.acme;
 
@@ -855,6 +885,7 @@ public class Person {
         succeeds ':myLibJar'
 
         and:
+        expectJavaLangPluginDeprecationWarnings(executer)
         succeeds ':mainJar'
 
         when:
@@ -870,6 +901,7 @@ public class Person {
 }
 ''')
         then:
+        expectJavaLangPluginDeprecationWarnings(executer)
         succeeds ':mainJar'
 
         and:
@@ -886,7 +918,7 @@ public class Person {
     @Unroll
     def "changing order of annotations on API method should not trigger recompilation of the consuming library when API is #apiDeclared"() {
         given:
-        applyJavaPlugin(buildFile)
+        applyJavaPlugin(buildFile, executer)
         mainLibraryDependingOnApi(DependencyScope.SOURCES, api)
         file('src/myLib/java/com/acme/Ann1.java') << '''package com.acme;
 
@@ -935,6 +967,7 @@ public class Person {
         succeeds ':myLibJar'
 
         and:
+        expectJavaLangPluginDeprecationWarnings(executer)
         succeeds ':mainJar'
 
         when:
@@ -951,6 +984,7 @@ public class Person {
 }
 ''')
         then:
+        expectJavaLangPluginDeprecationWarnings(executer)
         succeeds ':mainJar'
 
         and:
@@ -967,7 +1001,7 @@ public class Person {
     @Unroll
     def "changing order of annotations on API method parameter should not trigger recompilation of the consuming library when #apiDeclared"() {
         given:
-        applyJavaPlugin(buildFile)
+        applyJavaPlugin(buildFile, executer)
         mainLibraryDependingOnApi(DependencyScope.SOURCES, api)
         file('src/myLib/java/com/acme/Ann1.java') << '''package com.acme;
 
@@ -1016,6 +1050,7 @@ public class Person {
         succeeds ':myLibJar'
 
         and:
+        expectJavaLangPluginDeprecationWarnings(executer)
         succeeds ':mainJar'
 
         when:
@@ -1033,6 +1068,7 @@ public class Person {
 }
 ''')
         then:
+        expectJavaLangPluginDeprecationWarnings(executer)
         succeeds ':mainJar'
 
         and:
@@ -1049,7 +1085,7 @@ public class Person {
     @Unroll
     def "changing order of annotations on API field should not trigger recompilation of the consuming library when API is #apiDeclared"() {
         given:
-        applyJavaPlugin(buildFile)
+        applyJavaPlugin(buildFile, executer)
         mainLibraryDependingOnApi(DependencyScope.SOURCES, api)
         file('src/myLib/java/com/acme/Ann1.java') << '''package com.acme;
 
@@ -1098,6 +1134,7 @@ public class Person {
         succeeds ':myLibJar'
 
         and:
+        expectJavaLangPluginDeprecationWarnings(executer)
         succeeds ':mainJar'
 
         when:
@@ -1114,6 +1151,7 @@ public class Person {
 }
 ''')
         then:
+        expectJavaLangPluginDeprecationWarnings(executer)
         succeeds ':mainJar'
 
         and:
@@ -1130,7 +1168,7 @@ public class Person {
     @Unroll
     def "building the API jar should not depend on the runtime jar when API is #apiDeclared"() {
         given:
-        applyJavaPlugin(buildFile)
+        applyJavaPlugin(buildFile, executer)
         mainLibraryDependingOnApi(DependencyScope.SOURCES, api)
 
         file('src/myLib/java/com/acme/Person.java') << '''package com.acme;

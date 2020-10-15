@@ -16,22 +16,29 @@
 
 package org.gradle.test.fixtures.server.http
 
-import org.mortbay.jetty.Response
-import org.mortbay.jetty.security.Authenticator
-import org.mortbay.jetty.security.BasicAuthenticator
-import org.mortbay.jetty.security.Constraint
-import org.mortbay.jetty.security.ConstraintMapping
-import org.mortbay.jetty.security.DigestAuthenticator
-import org.mortbay.jetty.security.SecurityHandler
-import org.mortbay.jetty.security.UserRealm
+import org.apache.http.HttpHeaders
+import org.eclipse.jetty.http.HttpHeader
+import org.eclipse.jetty.security.Authenticator
+import org.eclipse.jetty.security.ConstraintMapping
+import org.eclipse.jetty.security.ConstraintSecurityHandler
+import org.eclipse.jetty.security.ServerAuthException
+import org.eclipse.jetty.security.authentication.BasicAuthenticator
+import org.eclipse.jetty.security.authentication.DigestAuthenticator
+import org.eclipse.jetty.server.Authentication
+import org.eclipse.jetty.server.ServletResponseHttpWrapper
+import org.eclipse.jetty.util.security.Constraint
 
+import javax.servlet.ServletRequest
+import javax.servlet.ServletResponse
+import javax.servlet.http.HttpServletRequest
 import javax.servlet.http.HttpServletResponse
 
 enum AuthScheme {
     BASIC(new BasicAuthHandler()),
     DIGEST(new DigestAuthHandler()),
     HIDE_UNAUTHORIZED(new HideUnauthorizedBasicAuthHandler()),
-    NTLM(new NtlmAuthHandler())
+    NTLM(new NtlmAuthHandler()),
+    HEADER(new HttpHeaderAuthHandler())
 
     final AuthSchemeHandler handler
 
@@ -49,6 +56,11 @@ enum AuthScheme {
         protected Authenticator getAuthenticator() {
             return new BasicAuthenticator()
         }
+
+        @Override
+        protected boolean containsUnexpectedAuthentication(HttpServletRequest request) {
+            return request.getHeader(HttpHeaders.AUTHORIZATION)
+        }
     }
 
     private static class HideUnauthorizedBasicAuthHandler extends AuthSchemeHandler {
@@ -61,32 +73,39 @@ enum AuthScheme {
         protected Authenticator getAuthenticator() {
             return new BasicAuthenticator() {
                 @Override
-                void sendChallenge(UserRealm realm, Response response) throws IOException {
-                    response.sendError(HttpServletResponse.SC_NOT_FOUND)
+                Authentication validateRequest(ServletRequest req, ServletResponse res, boolean mandatory) throws ServerAuthException {
+                    def auth = super.validateRequest(req, new ServletResponseHttpWrapper(res), mandatory)
+                    if (!(auth instanceof Authentication.User)) {
+                        res.setHeader(HttpHeader.WWW_AUTHENTICATE.asString(), "basic realm=\"" + _loginService.getName() + '"')
+                        res.sendError(HttpServletResponse.SC_NOT_FOUND)
+                        return Authentication.SEND_CONTINUE
+                    }
+                    return super.validateRequest(req, res, mandatory)
                 }
             }
         }
     }
 
     abstract static class AuthSchemeHandler {
-        SecurityHandler createSecurityHandler(String path, TestUserRealm realm) {
+        ConstraintSecurityHandler createSecurityHandler(String path, TestUserRealm realm) {
             def constraintMapping = createConstraintMapping(path)
-            def securityHandler = new SecurityHandler()
-            securityHandler.userRealm = realm
-            securityHandler.constraintMappings = [constraintMapping] as ConstraintMapping[]
+            def securityHandler = new ConstraintSecurityHandler()
+            securityHandler.realmName = TestUserRealm.REALM_NAME
+            securityHandler.addConstraintMapping(constraintMapping)
             securityHandler.authenticator = authenticator
+            securityHandler.loginService = realm
             return securityHandler
         }
 
-        void addConstraint(SecurityHandler securityHandler, String path) {
-            securityHandler.constraintMappings = (securityHandler.constraintMappings as List) + createConstraintMapping(path)
+        void addConstraint(ConstraintSecurityHandler securityHandler, String path) {
+            securityHandler.addConstraintMapping(createConstraintMapping(path))
         }
 
         private ConstraintMapping createConstraintMapping(String path) {
             def constraint = new Constraint()
             constraint.name = constraintName()
             constraint.authenticate = true
-            constraint.roles = ['*'] as String[]
+            constraint.roles = [Constraint.ANY_ROLE, Constraint.ANY_AUTH, TestUserRealm.ROLE] as String[]
             def constraintMapping = new ConstraintMapping()
             constraintMapping.pathSpec = path
             constraintMapping.constraint = constraint
@@ -96,6 +115,10 @@ enum AuthScheme {
         protected abstract String constraintName()
 
         protected abstract Authenticator getAuthenticator()
+
+        protected boolean containsUnexpectedAuthentication(HttpServletRequest request) {
+            false
+        }
     }
 
     private static class NtlmAuthHandler extends AuthSchemeHandler {
@@ -119,6 +142,18 @@ enum AuthScheme {
         @Override
         protected Authenticator getAuthenticator() {
             return new DigestAuthenticator()
+        }
+    }
+
+    private static class HttpHeaderAuthHandler extends AuthSchemeHandler {
+        @Override
+        protected String constraintName() {
+            return TestHttpHeaderAuthenticator.AUTH_SCHEME_NAME;
+        }
+
+        @Override
+        protected Authenticator getAuthenticator() {
+            return new TestHttpHeaderAuthenticator()
         }
     }
 }

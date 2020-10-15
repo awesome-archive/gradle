@@ -16,13 +16,11 @@
 
 package org.gradle.workers.internal
 
-import org.gradle.integtests.fixtures.Sample
-import org.junit.Rule
-import spock.lang.Timeout
+import org.gradle.integtests.fixtures.timeout.IntegrationTestTimeout
 
-
-@Timeout(60)
+@IntegrationTestTimeout(60)
 class NoIsolationWorkerExecutorSampleIntegrationTest extends AbstractWorkerExecutorSampleIntegrationTest {
-    @Rule
-    Sample workerExecutorSample = new Sample(temporaryFolder, "workerApi/noIsolation")
+    String getSampleName() {
+        "workerApi/noIsolation"
+    }
 }

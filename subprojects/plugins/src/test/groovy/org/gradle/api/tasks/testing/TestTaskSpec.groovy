@@ -21,7 +21,6 @@ import org.gradle.api.internal.tasks.testing.TestCompleteEvent
 import org.gradle.api.internal.tasks.testing.TestDescriptorInternal
 import org.gradle.api.internal.tasks.testing.TestExecuter
 import org.gradle.api.internal.tasks.testing.TestExecutionSpec
-import org.gradle.api.internal.tasks.testing.TestFramework
 import org.gradle.api.internal.tasks.testing.TestResultProcessor
 import org.gradle.api.internal.tasks.testing.TestStartEvent
 import org.gradle.api.internal.tasks.testing.report.TestReporter
@@ -31,7 +30,6 @@ import org.gradle.util.TestUtil
 
 class TestTaskSpec extends AbstractProjectBuilderSpec {
     def testExecuter = Mock(TestExecuter)
-    def testFramework = Mock(TestFramework)
     def suiteDescriptor = Mock(TestDescriptorInternal)
     def testDescriptor = Mock(TestDescriptorInternal)
 
@@ -39,11 +37,12 @@ class TestTaskSpec extends AbstractProjectBuilderSpec {
     private Test task
 
     def setup() {
-        task = TestUtil.create(temporaryFolder).task(Test, [testExecuter: testExecuter, testFramework: testFramework])
+        task = TestUtil.create(temporaryFolder).task(Test)
+        task.testExecuter = testExecuter
         task.testReporter = Mock(TestReporter)
         task.binResultsDir = task.project.file('build/test-results')
         task.reports.junitXml.destination = task.project.file('build/test-results')
-        task.testClassesDirs = task.project.files()
+        task.testClassesDirs = task.project.layout.files()
         completion = task.project.services.get(WorkerLeaseRegistry).getWorkerLease().start()
     }
 
@@ -96,7 +95,9 @@ class TestTaskSpec extends AbstractProjectBuilderSpec {
         testDescriptor.parent >> suiteDescriptor
         testDescriptor.composite >> false
         testDescriptor.className >> "class"
+        testDescriptor.classDisplayName >> "class"
         testDescriptor.name >> "method"
+        testDescriptor.displayName >> "method"
 
         def suiteStartEvent = Stub(TestStartEvent) {
             getParentId() >> null
@@ -112,6 +113,61 @@ class TestTaskSpec extends AbstractProjectBuilderSpec {
             processor.started(suiteDescriptor, suiteStartEvent)
             processor.started(testDescriptor, testStartEvent)
             processor.completed("test", finishEvent)
+            processor.completed("suite", finishEvent)
+        }
+    }
+
+    def expectFirstTestSuiteFailsButSecondPasses() {
+        def testId = "test"
+        suiteDescriptor.id >> testId
+        suiteDescriptor.parent >> null
+        suiteDescriptor.composite >> true
+        def startEvent = Stub(TestStartEvent) {
+            getParentId() >> null
+        }
+
+        _ * testExecuter.execute(_ as TestExecutionSpec, _) >> { TestExecutionSpec testExecutionSpec, TestResultProcessor processor ->
+            processor.started(suiteDescriptor, startEvent)
+            processor.completed(testId, Stub(TestCompleteEvent) {
+                getResultType() >> TestResult.ResultType.FAILURE
+            })
+            processor.started(suiteDescriptor, startEvent)
+            processor.completed(testId, Stub(TestCompleteEvent) {
+                getResultType() >> TestResult.ResultType.SUCCESS
+            })
+        }
+    }
+
+    def expectFirstTestSuiteContainsTestButSecondIsEmpty() {
+        suiteDescriptor.id >> "suite"
+        suiteDescriptor.parent >> null
+        suiteDescriptor.composite >> true
+
+        testDescriptor.id >> "test"
+        testDescriptor.parent >> suiteDescriptor
+        testDescriptor.composite >> false
+        testDescriptor.className >> "class"
+        testDescriptor.classDisplayName >> "class"
+        testDescriptor.name >> "method"
+        testDescriptor.displayName >> "method"
+
+        def suiteStartEvent = Stub(TestStartEvent) {
+            getParentId() >> null
+        }
+        def testStartEvent = Stub(TestStartEvent) {
+            getParentId() >> "suite"
+        }
+        def finishEvent = Stub(TestCompleteEvent) {
+            getResultType() >> TestResult.ResultType.SUCCESS
+        }
+
+        _ * testExecuter.execute(_ as TestExecutionSpec, _) >> { TestExecutionSpec testExecutionSpec, TestResultProcessor processor ->
+            processor.started(suiteDescriptor, suiteStartEvent)
+            processor.started(testDescriptor, testStartEvent)
+            processor.completed("test", finishEvent)
+            processor.completed("suite", finishEvent)
+
+            processor.started(suiteDescriptor, suiteStartEvent)
             processor.completed("suite", finishEvent)
         }
     }
@@ -255,5 +311,31 @@ class TestTaskSpec extends AbstractProjectBuilderSpec {
         task.testListenerInternalBroadcaster.isEmpty()
         task.testOutputListenerBroadcaster.isEmpty()
         task.testListenerInternalBroadcaster.isEmpty()
+    }
+
+    def "reports all test failures for multiple suites"() {
+        given:
+        expectFirstTestSuiteFailsButSecondPasses()
+
+        when:
+        task.executeTests()
+
+        then:
+        GradleException e = thrown()
+        e.message.startsWith("There were failing tests. See the report at")
+    }
+
+    def "does not report task as failed if first suite contained tests"() {
+        given:
+        expectFirstTestSuiteContainsTestButSecondIsEmpty()
+        task.filter {
+            it.includePatterns = "Foo"
+        }
+
+        when:
+        task.executeTests()
+
+        then:
+        noExceptionThrown()
     }
 }

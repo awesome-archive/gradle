@@ -18,34 +18,32 @@ package org.gradle.workers.internal;
 
 import org.gradle.api.logging.LogLevel;
 import org.gradle.internal.concurrent.Stoppable;
-import org.gradle.internal.operations.BuildOperationRef;
-import org.gradle.internal.work.WorkerLeaseRegistry.WorkerLease;
 import org.gradle.process.internal.health.memory.JvmMemoryStatus;
+import org.gradle.process.internal.worker.MultiRequestClient;
 import org.gradle.process.internal.worker.WorkerProcess;
 
-class WorkerDaemonClient implements Worker, Stoppable {
+class WorkerDaemonClient implements Stoppable {
+    public static final String DISABLE_EXPIRATION_PROPERTY_KEY = "org.gradle.workers.internal.disable-daemons-expiration";
     private final DaemonForkOptions forkOptions;
-    private final WorkerDaemonProcess<ActionExecutionSpec> workerDaemonProcess;
+    private final MultiRequestClient<TransportableActionExecutionSpec, DefaultWorkResult> workerClient;
     private final WorkerProcess workerProcess;
     private final LogLevel logLevel;
+    private final ActionExecutionSpecFactory actionExecutionSpecFactory;
     private int uses;
+    private boolean failed;
+    private boolean cannotBeExpired = Boolean.getBoolean(DISABLE_EXPIRATION_PROPERTY_KEY);
 
-    public WorkerDaemonClient(DaemonForkOptions forkOptions, WorkerDaemonProcess<ActionExecutionSpec> workerDaemonProcess, WorkerProcess workerProcess, LogLevel logLevel) {
+    public WorkerDaemonClient(DaemonForkOptions forkOptions, MultiRequestClient<TransportableActionExecutionSpec, DefaultWorkResult> workerClient, WorkerProcess workerProcess, LogLevel logLevel, ActionExecutionSpecFactory actionExecutionSpecFactory) {
         this.forkOptions = forkOptions;
-        this.workerDaemonProcess = workerDaemonProcess;
+        this.workerClient = workerClient;
         this.workerProcess = workerProcess;
         this.logLevel = logLevel;
+        this.actionExecutionSpecFactory = actionExecutionSpecFactory;
     }
 
-    @Override
-    public DefaultWorkResult execute(final ActionExecutionSpec spec, WorkerLease parentWorkerWorkerLease, final BuildOperationRef parentBuildOperation) {
-        return execute(spec);
-    }
-
-    @Override
-    public DefaultWorkResult execute(ActionExecutionSpec spec) {
+    public DefaultWorkResult execute(IsolatedParametersActionExecutionSpec<?> spec) {
         uses++;
-        return workerDaemonProcess.execute(spec);
+        return workerClient.run(actionExecutionSpecFactory.newTransportableSpec(spec));
     }
 
     public boolean isCompatibleWith(DaemonForkOptions required) {
@@ -58,7 +56,7 @@ class WorkerDaemonClient implements Worker, Stoppable {
 
     @Override
     public void stop() {
-        workerDaemonProcess.stop();
+        workerClient.stop();
     }
 
     DaemonForkOptions getForkOptions() {
@@ -75,5 +73,33 @@ class WorkerDaemonClient implements Worker, Stoppable {
 
     public LogLevel getLogLevel() {
         return logLevel;
+    }
+
+    public boolean isProcess(WorkerProcess workerProcess) {
+        return this.workerProcess.equals(workerProcess);
+    }
+
+    public boolean isFailed() {
+        return failed;
+    }
+
+    public void setFailed(boolean failed) {
+        this.failed = failed;
+    }
+
+    public boolean isNotExpirable() {
+        return cannotBeExpired;
+    }
+
+    @Override
+    public String toString() {
+        return "WorkerDaemonClient{" +
+            " log level=" + logLevel +
+            ", use count=" + uses +
+            ", has failed=" + failed +
+            ", can be expired=" + !cannotBeExpired +
+            ", workerProcess=" + workerProcess +
+            ", forkOptions=" + forkOptions +
+            '}';
     }
 }

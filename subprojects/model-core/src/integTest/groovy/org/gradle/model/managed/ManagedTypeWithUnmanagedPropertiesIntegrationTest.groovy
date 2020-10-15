@@ -17,7 +17,9 @@
 package org.gradle.model.managed
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
 
+@UnsupportedWithConfigurationCache(because = "software model")
 class ManagedTypeWithUnmanagedPropertiesIntegrationTest extends AbstractIntegrationSpec {
 
     def "can have unmanaged property of unsupported types"() {

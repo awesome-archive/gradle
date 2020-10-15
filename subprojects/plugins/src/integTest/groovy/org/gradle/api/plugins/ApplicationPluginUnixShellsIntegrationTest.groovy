@@ -32,7 +32,7 @@ class ApplicationPluginUnixShellsIntegrationTest extends AbstractIntegrationSpec
         }
     }
 
-    public static boolean   shellAvailable(String shellCommand) {
+    static boolean shellAvailable(String shellCommand) {
         return TestPrecondition.UNIX_DERIVATIVE.isFulfilled() && (
             new File("/bin/$shellCommand").exists()
                 || new File("/usr/bin/$shellCommand").exists()
@@ -45,10 +45,10 @@ class ApplicationPluginUnixShellsIntegrationTest extends AbstractIntegrationSpec
         succeeds('installDist')
 
         when:
-        ExecutionResult result = runViaUnixStartScript("bash")
+        runViaUnixStartScript("bash")
 
         then:
-        result.output.contains('Hello World!')
+        outputContains('Hello World!')
     }
 
     @Requires(adhoc = { ApplicationPluginUnixShellsIntegrationTest.shellAvailable("dash") })
@@ -57,10 +57,10 @@ class ApplicationPluginUnixShellsIntegrationTest extends AbstractIntegrationSpec
         succeeds('installDist')
 
         when:
-        ExecutionResult result = runViaUnixStartScript("dash")
+        runViaUnixStartScript("dash")
 
         then:
-        result.output.contains('Hello World!')
+        outputContains('Hello World!')
     }
 
     @Requires(adhoc = { ApplicationPluginUnixShellsIntegrationTest.shellAvailable("static-sh") })
@@ -69,10 +69,10 @@ class ApplicationPluginUnixShellsIntegrationTest extends AbstractIntegrationSpec
         succeeds('installDist')
 
         when:
-        ExecutionResult result = runViaUnixStartScript("static-sh")
+        runViaUnixStartScript("static-sh")
 
         then:
-        result.output.contains('Hello World!')
+        outputContains('Hello World!')
     }
 
     @Requires(adhoc = { ApplicationPluginUnixShellsIntegrationTest.shellAvailable("bash") })
@@ -82,10 +82,10 @@ class ApplicationPluginUnixShellsIntegrationTest extends AbstractIntegrationSpec
         succeeds('installDist')
 
         when:
-        ExecutionResult result = runViaUnixStartScript("bash")
+        runViaUnixStartScript("bash")
 
         then:
-        result.assertOutputContains("App Home: ${file('build/install/sample').absolutePath}")
+        outputContains("App Home: ${file('build/install/sample').absolutePath}")
     }
 
     @Requires(adhoc = { ApplicationPluginUnixShellsIntegrationTest.shellAvailable("dash") })
@@ -95,10 +95,10 @@ class ApplicationPluginUnixShellsIntegrationTest extends AbstractIntegrationSpec
         succeeds('installDist')
 
         when:
-        ExecutionResult result = runViaUnixStartScript("dash")
+        runViaUnixStartScript("dash")
 
         then:
-        result.assertOutputContains("App Home: ${file('build/install/sample').absolutePath}")
+        outputContains("App Home: ${file('build/install/sample').absolutePath}")
     }
 
     @Requires(adhoc = { ApplicationPluginUnixShellsIntegrationTest.shellAvailable("static-sh") })
@@ -108,10 +108,10 @@ class ApplicationPluginUnixShellsIntegrationTest extends AbstractIntegrationSpec
         succeeds('installDist')
 
         when:
-        ExecutionResult result = runViaUnixStartScript("static-sh")
+        runViaUnixStartScript("static-sh")
 
         then:
-        result.assertOutputContains("App Home: ${file('build/install/sample').absolutePath}")
+        outputContains("App Home: ${file('build/install/sample').absolutePath}")
     }
 
     @Requires(adhoc = { ApplicationPluginUnixShellsIntegrationTest.shellAvailable("bash") })
@@ -120,13 +120,13 @@ class ApplicationPluginUnixShellsIntegrationTest extends AbstractIntegrationSpec
         succeeds('installDist')
 
         when:
-        ExecutionResult result = runViaUnixStartScript("bash", "someArg1", "someArg1", "some arg 2", "-DFOO=\\\"bar < baz\\\"", "-DGOO='car < caz'")
+        runViaUnixStartScript("bash", "someArg1", "someArg1", "some arg 2", "-DFOO=\\\"bar < baz\\\"", "-DGOO='car < caz'")
 
         then:
-        result.output.contains('Arg: someArg1')
-        result.output.contains('Arg: some arg 2')
-        result.output.contains('Arg: -DFOO="bar < baz"')
-        result.output.contains('Arg: -DGOO=\'car < caz\'')
+        outputContains('Arg: someArg1')
+        outputContains('Arg: some arg 2')
+        outputContains('Arg: -DFOO="bar < baz"')
+        outputContains('Arg: -DGOO=\'car < caz\'')
     }
 
     @Requires(adhoc = { ApplicationPluginUnixShellsIntegrationTest.shellAvailable("dash") })
@@ -135,13 +135,13 @@ class ApplicationPluginUnixShellsIntegrationTest extends AbstractIntegrationSpec
         succeeds('installDist')
 
         when:
-        ExecutionResult result = runViaUnixStartScript("dash", "someArg1", "some arg 2", "-DFOO=\\\"bar < baz\\\"", "-DGOO='car < caz'")
+        runViaUnixStartScript("dash", "someArg1", "some arg 2", "-DFOO=\\\"bar < baz\\\"", "-DGOO='car < caz'")
 
         then:
-        result.output.contains('Arg: someArg1')
-        result.output.contains('Arg: some arg 2')
-        result.output.contains('Arg: -DFOO="bar < baz"')
-        result.output.contains('Arg: -DGOO=\'car < caz\'')
+        outputContains('Arg: someArg1')
+        outputContains('Arg: some arg 2')
+        outputContains('Arg: -DFOO="bar < baz"')
+        outputContains('Arg: -DGOO=\'car < caz\'')
     }
 
     @Requires(adhoc = { ApplicationPluginUnixShellsIntegrationTest.shellAvailable("static-sh") })
@@ -150,13 +150,52 @@ class ApplicationPluginUnixShellsIntegrationTest extends AbstractIntegrationSpec
         succeeds('installDist')
 
         when:
-        ExecutionResult result = runViaUnixStartScript("static-sh", "someArg1", "some arg 2", "-DFOO=\\\"bar < baz\\\"", "-DGOO='car < caz'")
+        runViaUnixStartScript("static-sh", "someArg1", "some arg 2", "-DFOO=\\\"bar < baz\\\"", "-DGOO='car < caz'")
 
         then:
-        result.output.contains('Arg: someArg1')
-        result.output.contains('Arg: some arg 2')
-        result.output.contains('Arg: -DFOO="bar < baz"')
-        result.output.contains('Arg: -DGOO=\'car < caz\'')
+        outputContains('Arg: someArg1')
+        outputContains('Arg: some arg 2')
+        outputContains('Arg: -DFOO="bar < baz"')
+        outputContains('Arg: -DGOO=\'car < caz\'')
+    }
+
+    @Requires(adhoc = { TestPrecondition.JDK9_OR_LATER.fulfilled && ApplicationPluginUnixShellsIntegrationTest.shellAvailable("bash") })
+    def "can execute generated Unix start script for Java module in Bash"() {
+        given:
+        turnSampleProjectIntoModule()
+        succeeds('installDist')
+
+        when:
+        runViaUnixStartScript("bash")
+
+        then:
+        outputContains('Hello World!')
+    }
+
+    @Requires(adhoc = { TestPrecondition.JDK9_OR_LATER.fulfilled && ApplicationPluginUnixShellsIntegrationTest.shellAvailable("dash") })
+    def "can execute generated Unix start script for Java module in Dash"() {
+        given:
+        turnSampleProjectIntoModule()
+        succeeds('installDist')
+
+        when:
+        runViaUnixStartScript("dash")
+
+        then:
+        outputContains('Hello World!')
+    }
+
+    @Requires(adhoc = { TestPrecondition.JDK9_OR_LATER.fulfilled && ApplicationPluginUnixShellsIntegrationTest.shellAvailable("static-sh") })
+    def "can execute generated Unix start script for Java module in BusyBox"() {
+        given:
+        turnSampleProjectIntoModule()
+        succeeds('installDist')
+
+        when:
+        runViaUnixStartScript("static-sh")
+
+        then:
+        outputContains('Hello World!')
     }
 
     ExecutionResult runViaUnixStartScript(String shCommand, String... args) {
@@ -170,7 +209,7 @@ task execStartScript(type: Exec) {
     args "${args.join('", "')}"
 }
 """
-        return executer.withTasks('execStartScript').run()
+        return succeeds('execStartScript')
     }
 
     private String setUpTestPATH(String shCommand) {
@@ -201,6 +240,21 @@ task execStartScript(type: Exec) {
         populateSettingsFile()
     }
 
+    private void turnSampleProjectIntoModule() {
+        createModuleInfo()
+        buildFile << """
+application {
+    mainModule.set('main.test')
+}
+compileJava {
+    modularity.inferModulePath.set(true)
+}
+startScripts {
+    modularity.inferModulePath.set(true)
+}
+"""
+    }
+
     private void extendBuildFileWithAppHomeProperty() {
         buildFile << """
 applicationDefaultJvmArgs = ["-DappHomeSystemProp=REPLACE_THIS_WITH_APP_HOME"]
@@ -229,11 +283,17 @@ public class Main {
 """
     }
 
+    private void createModuleInfo() {
+        file('src/main/java/module-info.java') << "module main.test {}"
+    }
+
     private void populateBuildFile() {
         buildFile << """
 apply plugin: 'application'
 
-mainClassName = 'org.gradle.test.Main'
+application {
+    mainClass.set('org.gradle.test.Main')
+}
 """
     }
 

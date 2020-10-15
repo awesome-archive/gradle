@@ -16,7 +16,6 @@
 
 package org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.conflicts;
 
-import org.gradle.api.internal.artifacts.ivyservice.resolveengine.ComponentResolutionState;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.ConflictResolverDetails;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.ModuleConflictResolver;
 
@@ -25,14 +24,14 @@ import java.util.Collection;
 import java.util.LinkedList;
 import java.util.List;
 
-class CompositeConflictResolver implements ModuleConflictResolver {
+class CompositeConflictResolver<T> implements ModuleConflictResolver<T> {
 
-    private final List<ModuleConflictResolver> resolvers = new LinkedList<ModuleConflictResolver>();
+    private final List<ModuleConflictResolver<T>> resolvers = new LinkedList<>();
 
     @Override
-    public <T extends ComponentResolutionState> void select(ConflictResolverDetails<T> details) {
-        CompositeDetails<T> composite = new CompositeDetails<T>(details);
-        for (ModuleConflictResolver r : resolvers) {
+    public void select(ConflictResolverDetails<T> details) {
+        CompositeDetails<T> composite = new CompositeDetails<>(details);
+        for (ModuleConflictResolver<T> r : resolvers) {
             r.select(composite);
             if (composite.hasResult) {
                 return;
@@ -42,11 +41,11 @@ class CompositeConflictResolver implements ModuleConflictResolver {
                 + " was unable to select a candidate using resolvers: " + resolvers + ". Candidates: " + details.getCandidates());
     }
 
-    void addFirst(ModuleConflictResolver conflictResolver) {
+    void addFirst(ModuleConflictResolver<T> conflictResolver) {
         resolvers.add(0, conflictResolver);
     }
 
-    private static class CompositeDetails<T extends ComponentResolutionState> implements ConflictResolverDetails<T> {
+    private static class CompositeDetails<T> implements ConflictResolverDetails<T> {
         private final ConflictResolverDetails<T> delegate;
         private boolean hasResult;
 
@@ -74,11 +73,6 @@ class CompositeConflictResolver implements ModuleConflictResolver {
         @Override
         public T getSelected() {
             return delegate.getSelected();
-        }
-
-        @Override
-        public boolean isRestart() {
-            return delegate.isRestart();
         }
 
         @Nullable

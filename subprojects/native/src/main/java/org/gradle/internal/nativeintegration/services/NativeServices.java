@@ -15,24 +15,29 @@
  */
 package org.gradle.internal.nativeintegration.services;
 
-import net.rubygrapefruit.platform.Files;
-import net.rubygrapefruit.platform.Memory;
+import net.rubygrapefruit.platform.Native;
 import net.rubygrapefruit.platform.NativeException;
 import net.rubygrapefruit.platform.NativeIntegrationUnavailableException;
-import net.rubygrapefruit.platform.PosixFiles;
 import net.rubygrapefruit.platform.Process;
 import net.rubygrapefruit.platform.ProcessLauncher;
 import net.rubygrapefruit.platform.SystemInfo;
-import net.rubygrapefruit.platform.Terminals;
 import net.rubygrapefruit.platform.WindowsRegistry;
+import net.rubygrapefruit.platform.file.FileEvents;
+import net.rubygrapefruit.platform.file.Files;
+import net.rubygrapefruit.platform.file.PosixFiles;
 import net.rubygrapefruit.platform.internal.DefaultProcessLauncher;
+import net.rubygrapefruit.platform.memory.Memory;
+import net.rubygrapefruit.platform.terminal.Terminals;
 import org.gradle.api.JavaVersion;
+import org.gradle.internal.Cast;
 import org.gradle.internal.SystemProperties;
 import org.gradle.internal.jvm.Jvm;
+import org.gradle.internal.nativeintegration.NativeCapabilities;
 import org.gradle.internal.nativeintegration.ProcessEnvironment;
 import org.gradle.internal.nativeintegration.console.ConsoleDetector;
+import org.gradle.internal.nativeintegration.console.FallbackConsoleDetector;
 import org.gradle.internal.nativeintegration.console.NativePlatformConsoleDetector;
-import org.gradle.internal.nativeintegration.console.NoOpConsoleDetector;
+import org.gradle.internal.nativeintegration.console.TestOverrideConsoleDetector;
 import org.gradle.internal.nativeintegration.console.WindowsConsoleDetector;
 import org.gradle.internal.nativeintegration.filesystem.FileMetadataAccessor;
 import org.gradle.internal.nativeintegration.filesystem.services.FallbackFileMetadataAccessor;
@@ -41,10 +46,11 @@ import org.gradle.internal.nativeintegration.filesystem.services.NativePlatformB
 import org.gradle.internal.nativeintegration.filesystem.services.UnavailablePosixFiles;
 import org.gradle.internal.nativeintegration.jansi.JansiBootPathConfigurer;
 import org.gradle.internal.nativeintegration.jna.UnsupportedEnvironment;
+import org.gradle.internal.nativeintegration.network.HostnameLookup;
 import org.gradle.internal.nativeintegration.processenvironment.NativePlatformBackedProcessEnvironment;
 import org.gradle.internal.os.OperatingSystem;
-import org.gradle.internal.reflect.JavaReflectionUtil;
 import org.gradle.internal.service.DefaultServiceRegistry;
+import org.gradle.internal.service.ServiceCreationException;
 import org.gradle.internal.service.ServiceRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -53,6 +59,10 @@ import java.io.File;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
+
+import static org.gradle.internal.nativeintegration.filesystem.services.JdkFallbackHelper.newInstanceOrFallback;
 
 /**
  * Provides various native platform integration services.
@@ -60,6 +70,7 @@ import java.lang.reflect.Proxy;
 public class NativeServices extends DefaultServiceRegistry implements ServiceRegistry {
     private static final Logger LOGGER = LoggerFactory.getLogger(NativeServices.class);
     private static boolean useNativeIntegrations;
+    private static boolean useFileSystemWatching;
     private static final NativeServices INSTANCE = new NativeServices();
     private static final JansiBootPathConfigurer JANSI_BOOT_PATH_CONFIGURER = new JansiBootPathConfigurer();
     private static boolean initialized;
@@ -75,36 +86,51 @@ public class NativeServices extends DefaultServiceRegistry implements ServiceReg
 
     /**
      * Initializes the native services to use the given user home directory to store native libs and other resources. Does nothing if already initialized.
+     *
+     * @param initializeAdditionalNativeLibraries Whether to initialize additional native libraries like jansi and file-events.
      */
-    public static synchronized void initialize(File userHomeDir, boolean initializeJansi) {
-        if (!initialized) {
-            useNativeIntegrations = "true".equalsIgnoreCase(System.getProperty("org.gradle.native", "true"));
-            if (useNativeIntegrations) {
-                File nativeBaseDir = getNativeServicesDir(userHomeDir);
-                try {
-                    net.rubygrapefruit.platform.Native.init(nativeBaseDir);
-                } catch (NativeIntegrationUnavailableException ex) {
-                    LOGGER.debug("Native-platform is not available.");
-                    useNativeIntegrations = false;
-                } catch (NativeException ex) {
-                    if (ex.getCause() instanceof UnsatisfiedLinkError && ex.getCause().getMessage().toLowerCase().contains("already loaded in another classloader")) {
-                        LOGGER.debug("Unable to initialize native-platform. Failure: {}", format(ex));
+    public static synchronized void initialize(File userHomeDir, boolean initializeAdditionalNativeLibraries) {
+        try {
+            if (!initialized) {
+                useNativeIntegrations = "true".equalsIgnoreCase(System.getProperty("org.gradle.native", "true"));
+                if (useNativeIntegrations) {
+                    File nativeBaseDir = getNativeServicesDir(userHomeDir).getAbsoluteFile();
+                    try {
+                        net.rubygrapefruit.platform.Native.init(nativeBaseDir);
+                    } catch (NativeIntegrationUnavailableException ex) {
+                        LOGGER.debug("Native-platform is not available.");
                         useNativeIntegrations = false;
-                    } else if (ex.getMessage().equals("Could not extract native JNI library.")
-                        && ex.getCause().getMessage().contains("native-platform.dll (The process cannot access the file because it is being used by another process)")) {
-                        //triggered through tooling API of Gradle <2.3 - native-platform.dll is shared by tooling client (<2.3) and daemon (current) and it is locked by the client (<2.3 issue)
-                        LOGGER.debug("Unable to initialize native-platform. Failure: {}", format(ex));
-                        useNativeIntegrations = false;
-                    } else {
-                        throw ex;
+                    } catch (NativeException ex) {
+                        if (ex.getCause() instanceof UnsatisfiedLinkError && ex.getCause().getMessage().toLowerCase().contains("already loaded in another classloader")) {
+                            LOGGER.debug("Unable to initialize native-platform. Failure: {}", format(ex));
+                            useNativeIntegrations = false;
+                        } else if (ex.getMessage().equals("Could not extract native JNI library.")
+                                && ex.getCause().getMessage().contains("native-platform.dll (The process cannot access the file because it is being used by another process)")) {
+                            //triggered through tooling API of Gradle <2.3 - native-platform.dll is shared by tooling client (<2.3) and daemon (current) and it is locked by the client (<2.3 issue)
+                            LOGGER.debug("Unable to initialize native-platform. Failure: {}", format(ex));
+                            useNativeIntegrations = false;
+                        } else {
+                            throw ex;
+                        }
                     }
+                    if (initializeAdditionalNativeLibraries) {
+                        if (useNativeIntegrations) {
+                            useFileSystemWatching = true;
+                            try {
+                                FileEvents.init(nativeBaseDir);
+                            } catch (NativeIntegrationUnavailableException ex) {
+                                LOGGER.info("Native file system watching is not available for this operating system.", ex);
+                                useFileSystemWatching = false;
+                            }
+                        }
+                        JANSI_BOOT_PATH_CONFIGURER.configure(nativeBaseDir);
+                    }
+                    LOGGER.info("Initialized native services in: " + nativeBaseDir);
                 }
-                if (initializeJansi) {
-                    JANSI_BOOT_PATH_CONFIGURER.configure(nativeBaseDir);
-                }
-                LOGGER.info("Initialized native services in: " + nativeBaseDir);
+                initialized = true;
             }
-            initialized = true;
+        } catch (RuntimeException e) {
+            throw new ServiceCreationException("Could not initialize native services.", e);
         }
     }
 
@@ -161,6 +187,10 @@ public class NativeServices extends DefaultServiceRegistry implements ServiceReg
     }
 
     protected ConsoleDetector createConsoleDetector(OperatingSystem operatingSystem) {
+        return new TestOverrideConsoleDetector(backingConsoleDetector(operatingSystem));
+    }
+
+    private ConsoleDetector backingConsoleDetector(OperatingSystem operatingSystem) {
         if (useNativeIntegrations) {
             try {
                 Terminals terminals = net.rubygrapefruit.platform.Native.get(Terminals.class);
@@ -181,7 +211,7 @@ public class NativeServices extends DefaultServiceRegistry implements ServiceReg
             }
         }
 
-        return new NoOpConsoleDetector();
+        return new FallbackConsoleDetector();
     }
 
     protected WindowsRegistry createWindowsRegistry(OperatingSystem operatingSystem) {
@@ -235,14 +265,31 @@ public class NativeServices extends DefaultServiceRegistry implements ServiceReg
         return notAvailable(UnavailablePosixFiles.class);
     }
 
+    protected HostnameLookup createHostnameLookup() {
+        if (useNativeIntegrations) {
+            try {
+                String hostname = Native.get(SystemInfo.class).getHostname();
+                return new FixedHostname(hostname);
+            } catch (NativeIntegrationUnavailableException e) {
+                LOGGER.debug("Native-platform posix files integration is not available. Continuing with fallback.");
+            }
+        }
+        String hostname;
+        try {
+            hostname = InetAddress.getLocalHost().getHostName();
+        } catch (UnknownHostException e) {
+            hostname = InetAddress.getLoopbackAddress().getHostAddress();
+        }
+        return new FixedHostname(hostname);
+    }
+
     protected FileMetadataAccessor createFileMetadataAccessor(OperatingSystem operatingSystem) {
         // Based on the benchmark found in org.gradle.internal.nativeintegration.filesystem.FileMetadataAccessorBenchmark
-        // and the results in the PR https://github.com/gradle/gradle/pull/1183
-        // we're using "native platform" for Mac OS and a  mix of File and NIO API for Linux and Windows
-        // Once JDK 9 is out, we need to revisit the choice, because testing for file.exists() should become much
-        // cheaper using the pure NIO implementation.
+        // and the results in the PR https://github.com/gradle/gradle/pull/12966
+        // we're using "native platform" for all OSes if available.
+        // If it isn't available, we fall back to using Java NIO and, if that fails, to using the old `File` APIs.
 
-        if ((operatingSystem.isMacOsX()) && useNativeIntegrations) {
+        if (useNativeIntegrations) {
             try {
                 return new NativePlatformBackedFileMetadataAccessor(net.rubygrapefruit.platform.Native.get(Files.class));
             } catch (NativeIntegrationUnavailableException e) {
@@ -251,14 +298,28 @@ public class NativeServices extends DefaultServiceRegistry implements ServiceReg
         }
 
         if (JavaVersion.current().isJava7Compatible()) {
-            return JavaReflectionUtil.newInstanceOrFallback("org.gradle.internal.nativeintegration.filesystem.jdk7.Jdk7FileMetadataAccessor", NativeServices.class.getClassLoader(), FallbackFileMetadataAccessor.class);
+            return newInstanceOrFallback("org.gradle.internal.nativeintegration.filesystem.jdk7.NioFileMetadataAccessor", NativeServices.class.getClassLoader(), FallbackFileMetadataAccessor.class);
         }
 
         return new FallbackFileMetadataAccessor();
     }
 
+    protected NativeCapabilities createNativeCapabilities() {
+        return new NativeCapabilities() {
+            @Override
+            public boolean useNativeIntegrations() {
+                return useNativeIntegrations;
+            }
+
+            @Override
+            public boolean useFileSystemWatching() {
+                return useFileSystemWatching;
+            }
+        };
+    }
+
     private <T> T notAvailable(Class<T> type) {
-        return (T) Proxy.newProxyInstance(type.getClassLoader(), new Class[]{type}, new BrokenService(type.getSimpleName()));
+        return Cast.uncheckedNonnullCast(Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[]{type}, new BrokenService(type.getSimpleName())));
     }
 
     private static String format(Throwable throwable) {
@@ -282,6 +343,19 @@ public class NativeServices extends DefaultServiceRegistry implements ServiceReg
         @Override
         public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
             throw new org.gradle.internal.nativeintegration.NativeIntegrationUnavailableException(String.format("%s is not supported on this operating system.", type));
+        }
+    }
+
+    private static class FixedHostname implements HostnameLookup {
+        private final String hostname;
+
+        public FixedHostname(String hostname) {
+            this.hostname = hostname;
+        }
+
+        @Override
+        public String getHostname() {
+            return hostname;
         }
     }
 }

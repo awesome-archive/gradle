@@ -17,15 +17,18 @@
 package org.gradle
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
 import org.gradle.internal.nativeintegration.jansi.JansiStorageLocator
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
 import org.junit.Rule
+import spock.lang.IgnoreIf
 import spock.lang.Issue
 
+@IgnoreIf({ GradleContextualExecuter.embedded }) // needs to run a distribution from scratch to not have native services on the classpath already
 class NativeServicesIntegrationTest extends AbstractIntegrationSpec {
 
     @Rule
-    final TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider()
+    final TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider(getClass())
 
     def nativeDir = new File(executer.gradleUserHomeDir, 'native')
     def library
@@ -35,7 +38,7 @@ class NativeServicesIntegrationTest extends AbstractIntegrationSpec {
         def jansiStorage = jansiLibraryLocator.locate(nativeDir)
         library = jansiStorage.targetLibFile
 
-        executer.requireGradleDistribution().withNoExplicitTmpDir()
+        executer.withNoExplicitTmpDir()
     }
 
     def "native services libs are unpacked to gradle user home dir"() {

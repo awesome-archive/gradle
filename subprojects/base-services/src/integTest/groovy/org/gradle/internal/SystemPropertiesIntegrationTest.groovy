@@ -22,32 +22,7 @@ import org.junit.Rule
 
 class SystemPropertiesIntegrationTest extends ConcurrentSpec {
     @Rule SetSystemProperties properties = new SetSystemProperties()
-    @Rule TestNameTestDirectoryProvider temporaryFolder
-
-    def "creates Java compiler for mismatching Java home directory for multiple threads concurrently"() {
-        final int threadCount = 100
-        Factory<String> factory = Mock()
-        String factoryCreationResult = 'test'
-        File originalJavaHomeDir = SystemProperties.instance.javaHomeDir
-        File providedJavaHomeDir = temporaryFolder.file('my/test/java/home/toolprovider')
-
-        when:
-        async {
-            threadCount.times {
-                start {
-                    String expectedString = SystemProperties.instance.withJavaHome(providedJavaHomeDir, factory)
-                    assert factoryCreationResult == expectedString
-                }
-            }
-        }
-
-        then:
-        threadCount * factory.create() >> {
-            assert SystemProperties.instance.javaHomeDir == providedJavaHomeDir
-            factoryCreationResult
-        }
-        assert SystemProperties.instance.javaHomeDir == originalJavaHomeDir
-    }
+    @Rule TestNameTestDirectoryProvider temporaryFolder = new TestNameTestDirectoryProvider(getClass())
 
     def "sets a system property for the duration of a Factory operation"() {
         final int threadCount = 100
@@ -86,5 +61,53 @@ class SystemPropertiesIntegrationTest extends ConcurrentSpec {
         then:
         assert System.getProperty(presetPropertyName) == "original"
         assert System.getProperty(notsetPropertyName) == null
+    }
+
+    def "withProperty and withProperties are never run concurrently"() {
+        final int threadCount = 100
+        def id = UUID.randomUUID().toString()
+
+        when:
+        async {
+            threadCount.times { i ->
+                start {
+                    SystemProperties.instance.withSystemProperty(id, "bar", {"baz"})
+                }
+                start {
+                    SystemProperties.instance.withSystemProperties {
+                        System.properties.each {
+                            assert it.key != id
+                        }
+                    }
+                }
+            }
+        }
+
+        then:
+        noExceptionThrown()
+    }
+
+    def "withProperties(Map) and withProperties are never run concurrently"() {
+        final int threadCount = 100
+        def id = UUID.randomUUID().toString()
+
+        when:
+        async {
+            threadCount.times { i ->
+                start {
+                    SystemProperties.instance.withSystemProperties((id): "bar", {"baz"})
+                }
+                start {
+                    SystemProperties.instance.withSystemProperties {
+                        System.properties.each {
+                            assert it.key != id
+                        }
+                    }
+                }
+            }
+        }
+
+        then:
+        noExceptionThrown()
     }
 }

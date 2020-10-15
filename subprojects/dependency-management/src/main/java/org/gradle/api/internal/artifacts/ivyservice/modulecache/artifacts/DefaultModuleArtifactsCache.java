@@ -17,11 +17,12 @@ package org.gradle.api.internal.artifacts.ivyservice.modulecache.artifacts;
 
 import com.google.common.base.Objects;
 import org.gradle.api.artifacts.component.ComponentIdentifier;
-import org.gradle.api.internal.artifacts.ivyservice.CacheLockingManager;
+import org.gradle.api.internal.artifacts.ivyservice.ArtifactCacheLockingManager;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.result.ComponentIdentifierSerializer;
 import org.gradle.api.internal.artifacts.metadata.ComponentArtifactMetadataSerializer;
 import org.gradle.cache.PersistentIndexedCache;
 import org.gradle.internal.component.model.ComponentArtifactMetadata;
+import org.gradle.internal.hash.HashCode;
 import org.gradle.internal.serialize.AbstractSerializer;
 import org.gradle.internal.serialize.Decoder;
 import org.gradle.internal.serialize.Encoder;
@@ -29,58 +30,50 @@ import org.gradle.internal.serialize.Serializer;
 import org.gradle.internal.serialize.SetSerializer;
 import org.gradle.util.BuildCommencedTimeProvider;
 
-import java.math.BigInteger;
 import java.util.Set;
 
-public class DefaultModuleArtifactsCache extends InMemoryModuleArtifactsCache {
-    private final CacheLockingManager cacheLockingManager;
+public class DefaultModuleArtifactsCache extends AbstractArtifactsCache {
+    private final ArtifactCacheLockingManager artifactCacheLockingManager;
 
-    private PersistentIndexedCache<ArtifactsAtRepositoryKey, ModuleArtifactsCacheEntry> cache;
+    private PersistentIndexedCache<ArtifactsAtRepositoryKey, AbstractArtifactsCache.ModuleArtifactsCacheEntry> cache;
 
-    public DefaultModuleArtifactsCache(BuildCommencedTimeProvider timeProvider, CacheLockingManager cacheLockingManager) {
+    public DefaultModuleArtifactsCache(BuildCommencedTimeProvider timeProvider, ArtifactCacheLockingManager artifactCacheLockingManager) {
         super(timeProvider);
-        this.cacheLockingManager = cacheLockingManager;
+        this.artifactCacheLockingManager = artifactCacheLockingManager;
     }
 
-    private PersistentIndexedCache<ArtifactsAtRepositoryKey, ModuleArtifactsCacheEntry> getCache() {
+    private PersistentIndexedCache<ArtifactsAtRepositoryKey, AbstractArtifactsCache.ModuleArtifactsCacheEntry> getCache() {
         if (cache == null) {
             cache = initCache();
         }
         return cache;
     }
 
-    private PersistentIndexedCache<ArtifactsAtRepositoryKey, ModuleArtifactsCacheEntry> initCache() {
-        return cacheLockingManager.createCache("module-artifacts", new ModuleArtifactsKeySerializer(), new ModuleArtifactsCacheEntrySerializer());
+    private PersistentIndexedCache<ArtifactsAtRepositoryKey, AbstractArtifactsCache.ModuleArtifactsCacheEntry> initCache() {
+        return artifactCacheLockingManager.createCache("module-artifacts", new ModuleArtifactsKeySerializer(), new ModuleArtifactsCacheEntrySerializer());
     }
 
     @Override
-    protected void store(ArtifactsAtRepositoryKey key, ModuleArtifactsCacheEntry entry) {
-        super.store(key, entry);
+    protected void store(ArtifactsAtRepositoryKey key, AbstractArtifactsCache.ModuleArtifactsCacheEntry entry) {
         getCache().put(key, entry);
     }
 
     @Override
     protected ModuleArtifactsCacheEntry get(ArtifactsAtRepositoryKey key) {
-        ModuleArtifactsCacheEntry entry = super.get(key);
-        if (entry == null) {
-            entry = getCache().get(key);
-
-            if (entry != null) {
-                super.store(key, entry);
-            }
-        }
-        return entry;
+        return getCache().get(key);
     }
 
     private static class ModuleArtifactsKeySerializer extends AbstractSerializer<ArtifactsAtRepositoryKey> {
         private final ComponentIdentifierSerializer identifierSerializer = new ComponentIdentifierSerializer();
 
+        @Override
         public void write(Encoder encoder, ArtifactsAtRepositoryKey value) throws Exception {
             encoder.writeString(value.repositoryId);
             identifierSerializer.write(encoder, value.componentId);
             encoder.writeString(value.context);
         }
 
+        @Override
         public ArtifactsAtRepositoryKey read(Decoder decoder) throws Exception {
             String resolverId = decoder.readString();
             ComponentIdentifier componentId = identifierSerializer.read(decoder);
@@ -106,7 +99,8 @@ public class DefaultModuleArtifactsCache extends InMemoryModuleArtifactsCache {
 
     private static class ModuleArtifactsCacheEntrySerializer extends AbstractSerializer<ModuleArtifactsCacheEntry> {
         private final Serializer<Set<ComponentArtifactMetadata>> artifactsSerializer =
-                new SetSerializer<ComponentArtifactMetadata>(new ComponentArtifactMetadataSerializer());
+            new SetSerializer<>(new ComponentArtifactMetadataSerializer());
+        @Override
         public void write(Encoder encoder, ModuleArtifactsCacheEntry value) throws Exception {
             encoder.writeLong(value.createTimestamp);
             byte[] hash = value.moduleDescriptorHash.toByteArray();
@@ -114,10 +108,11 @@ public class DefaultModuleArtifactsCache extends InMemoryModuleArtifactsCache {
             artifactsSerializer.write(encoder, value.artifacts);
         }
 
+        @Override
         public ModuleArtifactsCacheEntry read(Decoder decoder) throws Exception {
             long createTimestamp = decoder.readLong();
             byte[] encodedHash = decoder.readBinary();
-            BigInteger hash = new BigInteger(encodedHash);
+            HashCode hash = HashCode.fromBytes(encodedHash);
             Set<ComponentArtifactMetadata> artifacts = artifactsSerializer.read(decoder);
             return new ModuleArtifactsCacheEntry(artifacts, createTimestamp, hash);
         }

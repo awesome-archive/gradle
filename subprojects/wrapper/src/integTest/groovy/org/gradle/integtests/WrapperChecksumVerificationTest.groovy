@@ -15,38 +15,44 @@
  */
 
 package org.gradle.integtests
-import org.gradle.internal.hash.HashUtil
-import org.gradle.test.fixtures.server.http.HttpServer
-import org.junit.Rule
 
+import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
+import org.gradle.internal.hash.HashUtil
+import org.gradle.test.fixtures.server.http.BlockingHttpServer
+import org.junit.Rule
+import spock.lang.IgnoreIf
+import spock.lang.Issue
+
+@Issue('https://github.com/gradle/gradle-private/issues/1537')
+@IgnoreIf({ GradleContextualExecuter.embedded }) // wrapperExecuter requires a real distribution
 class WrapperChecksumVerificationTest extends AbstractWrapperIntegrationSpec {
     @Rule
-    HttpServer server = new HttpServer()
+    BlockingHttpServer server = new BlockingHttpServer()
 
     def setup() {
-        server.allowGetOrHead('/gradle-bin.zip', distribution.binDistribution)
+        server.expect(server.get("/gradle-bin.zip").sendFile(distribution.binDistribution))
         server.start()
     }
 
     def "wrapper execution fails when using bad checksum"() {
         given:
-        prepareWrapper(new URI("${server.address}/gradle-bin.zip"))
+        prepareWrapper(new URI("${server.uri}/gradle-bin.zip"))
 
         and:
         file('gradle/wrapper/gradle-wrapper.properties') << 'distributionSha256Sum=bad'
 
         when:
-        def failure = wrapperExecuter.runWithFailure()
+        def failure = wrapperExecuter.withStackTraceChecksDisabled().runWithFailure()
         def f = new File(file("user-home/wrapper/dists/gradle-bin").listFiles()[0], "gradle-bin.zip")
 
         then:
-        failure.error.startsWith("""
+        failure.error.contains("""
 Verification of Gradle distribution failed!
 
 Your Gradle distribution may have been tampered with.
 Confirm that the 'distributionSha256Sum' property in your gradle-wrapper.properties file is correct and you are downloading the wrapper from a trusted source.
 
- Distribution Url: ${server.address}/gradle-bin.zip
+ Distribution Url: ${server.uri}/gradle-bin.zip
 Download Location: $f.absolutePath
 Expected checksum: 'bad'
   Actual checksum: '${HashUtil.sha256(distribution.binDistribution).asZeroPaddedHexString(64)}'
@@ -55,7 +61,7 @@ Expected checksum: 'bad'
 
     def "wrapper successfully verifies good checksum"() {
         given:
-        prepareWrapper(new URI("${server.address}/gradle-bin.zip"))
+        prepareWrapper(new URI("${server.uri}/gradle-bin.zip"))
 
         and:
         file('gradle/wrapper/gradle-wrapper.properties') << "distributionSha256Sum=${HashUtil.sha256(distribution.binDistribution).asZeroPaddedHexString(64)}"

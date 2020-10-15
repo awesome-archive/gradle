@@ -19,51 +19,55 @@ import org.gradle.api.Action
 import org.gradle.api.Task
 import org.gradle.api.file.SourceDirectorySet
 import org.gradle.api.internal.file.DefaultSourceDirectorySet
+import org.gradle.api.internal.file.FileCollectionFactory
 import org.gradle.api.internal.file.FileResolver
 import org.gradle.api.internal.file.TestFiles
-import org.gradle.api.internal.file.collections.DefaultConfigurableFileCollection
 import org.gradle.api.tasks.SourceSet
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
-import org.gradle.testfixtures.internal.NativeServicesTestFixture
+import org.gradle.util.TestUtil
 import org.junit.Rule
 import spock.lang.Specification
 
 import static org.gradle.util.Matchers.isEmpty
-import static org.hamcrest.Matchers.*
-import static org.junit.Assert.assertThat
+import static org.hamcrest.CoreMatchers.equalTo
+import static org.hamcrest.CoreMatchers.hasItem
+import static org.hamcrest.CoreMatchers.instanceOf
+import static org.hamcrest.CoreMatchers.nullValue
+import static org.hamcrest.MatcherAssert.assertThat
 
 class DefaultSourceSetTest extends Specification {
-    public @Rule TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider()
+    public @Rule TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider(getClass())
     private final TaskResolver taskResolver = [resolveTask: {name -> [getName: {name}] as Task}] as TaskResolver
+    private final TaskDependencyFactory taskDependencyFactory = Stub(TaskDependencyFactory) {
+        _ * configurableDependency() >> new DefaultTaskDependency(taskResolver)
+    }
     private final FileResolver fileResolver = TestFiles.resolver(tmpDir.testDirectory)
+    private final FileCollectionFactory fileCollectionFactory = TestFiles.fileCollectionFactory(tmpDir.testDirectory, taskDependencyFactory)
 
     private DefaultSourceSet sourceSet(String name) {
-        def s = new DefaultSourceSet(name, TestFiles.sourceDirectorySetFactory(tmpDir.testDirectory))
-        s.classes = new DefaultSourceSetOutput(s.displayName, fileResolver, taskResolver)
+        def s = TestUtil.instantiatorFactory().decorateLenient().newInstance(DefaultSourceSet, name, TestUtil.objectFactory(tmpDir.testDirectory))
+        s.classes = new DefaultSourceSetOutput(s.displayName, fileResolver, fileCollectionFactory)
         return s
-    }
-
-    def setup() {
-        NativeServicesTestFixture.initialize()
     }
 
     void hasUsefulDisplayName() {
         SourceSet sourceSet = sourceSet('int-test')
         expect:
-        assertThat(sourceSet.toString(), equalTo("source set 'int test'"));
+        assertThat(sourceSet.toString(), equalTo("source set 'int test'"))
     }
 
     void defaultValues() {
         SourceSet sourceSet = sourceSet('set-name')
         expect:
-        assertThat(sourceSet.output.classesDir, nullValue())
+        assertThat(sourceSet.output.classesDirs, isEmpty())
         assertThat(sourceSet.output.files, isEmpty())
         assertThat(sourceSet.output.displayName, equalTo('set name classes'))
         assertThat(sourceSet.output.toString(), equalTo('set name classes'))
         assertThat(sourceSet.output.buildDependencies.getDependencies(null), isEmpty())
 
-        assertThat(sourceSet.output.classesDir, nullValue())
         assertThat(sourceSet.output.resourcesDir, nullValue())
+
+        assertThat(sourceSet.output.generatedSourcesDirs, isEmpty())
 
         assertThat(sourceSet.compileClasspath, nullValue())
 
@@ -176,20 +180,20 @@ class DefaultSourceSetTest extends Specification {
 
         when:
         def dir1 = tmpDir.file('classes')
-        sourceSet.output.classesDir = dir1
+        sourceSet.output.classesDirs.from = [dir1]
         then:
         assertThat(sourceSet.output.files, equalTo([dir1] as Set))
 
         when:
         def dir2 = tmpDir.file('other-classes')
-        sourceSet.output.classesDir = dir2
+        sourceSet.output.classesDirs.from = [dir2]
         then:
         assertThat(sourceSet.output.files, equalTo([dir2] as Set))
     }
 
     void dependenciesTrackChangesToCompileTasks() {
         SourceSet sourceSet = sourceSet('set-name')
-        sourceSet.output.classesDir = new File('classes')
+        sourceSet.output.classesDirs.from = [new File('classes')]
 
         expect:
         def dependencies = sourceSet.output.buildDependencies
@@ -204,19 +208,37 @@ class DefaultSourceSetTest extends Specification {
 
     void dependenciesTrackChangesToOutputDirs() {
         SourceSet sourceSet = sourceSet('set-name')
-        sourceSet.output.classesDir = new File('classes')
+        sourceSet.output.classesDirs.from = [new File('classes')]
 
         expect:
         def dependencies = sourceSet.output.buildDependencies
         assertThat(dependencies.getDependencies(null), isEmpty())
 
         sourceSet.compiledBy('a')
-        def dirs1 = new DefaultConfigurableFileCollection(fileResolver, taskResolver)
+        def dirs1 = fileCollectionFactory.configurableFiles()
         dirs1.builtBy('b')
         sourceSet.output.dir(dirs1)
         assertThat(dependencies.getDependencies(null)*.name as Set, equalTo(['a', 'b'] as Set))
 
         dirs1.builtBy('c')
         assertThat(dependencies.getDependencies(null)*.name as Set, equalTo(['a', 'b', 'c'] as Set))
+    }
+
+    def "can access extra properties and extensions through the api"() {
+        given:
+        SourceSet sourceSet = sourceSet('set-name')
+
+        expect:
+        sourceSet.extensions.extraProperties.properties.isEmpty()
+        sourceSet.extensions.extensionsSchema.elements.size() == 1
+
+        when:
+        sourceSet.extensions.extraProperties.set("foo", "bar")
+        sourceSet.extensions.add("bazar", "cathedral")
+
+        then:
+        sourceSet.extensions.extraProperties.get("foo") == "bar"
+        sourceSet.extensions.extensionsSchema.elements.size() == 2
+        sourceSet.extensions.getByName("bazar") == "cathedral"
     }
 }

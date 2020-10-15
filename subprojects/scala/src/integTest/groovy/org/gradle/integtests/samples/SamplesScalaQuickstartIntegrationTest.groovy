@@ -16,33 +16,28 @@
 
 package org.gradle.integtests.samples
 
-import org.gradle.integtests.fixtures.AbstractIntegrationTest
+import org.gradle.integtests.fixtures.AbstractSampleIntegrationTest
 import org.gradle.integtests.fixtures.DefaultTestExecutionResult
-import org.gradle.integtests.fixtures.ZincScalaCompileFixture
 import org.gradle.integtests.fixtures.Sample
+import org.gradle.integtests.fixtures.UsesSample
+import org.gradle.integtests.fixtures.ZincScalaCompileFixture
 import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
 import org.gradle.test.fixtures.file.TestFile
-import org.junit.Before
 import org.junit.Rule
-import org.junit.Test
+import spock.lang.Unroll
 
-import static org.hamcrest.Matchers.containsString
+import static org.hamcrest.CoreMatchers.containsString
 
-class SamplesScalaQuickstartIntegrationTest extends AbstractIntegrationTest {
+class SamplesScalaQuickstartIntegrationTest extends AbstractSampleIntegrationTest {
 
-    @Rule public final Sample sample = new Sample(testDirectoryProvider, 'scala/quickstart')
+    @Rule public final Sample sample = new Sample(testDirectoryProvider)
     @Rule public final ZincScalaCompileFixture zincScalaCompileFixture = new ZincScalaCompileFixture(executer, testDirectoryProvider)
 
-    private TestFile projectDir
-
-    @Before
-    void setUp() {
-        projectDir = sample.dir
-    }
-
-    @Test
-    public void canBuildJar() {
+    @Unroll
+    @UsesSample('scala/quickstart')
+    def "can build jar with #dsl dsl"() {
         // Build and test projects
+        TestFile projectDir = sample.dir.file(dsl)
         executer.inDirectory(projectDir).withTasks('clean', 'build').run()
 
         // Check tests have run
@@ -57,19 +52,27 @@ class SamplesScalaQuickstartIntegrationTest extends AbstractIntegrationTest {
                 'org/gradle/sample/Named.class',
                 'org/gradle/sample/Person.class'
         )
+
+        where:
+        dsl << ['groovy', 'kotlin']
     }
 
-    @Test
-    public void canBuildScalaDoc() {
+    @Unroll
+    @UsesSample('scala/quickstart')
+    def "can build scalaDoc with #dsl dsl"() {
         if (GradleContextualExecuter.isDaemon()) {
             // don't load scala into the daemon as it exhausts permgen
             return
         }
 
+        TestFile projectDir = sample.dir.file(dsl)
         executer.inDirectory(projectDir).withTasks('clean', 'scaladoc').run()
 
         projectDir.file('build/docs/scaladoc/index.html').assertExists()
         projectDir.file('build/docs/scaladoc/org/gradle/sample/Named.html')
             .assertContents(containsString("Defines the traits of one who is named."))
+
+        where:
+        dsl << ['groovy', 'kotlin']
     }
 }

@@ -21,8 +21,8 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import groovy.util.Node;
 import groovy.util.NodeList;
-import org.gradle.api.Incubating;
 import org.gradle.api.JavaVersion;
+import org.gradle.internal.Cast;
 import org.gradle.internal.xml.XmlTransformer;
 import org.gradle.plugins.ide.internal.generator.XmlPersistableConfigurationObject;
 
@@ -72,7 +72,6 @@ public class Project extends XmlPersistableConfigurationObject {
      *
      * @since 4.0
      */
-    @Incubating
     public void addModulePath(File moduleFile) {
         modulePaths.add(pathFactory.relativePath("PROJECT_DIR", moduleFile));
     }
@@ -102,12 +101,10 @@ public class Project extends XmlPersistableConfigurationObject {
     /**
      * The vcs used by the project.
      */
-    @Incubating
     public String getVcs() {
         return vcs;
     }
 
-    @Incubating
     public void setVcs(String vcs) {
         this.vcs = vcs;
     }
@@ -115,12 +112,10 @@ public class Project extends XmlPersistableConfigurationObject {
     /**
      * The project-level libraries of the IDEA project.
      */
-    @Incubating
     public Set<ProjectLibrary> getProjectLibraries() {
         return projectLibraries;
     }
 
-    @Incubating
     public void setProjectLibraries(Set<ProjectLibrary> projectLibraries) {
         this.projectLibraries = projectLibraries;
     }
@@ -239,15 +234,15 @@ public class Project extends XmlPersistableConfigurationObject {
 
     private void storeJdk() {
         Node projectRoot = findProjectRootManager();
-        projectRoot.attributes().put("assert-keyword", jdk.isAssertKeyword());
-        projectRoot.attributes().put("assert-jdk-15", jdk.isJdk15());
-        projectRoot.attributes().put("languageLevel", jdk.getLanguageLevel());
-        projectRoot.attributes().put("project-jdk-name", jdk.getProjectJdkName());
+        setNodeAttribute(projectRoot, "assert-keyword", jdk.isAssertKeyword());
+        setNodeAttribute(projectRoot, "assert-jdk-15", jdk.isJdk15());
+        setNodeAttribute(projectRoot, "languageLevel", jdk.getLanguageLevel());
+        setNodeAttribute(projectRoot, "project-jdk-name", jdk.getProjectJdkName());
     }
 
     private void storeBytecodeLevels() {
         Node bytecodeLevelConfiguration = findOrCreateBytecodeLevelConfiguration();
-        bytecodeLevelConfiguration.attributes().put("target", bytecodeVersion.toString());
+        setNodeAttribute(bytecodeLevelConfiguration, "target", bytecodeVersion.toString());
         for (IdeaModule module : modules) {
             List<Node> bytecodeLevelModules = getChildren(bytecodeLevelConfiguration, "module");
             Node moduleNode = findFirstWithAttributeValue(bytecodeLevelModules, "name", module.getName());
@@ -259,16 +254,16 @@ public class Project extends XmlPersistableConfigurationObject {
             } else {
                 if (moduleNode == null) {
                     moduleNode = bytecodeLevelConfiguration.appendNode("module");
-                    moduleNode.attributes().put("name", module.getName());
+                    setNodeAttribute(moduleNode, "name", module.getName());
                 }
-                moduleNode.attributes().put("target", moduleBytecodeVersionOverwrite.toString());
+                setNodeAttribute(moduleNode, "target", moduleBytecodeVersionOverwrite.toString());
             }
         }
     }
 
     private void storeVcs() {
         if (!isNullOrEmpty(vcs)) {
-            findVcsDirectoryMappings().attributes().put("vcs", vcs);
+            setNodeAttribute(findVcsDirectoryMappings(), "vcs", vcs);
         }
     }
 
@@ -325,6 +320,11 @@ public class Project extends XmlPersistableConfigurationObject {
             libraryTable = getXml().appendNode("component", attributes);
         }
         return libraryTable;
+    }
+
+    private static void setNodeAttribute(Node node, String key, Object value) {
+        final Map<String, Object> attributes = Cast.uncheckedCast(node.attributes());
+        attributes.put(key, value);
     }
 
     @Override

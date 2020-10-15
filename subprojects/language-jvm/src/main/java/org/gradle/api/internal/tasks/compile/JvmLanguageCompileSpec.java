@@ -16,9 +16,9 @@
 
 package org.gradle.api.internal.tasks.compile;
 
-import org.gradle.api.file.FileCollection;
 import org.gradle.language.base.internal.compile.CompileSpec;
 
+import javax.annotation.Nullable;
 import java.io.File;
 import java.util.List;
 
@@ -35,25 +35,30 @@ public interface JvmLanguageCompileSpec extends CompileSpec {
 
     void setDestinationDir(File destinationDir);
 
-    FileCollection getSource();
+    Iterable<File> getSourceFiles();
 
-    void setSource(FileCollection source);
-
-    @Deprecated
-    Iterable<File> getClasspath();
-
-    @Deprecated
-    void setClasspath(Iterable<File> classpath);
+    void setSourceFiles(Iterable<File> sourceFiles);
 
     List<File> getCompileClasspath();
 
     void setCompileClasspath(List<File> classpath);
 
+    @Nullable
+    Integer getRelease();
+
+    void setRelease(@Nullable Integer release);
+
+    @Nullable
     String getSourceCompatibility();
 
-    void setSourceCompatibility(String sourceCompatibility);
+    void setSourceCompatibility(@Nullable String sourceCompatibility);
 
+    @Nullable
     String getTargetCompatibility();
 
-    void setTargetCompatibility(String targetCompatibility);
+    void setTargetCompatibility(@Nullable String targetCompatibility);
+
+    List<File> getSourceRoots();
+
+    void setSourcesRoots(List<File> sourcesRoots);
 }

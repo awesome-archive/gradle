@@ -18,6 +18,7 @@ package org.gradle.play.plugins
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.TestResources
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.test.fixtures.archive.JarTestFixture
 import org.junit.Rule
 
@@ -29,6 +30,7 @@ class PlayApplicationPluginIntegrationTest extends AbstractIntegrationSpec {
     public final TestResources resources = new TestResources(temporaryFolder)
 
     def setup() {
+        executer.noDeprecationChecks()
         settingsFile << """ rootProject.name = 'play-app' """
         buildFile << """
             plugins {
@@ -76,6 +78,7 @@ class PlayApplicationPluginIntegrationTest extends AbstractIntegrationSpec {
         jar("build/playBinary/lib/play-app-assets.jar").hasDescendants()
     }
 
+    @ToBeFixedForConfigurationCache(because = ":components")
     def "can declare additional scala and java sourceSets"() {
         given:
         buildFile << """
@@ -118,6 +121,7 @@ class PlayApplicationPluginIntegrationTest extends AbstractIntegrationSpec {
 """
 
         when:
+        executer.noDeprecationChecks()
         succeeds("assemble")
 
         then:

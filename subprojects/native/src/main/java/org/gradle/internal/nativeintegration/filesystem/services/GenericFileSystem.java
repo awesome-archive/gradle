@@ -18,13 +18,13 @@ package org.gradle.internal.nativeintegration.filesystem.services;
 import com.google.common.base.Charsets;
 import com.google.common.io.Files;
 import org.apache.commons.io.FileUtils;
-import org.gradle.internal.file.FileMetadataSnapshot;
-import org.gradle.internal.nativeintegration.filesystem.FileException;
+import org.gradle.internal.file.FileException;
+import org.gradle.internal.file.FileMetadata;
 import org.gradle.internal.nativeintegration.filesystem.FileMetadataAccessor;
 import org.gradle.internal.nativeintegration.filesystem.FileModeAccessor;
 import org.gradle.internal.nativeintegration.filesystem.FileModeMutator;
+import org.gradle.internal.nativeintegration.filesystem.FileSystem;
 import org.gradle.internal.nativeintegration.filesystem.Symlink;
-import org.gradle.internal.nativeplatform.filesystem.FileSystem;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -78,7 +78,7 @@ class GenericFileSystem implements FileSystem {
     }
 
     @Override
-    public FileMetadataSnapshot stat(File f) throws FileException {
+    public FileMetadata stat(File f) throws FileException {
         return metadata.stat(f);
     }
 
@@ -96,7 +96,7 @@ class GenericFileSystem implements FileSystem {
         this.stat = stat;
         this.symlink = symlink;
         this.chmod = chmod;
-        canCreateSymbolicLink = symlink.isSymlinkSupported();
+        canCreateSymbolicLink = symlink.isSymlinkCreationSupported();
     }
 
     private void initializeCaseSensitive() {
@@ -122,7 +122,7 @@ class GenericFileSystem implements FileSystem {
 
     private File createFile(String content) throws IOException {
         File file = File.createTempFile("gradle_fs_probing", null, null);
-        Files.write(content, file, Charsets.UTF_8);
+        Files.asCharSink(file, Charsets.UTF_8).write(content);
         return file;
     }
 
@@ -140,7 +140,7 @@ class GenericFileSystem implements FileSystem {
     }
 
     private boolean hasContent(File file, String content) throws IOException {
-        return file.exists() && Files.readFirstLine(file, Charsets.UTF_8).equals(content);
+        return file.exists() && Files.asCharSource(file, Charsets.UTF_8).readFirstLine().equals(content);
     }
 
     private void checkJavaIoTmpDirExists() throws IOException {

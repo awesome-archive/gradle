@@ -22,41 +22,21 @@ import spock.lang.Unroll
 class NativeBuildDependentsPerformanceTest extends AbstractCrossVersionPerformanceTest {
 
     def setup() {
-        runner.targetVersions = ["4.7-20180308002700+0000"]
-        runner.minimumVersion = "4.0"
+        runner.targetVersions = ["6.7-20200824220048+0000"]
+        runner.minimumBaseVersion = "4.0"
     }
 
     @Unroll
-    def "#task on #testProject"() {
-        given:
-        runner.testProject = testProject
-        runner.tasksToRun = [ task ]
-        runner.args += ["--parallel", "--max-workers=4"]
-        runner.gradleOpts = ["-Xms3g", "-Xmx3g"]
-
-        when:
-        def result = runner.run()
-
-        then:
-        result.assertCurrentVersionHasNotRegressed()
-
-        where:
-        testProject            | task
-        'nativeDependents'     | 'libA0:buildDependentsLibA0'
+    def "run #task"() {
         // TODO Enable once runnable on CI (google test & target platform)
         // 'largeNativeBuild'     | 'project432:buildDependentsExternalComponent111'
         // TODO Re-evaluate this scenario: memory consumption stress case, gradleOpts = ['-Xms4g', '-Xmx4g']
         // The generated dependency graph is rather complex and deep, unrealistic?
         // 'nativeDependentsDeep' | 'libA0:buildDependentsLibA0'
-    }
-
-    @Unroll
-    def "#subprojectPath:dependentComponents on #testProject"() {
         given:
-        runner.testProject = testProject
-        runner.tasksToRun = [ "$subprojectPath:dependentComponents" ]
+        runner.tasksToRun = [ task ]
         runner.args += ["--parallel", "--max-workers=4"]
-        runner.gradleOpts = ["-Xms3g", "-Xmx3g"]
+        runner.gradleOpts = runner.projectMemoryOptions
 
         when:
         def result = runner.run()
@@ -65,12 +45,28 @@ class NativeBuildDependentsPerformanceTest extends AbstractCrossVersionPerforman
         result.assertCurrentVersionHasNotRegressed()
 
         where:
-        testProject            | subprojectPath
-        'nativeDependents'     | 'libA0'
+        task << ['libA0:buildDependentsLibA0', 'project432:buildDependentsExternalComponent111']
+    }
+
+    @Unroll
+    def "run #subprojectPath:dependentComponents"() {
         // TODO Enable once runnable on CI (google test & target platform)
         // 'largeNativeBuild'     | 'project432'
         // TODO Re-evaluate this scenario: memory consumption stress case, gradleOpts = ['-Xms4g', '-Xmx4g']
         // The generated dependency graph is rather complex and deep, unrealistic?
         // 'nativeDependentsDeep' | 'libA0'
+        given:
+        runner.tasksToRun = [ "$subprojectPath:dependentComponents" ]
+        runner.args += ["--parallel", "--max-workers=4"]
+        runner.gradleOpts = runner.projectMemoryOptions
+
+        when:
+        def result = runner.run()
+
+        then:
+        result.assertCurrentVersionHasNotRegressed()
+
+        where:
+        subprojectPath << ['libA0', 'project432']
     }
 }

@@ -21,6 +21,7 @@ import com.google.common.collect.ImmutableSortedSet;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import org.gradle.internal.Cast;
+import org.gradle.internal.MutableReference;
 import org.gradle.internal.reflect.Types.TypeVisitor;
 import org.gradle.model.Managed;
 import org.gradle.model.internal.core.MutableModelNode;
@@ -33,7 +34,6 @@ import java.lang.reflect.Modifier;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static org.gradle.internal.reflect.Types.walkTypeHierarchy;
 
@@ -91,14 +91,15 @@ public class BaseInstanceFactory<PUBLIC> implements InstanceFactory<PUBLIC> {
         if (!isManaged(publicType)) {
             throw new IllegalArgumentException(String.format("Type '%s' is not managed", publicType));
         }
-        final AtomicReference<ImplementationInfoImpl<S>> implementationInfo = new AtomicReference<ImplementationInfoImpl<S>>();
+        final MutableReference<ImplementationInfoImpl<S>> implementationInfo = MutableReference.empty();
         walkTypeHierarchy(publicType.getConcreteClass(), new RegistrationHierarchyVisitor<S>() {
             @Override
             protected void visitRegistration(TypeRegistration<? extends PUBLIC> registration) {
                 if (registration == null || registration.implementationRegistration == null) {
                     return;
                 }
-                if (implementationInfo.get() == null || implementationInfo.get().implementationRegistration.implementationType.isAssignableFrom(registration.implementationRegistration.implementationType)) {
+                ImplementationInfoImpl<S> currentImplementationInfo = implementationInfo.get();
+                if (currentImplementationInfo == null || currentImplementationInfo.implementationRegistration.implementationType.isAssignableFrom(registration.implementationRegistration.implementationType)) {
                     implementationInfo.set(new ImplementationInfoImpl<S>(publicType, registration.implementationRegistration, getInternalViews(publicType)));
                 }
             }
@@ -213,11 +214,6 @@ public class BaseInstanceFactory<PUBLIC> implements InstanceFactory<PUBLIC> {
             }
             if (Modifier.isAbstract(implementationType.getConcreteClass().getModifiers())) {
                 throw new IllegalArgumentException(String.format("Implementation type '%s' registered for '%s' must not be abstract", implementationType, publicType));
-            }
-            try {
-                implementationType.getConcreteClass().getConstructor();
-            } catch (NoSuchMethodException e) {
-                throw new IllegalArgumentException(String.format("Implementation type '%s' registered for '%s' must have a public default constructor", implementationType, publicType));
             }
             Class<?> implementationClass = implementationType.getConcreteClass();
             ImplementationFactory<S, ?> factory = findFactory(implementationClass);

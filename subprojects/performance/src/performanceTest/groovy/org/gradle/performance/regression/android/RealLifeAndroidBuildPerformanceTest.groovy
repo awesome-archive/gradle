@@ -16,21 +16,31 @@
 
 package org.gradle.performance.regression.android
 
+import org.gradle.performance.fixture.AndroidTestProject
+import org.gradle.performance.fixture.IncrementalAndroidTestProject
 import spock.lang.Unroll
 
-class RealLifeAndroidBuildPerformanceTest extends AbstractAndroidPerformanceTest {
+import static org.gradle.performance.fixture.AndroidTestProject.K9_ANDROID
 
+class RealLifeAndroidBuildPerformanceTest extends AbstractRealLifeAndroidBuildPerformanceTest {
     @Unroll
-    def "#tasks on #testProject"() {
+    def "run #tasks"() {
         given:
-        runner.testProject = testProject
+        AndroidTestProject testProject = androidTestProject
+        boolean parallel = testProject != K9_ANDROID
+        testProject.configure(runner)
         runner.tasksToRun = tasks.split(' ')
-        runner.gradleOpts = ["-Xms$memory", "-Xmx$memory"]
-        runner.args = parallel ? ['-Dorg.gradle.parallel=true'] : []
+        if (parallel) {
+            runner.args.add('-Dorg.gradle.parallel=true')
+        }
         runner.warmUpRuns = warmUpRuns
         runner.runs = runs
-        runner.minimumVersion = "4.3.1"
-        runner.targetVersions = ["4.7-20180308002700+0000"]
+        applyEnterprisePlugin()
+
+        and:
+        if (testProject instanceof IncrementalAndroidTestProject) {
+            IncrementalAndroidTestProject.configureForLatestAgpVersionOfMinor(runner, SANTA_AGP_TARGET_VERSION)
+        }
 
         when:
         def result = runner.run()
@@ -39,12 +49,39 @@ class RealLifeAndroidBuildPerformanceTest extends AbstractAndroidPerformanceTest
         result.assertCurrentVersionHasNotRegressed()
 
         where:
-        testProject         | memory | parallel | warmUpRuns | runs | tasks
-        'k9AndroidBuild'    | '1g'   | false    | null       | null | 'help'
-        'k9AndroidBuild'    | '1g'   | false    | null       | null | 'assembleDebug'
-//        'k9AndroidBuild'    | '1g'   | false    | null       | null | 'clean k9mail:assembleDebug'
-        'largeAndroidBuild' | '4g'   | true     | null       | null | 'help'
-        'largeAndroidBuild' | '4g'   | true     | null       | null | 'assembleDebug'
-        'largeAndroidBuild' | '4g'   | true     | 2          | 8    | 'clean phthalic:assembleDebug'
+        tasks                         | warmUpRuns | runs
+        'help'                        | null       | null
+        'assembleDebug'               | null       | null
+        'clean phthalic:assembleDebug' | 2          | 8
+    }
+
+    def "abi change"() {
+        given:
+        def testProject = androidTestProject as IncrementalAndroidTestProject
+        testProject.configureForAbiChange(runner)
+        IncrementalAndroidTestProject.configureForLatestAgpVersionOfMinor(runner, SANTA_AGP_TARGET_VERSION)
+        runner.args.add('-Dorg.gradle.parallel=true')
+        applyEnterprisePlugin()
+
+        when:
+        def result = runner.run()
+
+        then:
+        result.assertCurrentVersionHasNotRegressed()
+    }
+
+    def "non-abi change"() {
+        given:
+        def testProject = androidTestProject as IncrementalAndroidTestProject
+        testProject.configureForNonAbiChange(runner)
+        IncrementalAndroidTestProject.configureForLatestAgpVersionOfMinor(runner, SANTA_AGP_TARGET_VERSION)
+        runner.args.add('-Dorg.gradle.parallel=true')
+        applyEnterprisePlugin()
+
+        when:
+        def result = runner.run()
+
+        then:
+        result.assertCurrentVersionHasNotRegressed()
     }
 }

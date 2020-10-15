@@ -17,16 +17,21 @@ package org.gradle.api.internal.artifacts.ivyservice.moduleconverter.dependencie
 
 import org.gradle.api.InvalidUserDataException
 import org.gradle.api.artifacts.ProjectDependency
+import org.gradle.api.artifacts.component.ComponentIdentifier
 import org.gradle.api.artifacts.component.ModuleComponentSelector
 import org.gradle.api.internal.artifacts.dependencies.DefaultDependencyConstraint
-import org.gradle.internal.component.local.model.OpaqueComponentIdentifier
 import org.gradle.internal.component.model.LocalOriginDependencyMetadata
 import spock.lang.Specification
 
 class DefaultDependencyDescriptorFactoryTest extends Specification {
     def configurationName = "conf"
     def projectDependency = Stub(ProjectDependency)
-    def componentId = new OpaqueComponentIdentifier("foo")
+    def componentId = new ComponentIdentifier() {
+        @Override
+        String getDisplayName() {
+            return "example"
+        }
+    }
 
     def "delegates to internal factory"() {
         given:
@@ -75,7 +80,7 @@ class DefaultDependencyDescriptorFactoryTest extends Specification {
         def selector = created.selector as ModuleComponentSelector
 
         then:
-        created.pending
+        created.constraint
         selector.group == "g"
         selector.module == "m"
         selector.version == "1"
@@ -85,7 +90,7 @@ class DefaultDependencyDescriptorFactoryTest extends Specification {
         created.artifacts.empty
         created.excludes.empty
         !created.force
-        created.transitive
+        !created.transitive
         !created.changing
     }
 }

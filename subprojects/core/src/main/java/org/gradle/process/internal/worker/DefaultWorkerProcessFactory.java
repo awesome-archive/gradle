@@ -35,7 +35,7 @@ public class DefaultWorkerProcessFactory implements WorkerProcessFactory {
 
     private final LoggingManager loggingManager;
     private final MessagingServer server;
-    private final IdGenerator<?> idGenerator;
+    private final IdGenerator<Long> idGenerator;
     private final File gradleUserHomeDir;
     private final JavaExecHandleFactory execHandleFactory;
     private final OutputEventListener outputEventListener;
@@ -43,7 +43,7 @@ public class DefaultWorkerProcessFactory implements WorkerProcessFactory {
     private final MemoryManager memoryManager;
     private int connectTimeoutSeconds = 120;
 
-    public DefaultWorkerProcessFactory(LoggingManager loggingManager, MessagingServer server, ClassPathRegistry classPathRegistry, IdGenerator<?> idGenerator,
+    public DefaultWorkerProcessFactory(LoggingManager loggingManager, MessagingServer server, ClassPathRegistry classPathRegistry, IdGenerator<Long> idGenerator,
                                        File gradleUserHomeDir, TemporaryFileProvider temporaryFileProvider, JavaExecHandleFactory execHandleFactory,
                                        JvmVersionDetector jvmVersionDetector, OutputEventListener outputEventListener, MemoryManager memoryManager) {
         this.loggingManager = loggingManager;
@@ -69,13 +69,13 @@ public class DefaultWorkerProcessFactory implements WorkerProcessFactory {
     }
 
     @Override
-    public <P> SingleRequestWorkerProcessBuilder<P> singleRequestWorker(Class<P> protocolType, Class<? extends P> workerImplementation) {
-        return new DefaultSingleRequestWorkerProcessBuilder<P>(protocolType, workerImplementation, newWorkerProcessBuilder());
+    public <IN, OUT> SingleRequestWorkerProcessBuilder<IN, OUT> singleRequestWorker(Class<? extends RequestHandler<? super IN, ? extends OUT>> workerImplementation) {
+        return new DefaultSingleRequestWorkerProcessBuilder<IN, OUT>(workerImplementation, newWorkerProcessBuilder(), outputEventListener);
     }
 
     @Override
-    public <P, W extends P> MultiRequestWorkerProcessBuilder<W> multiRequestWorker(Class<W> workerType, Class<P> protocolType, Class<? extends P> workerImplementation) {
-        return new DefaultMultiRequestWorkerProcessBuilder<W>(workerType, workerImplementation, newWorkerProcessBuilder());
+    public <IN, OUT> MultiRequestWorkerProcessBuilder<IN, OUT> multiRequestWorker(Class<? extends RequestHandler<? super IN, ? extends OUT>> workerImplementation) {
+        return new DefaultMultiRequestWorkerProcessBuilder<IN, OUT>(workerImplementation, newWorkerProcessBuilder(), outputEventListener);
     }
 
     private DefaultWorkerProcessBuilder newWorkerProcessBuilder() {

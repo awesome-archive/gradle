@@ -19,8 +19,8 @@ package org.gradle.testing.jacoco.plugins;
 import com.google.common.base.Joiner;
 import org.apache.commons.lang.StringUtils;
 import org.gradle.api.Incubating;
-import org.gradle.api.Project;
 import org.gradle.api.file.FileCollection;
+import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.provider.Property;
 import org.gradle.api.provider.Provider;
 import org.gradle.api.tasks.Classpath;
@@ -42,7 +42,6 @@ import java.util.List;
 /**
  * Extension for tasks that should run with a Jacoco agent to generate coverage execution data.
  */
-@Incubating
 public class JacocoTaskExtension {
 
     /**
@@ -67,10 +66,9 @@ public class JacocoTaskExtension {
 
     private boolean enabled = true;
     private final Property<File> destinationFile;
-    private boolean append = true;
-    private List<String> includes = new ArrayList<String>();
-    private List<String> excludes = new ArrayList<String>();
-    private List<String> excludeClassLoaders = new ArrayList<String>();
+    private List<String> includes = new ArrayList<>();
+    private List<String> excludes = new ArrayList<>();
+    private List<String> excludeClassLoaders = new ArrayList<>();
     private boolean includeNoLocationClasses;
     private String sessionId;
     private boolean dumpOnExit = true;
@@ -83,14 +81,16 @@ public class JacocoTaskExtension {
     /**
      * Creates a Jacoco task extension.
      *
-     * @param project the project
+     * @param objects the object factory
      * @param agent the agent JAR to use for analysis
      * @param task the task we extend
+     * @since 6.8
      */
-    public JacocoTaskExtension(Project project, JacocoAgentJar agent, JavaForkOptions task) {
+    @Incubating
+    public JacocoTaskExtension(ObjectFactory objects, JacocoAgentJar agent, JavaForkOptions task) {
         this.agent = agent;
         this.task = task;
-        destinationFile = project.getObjects().property(File.class);
+        destinationFile = objects.property(File.class);
     }
 
     /**
@@ -127,18 +127,6 @@ public class JacocoTaskExtension {
 
     public void setDestinationFile(File destinationFile) {
         this.destinationFile.set(destinationFile);
-    }
-
-    /**
-     * Whether or not data should be appended if the {@code destinationFile} already exists. Defaults to {@code true}.
-     */
-    @Input
-    public boolean isAppend() {
-        return append;
-    }
-
-    public void setAppend(boolean append) {
-        this.append = append;
     }
 
     /**
@@ -321,7 +309,7 @@ public class JacocoTaskExtension {
         builder.append(RelativePathUtil.relativePath(task.getWorkingDir(), agent.getJar()));
         builder.append('=');
         argument.append("destfile", getDestinationFile());
-        argument.append("append", isAppend());
+        argument.append("append", true);
         argument.append("includes", getIncludes());
         argument.append("excludes", getExcludes());
         argument.append("exclclassloader", getExcludeClassLoaders());

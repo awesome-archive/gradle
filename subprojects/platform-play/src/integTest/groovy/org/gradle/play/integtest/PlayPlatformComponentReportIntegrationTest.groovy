@@ -15,6 +15,7 @@
  */
 package org.gradle.play.integtest
 import org.gradle.api.reporting.components.AbstractComponentReportIntegrationTest
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.platform.base.internal.DefaultPlatformRequirement
 import org.gradle.play.internal.DefaultPlayPlatform
 import org.gradle.play.internal.PlayPlatformResolver
@@ -23,7 +24,10 @@ class PlayPlatformComponentReportIntegrationTest extends AbstractComponentReport
     private String defaultPlayPlatformName = String.format("play-%s", DefaultPlayPlatform.DEFAULT_PLAY_VERSION);
     private def defaultPlayPlatform = new PlayPlatformResolver().resolve(DefaultPlatformRequirement.create(defaultPlayPlatformName));
 
+    @ToBeFixedForConfigurationCache(because = ":components")
     def "shows details of Play application"() {
+        executer.expectDeprecationWarnings(6)
+
         given:
         buildFile << """
             plugins {

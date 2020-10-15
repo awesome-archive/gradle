@@ -18,7 +18,7 @@ package org.gradle.testing.testng
 
 import org.gradle.integtests.fixtures.DefaultTestExecutionResult
 import org.gradle.testing.fixture.AbstractJvmFailFastIntegrationSpec
-import org.hamcrest.Matchers
+import org.hamcrest.CoreMatchers
 import spock.lang.Unroll
 
 class TestNGFailFastIntegrationTest extends AbstractJvmFailFastIntegrationSpec {
@@ -64,19 +64,22 @@ class TestNGFailFastIntegrationTest extends AbstractJvmFailFastIntegrationSpec {
         testExecution.release(1)
         gradleHandle.waitForFailure()
         def result = new DefaultTestExecutionResult(testDirectory)
-        assert 1 == resourceForTest.keySet().count { result.testClassExists(it) && result.testClass(it).testFailed('failedTest', Matchers.anything()) }
-        assert 1 == resourceForTest.keySet().count { result.testClassExists(it) && result.testClass(it).testCount != 0 }
-        assert 5 >= resourceForTest.keySet().count { result.testClassExists(it) && result.testClass(it).testCount == 0 }
+        assert 1 == resourceForTest.keySet().count { result.testClassExists(it) && result.testClass(it).testFailed('failedTest', CoreMatchers.anything()) }
+        assert 5 == resourceForTest.keySet().with {
+            count { !result.testClassExists(it) } +
+                count { result.testClassExists(it) && result.testClass(it).testCount == 0 } +
+                count { result.testClassExists(it) && result.testClass(it).testSkippedCount == 1 }
+        }
 
         where:
-        parallel    | threadCount | maxWorkers
-        'methods'   | 1           | 1
-        'methods'   | 2           | 1
-        'methods'   | 1           | 2
-        'methods'   | 2           | 2
-        'classes'   | 1           | 1
-        'classes'   | 2           | 1
-        'classes'   | 1           | 2
-        'classes'   | 2           | 2
+        parallel  | threadCount | maxWorkers
+        'methods' | 1           | 1
+        'methods' | 2           | 1
+        'methods' | 1           | 2
+        'methods' | 2           | 2
+        'classes' | 1           | 1
+        'classes' | 2           | 1
+        'classes' | 1           | 2
+        'classes' | 2           | 2
     }
 }

@@ -18,31 +18,32 @@
 package org.gradle.buildinit.plugins.internal;
 
 import org.gradle.api.internal.DocumentationRegistry;
-import org.gradle.internal.file.PathToFileResolver;
 import org.gradle.util.GradleVersion;
 
 import java.io.File;
 import java.net.URL;
 import java.text.DateFormat;
-import java.util.*;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Set;
 
 public class TemplateOperationFactory {
 
     private final String templatepackage;
-    private final PathToFileResolver fileResolver;
     private final DocumentationRegistry documentationRegistry;
-    private final Map defaultBindings;
+    private final Map<String, String> defaultBindings;
 
-    public TemplateOperationFactory(String templatepackage, PathToFileResolver fileResolver, DocumentationRegistry documentationRegistry) {
+    public TemplateOperationFactory(String templatepackage, DocumentationRegistry documentationRegistry) {
         this.documentationRegistry = documentationRegistry;
-        this.fileResolver = fileResolver;
         this.templatepackage = templatepackage;
         this.defaultBindings = loadDefaultBindings();
     }
 
     private Map<String, String> loadDefaultBindings() {
         String now = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(new Date());
-        Map<String, String> map = new LinkedHashMap<String, String>(3);
+        Map<String, String> map = new LinkedHashMap<>(3);
         map.put("genDate", now);
         map.put("genUser", System.getProperty("user.name"));
         map.put("genGradleVersion", GradleVersion.current().toString());
@@ -55,15 +56,18 @@ public class TemplateOperationFactory {
 
     public class TemplateOperationBuilder {
         private File target;
-        private Map<String, String> bindings =  new HashMap<String, String>();
+        final private Map<String, String> bindings =  new HashMap<>();
         private URL templateUrl;
 
-        public TemplateOperationBuilder(Map defaultBindings) {
+        public TemplateOperationBuilder(Map<String, String> defaultBindings) {
             this.bindings.putAll(defaultBindings);
         }
 
         public TemplateOperationBuilder withTemplate(final String relativeTemplatePath) {
             this.templateUrl = getClass().getResource(templatepackage + "/" + relativeTemplatePath);
+            if (templateUrl == null) {
+                throw new IllegalArgumentException(String.format("Could not find template '%s' in classpath.", relativeTemplatePath));
+            }
             return this;
         }
 
@@ -72,8 +76,8 @@ public class TemplateOperationFactory {
             return this;
         }
 
-        public TemplateOperationBuilder withTarget(String targetFilePath) {
-            this.target = fileResolver.resolve(targetFilePath);
+        public TemplateOperationBuilder withTarget(File targetFilePath) {
+            this.target = targetFilePath;
             return this;
         }
 
@@ -89,9 +93,14 @@ public class TemplateOperationFactory {
             return this;
         }
 
+        public TemplateOperationBuilder withBinding(String name, String value) {
+            bindings.put(name, value);
+            return this;
+        }
+
         public TemplateOperation create() {
             final Set<Map.Entry<String, String>> entries = bindings.entrySet();
-            Map wrappedBindings = new HashMap(entries.size());
+            Map<String, TemplateValue> wrappedBindings = new HashMap<>(entries.size());
             for (Map.Entry<String, String> entry : entries) {
                 if (entry.getValue() == null) {
                     throw new IllegalArgumentException("Null value provided for binding '" + entry.getKey() + "'.");

@@ -17,13 +17,13 @@ package org.gradle.integtests;
 
 import org.gradle.integtests.fixtures.AbstractIntegrationTest;
 import org.gradle.integtests.fixtures.executer.ExecutionFailure;
-import org.gradle.integtests.fixtures.executer.ExecutionResult;
 import org.gradle.test.fixtures.file.TestFile;
 import org.junit.Test;
+import spock.lang.Issue;
 
 import java.io.File;
 
-import static org.hamcrest.Matchers.startsWith;
+import static org.hamcrest.CoreMatchers.startsWith;
 
 public class ProjectLoadingIntegrationTest extends AbstractIntegrationTest {
     @Test
@@ -42,7 +42,7 @@ public class ProjectLoadingIntegrationTest extends AbstractIntegrationTest {
     public void handlesWhitespaceOnlySettingsAndBuildFiles() {
         testFile("settings.gradle").write("   \n  ");
         testFile("build.gradle").write("   ");
-        inTestDirectory().withTaskList().run();
+        inTestDirectory().withTasks("help").run();
     }
 
     @Test
@@ -150,19 +150,43 @@ public class ProjectLoadingIntegrationTest extends AbstractIntegrationTest {
         result.assertHasDescription("The specified settings file '" + file + "' is not a file.");
     }
 
+    @Issue("gradle/gradle#4672")
+    @Test
+    public void buildFailsWhenSpecifiedInitScriptIsNotAFile() {
+        TestFile file = testFile("unknown");
+
+        ExecutionFailure result = inTestDirectory().usingInitScript(file).runWithFailure();
+        result.assertHasDescription("The specified initialization script '" + file + "' does not exist.");
+
+        file.createDir();
+
+        result = inTestDirectory().usingInitScript(file).runWithFailure();
+        result.assertHasDescription("The specified initialization script '" + file + "' is not a file.");
+    }
+
+    @Issue("gradle/gradle#4672")
+    @Test
+    public void buildFailsWhenOneInitScriptDoesNotExist() {
+        TestFile initFile1 = testFile("init1").write("// empty");
+        TestFile initFile2 = testFile("init2");
+
+        ExecutionFailure result = inTestDirectory().usingInitScript(initFile1).usingInitScript(initFile2).runWithFailure();
+        result.assertHasDescription("The specified initialization script '" + initFile2 + "' does not exist.");
+    }
+
     @Test
     public void buildFailsWhenSpecifiedSettingsFileDoesNotContainMatchingProject() {
         TestFile settingsFile = testFile("settings.gradle");
-        settingsFile.write("// empty");
+        settingsFile.write("rootProject.name = 'foo'");
 
         TestFile projectDir = testFile("project dir");
         TestFile buildFile = projectDir.file("build.gradle").createFile();
 
         ExecutionFailure result = usingProjectDir(projectDir).usingSettingsFile(settingsFile).runWithFailure();
-        result.assertHasDescription(String.format("No projects in this build have project directory '%s'.", projectDir));
+        result.assertHasDescription(String.format("Project directory '%s' is not part of the build defined by settings file '%s'.", projectDir, settingsFile));
 
         result = usingBuildFile(buildFile).usingSettingsFile(settingsFile).runWithFailure();
-        result.assertHasDescription(String.format("No projects in this build have build file '%s'.", buildFile));
+        result.assertHasDescription(String.format("Build file '%s' is not part of the build defined by settings file '%s'.", buildFile, settingsFile));
     }
 
     @Test
@@ -204,49 +228,29 @@ public class ProjectLoadingIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    public void ignoresMultiProjectBuildInParentDirectoryWhichDoesNotMeetDefaultProjectCriteria() {
-        testFile("settings.gradle").write("include 'another'");
-        testFile("gradle.properties").writelns("prop=value2", "otherProp=value");
-
-        TestFile subDirectory = getTestDirectory().file("subdirectory");
-        TestFile buildFile = subDirectory.file("build.gradle");
-        buildFile.writelns("task('do-stuff') {",
-                "doLast {",
-                "assert prop == 'value'",
-                "assert !project.hasProperty('otherProp')",
-                "}",
-                "}");
-        testFile("subdirectory/gradle.properties").write("prop=value");
-
-        inDirectory(subDirectory).withTasks("do-stuff").expectDeprecationWarning().run();
-        usingProjectDir(subDirectory).withTasks("do-stuff").expectDeprecationWarning().run();
-        usingBuildFile(buildFile).withTasks("do-stuff").expectDeprecationWarning().run();
-    }
-
-    @Test
-    public void deprecationWarningAppearsWhenNestedBuildHasNoSettingsFile() {
-        testFile("settings.gradle").write("include 'another'");
+    public void buildFailsWhenNestedBuildHasNoSettingsFile() {
+        TestFile settingsFile = testFile("settings.gradle").write("include 'another'");
 
         TestFile subDirectory = getTestDirectory().file("sub");
         TestFile subBuildFile = subDirectory.file("sub.gradle").write("");
         subDirectory.file("build.gradle").write("");
 
-        ExecutionResult result = inDirectory(subDirectory).withTasks("help").expectDeprecationWarning().run();
-        result.assertOutputContains("Support for nested build without a settings file was deprecated and will be removed in Gradle 5.0. You should create a empty settings file in " + subDirectory.getAbsolutePath());
+        ExecutionFailure result = inDirectory(subDirectory).withTasks("help").runWithFailure();
+        result.assertHasDescription(String.format("Project directory '%s' is not part of the build defined by settings file '%s'.", subDirectory, settingsFile));
 
-        result = usingBuildFile(subBuildFile).inDirectory(subDirectory).withTasks("help").expectDeprecationWarning().run();
-        result.assertOutputContains("Support for nested build without a settings file was deprecated and will be removed in Gradle 5.0. You should create a empty settings file in " + subDirectory.getAbsolutePath());
+        result = usingBuildFile(subBuildFile).inDirectory(subDirectory).withTasks("help").runWithFailure();
+        result.assertHasDescription(String.format("Build file '%s' is not part of the build defined by settings file '%s'.", subBuildFile, settingsFile));
 
-        result = usingProjectDir(subDirectory).withTasks("help").expectDeprecationWarning().run();
-        result.assertOutputContains("Support for nested build without a settings file was deprecated and will be removed in Gradle 5.0. You should create a empty settings file in " + subDirectory.getAbsolutePath());
+        result = usingProjectDir(subDirectory).withTasks("help").runWithFailure();
+        result.assertHasDescription(String.format("Project directory '%s' is not part of the build defined by settings file '%s'.", subDirectory, settingsFile));
     }
 
     @Test
-    public void noDeprecationWarningAppearsWhenUsingRootProject() {
+    public void canTargetRootProjectDirectoryFromSubDirectory() {
         testFile("settings.gradle").write("include 'another'");
 
         TestFile subDirectory = getTestDirectory().file("sub");
-        subDirectory.file("build.gradle").write("");
+        subDirectory.file("build.gradle").write("throw new RuntimeException()");
 
         usingProjectDir(getTestDirectory()).inDirectory(subDirectory).withTasks("help").run();
     }
@@ -296,9 +300,13 @@ public class ProjectLoadingIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     public void multiProjectBuildCanHaveSettingsFileAndRootBuildFileInSubDir() {
+        // Stop traversing to parent directory; otherwise embedded test execution will
+        // find and load the `gradle.properties` file in the root of the source repository
+        getTestDirectory().file("settings.gradle").createFile();
+
         TestFile buildFilesDir = getTestDirectory().file("root");
-        TestFile settingsFile = buildFilesDir.file("settings.gradle");
-        settingsFile.writelns(
+        TestFile relocatedSettingsFile = buildFilesDir.file("settings.gradle");
+        relocatedSettingsFile.writelns(
             "includeFlat 'child'",
             "rootProject.projectDir = new File(settingsDir, '..')",
             "rootProject.buildFileName = 'root/build.gradle'"
@@ -310,9 +318,9 @@ public class ProjectLoadingIntegrationTest extends AbstractIntegrationTest {
         TestFile childBuildFile = testFile("child/build.gradle");
         childBuildFile.writelns("task('do-stuff')", "task('task')");
 
-        usingProjectDir(getTestDirectory()).usingSettingsFile(settingsFile).withTasks("do-stuff").run().assertTasksExecuted(":child:task", ":do-stuff", ":child:do-stuff").assertTaskOrder(":child:task", ":do-stuff");
+        usingProjectDir(getTestDirectory()).usingSettingsFile(relocatedSettingsFile).withTasks("do-stuff").run().assertTasksExecuted(":child:task", ":do-stuff", ":child:do-stuff").assertTaskOrder(":child:task", ":do-stuff");
         usingBuildFile(rootBuildFile).withTasks("do-stuff").run().assertTasksExecuted(":child:task", ":do-stuff", ":child:do-stuff").assertTaskOrder(":child:task", ":do-stuff");
-        usingBuildFile(childBuildFile).usingSettingsFile(settingsFile).withTasks("do-stuff").run().assertTasksExecutedInOrder(":child:do-stuff");
+        usingBuildFile(childBuildFile).usingSettingsFile(relocatedSettingsFile).withTasks("do-stuff").run().assertTasksExecutedInOrder(":child:do-stuff");
     }
 
     @Test
@@ -349,9 +357,9 @@ public class ProjectLoadingIntegrationTest extends AbstractIntegrationTest {
         TestFile settingsDir = testFile("gradle");
         TestFile settingsFile = settingsDir.file("settings.gradle");
         settingsFile.writelns(
-                "rootProject.projectDir = new File(settingsDir, '../root')",
-                "include 'sub'",
-                "project(':sub').projectDir = new File(settingsDir, '../sub')"
+            "rootProject.projectDir = new File(settingsDir, '../root')",
+            "include 'sub'",
+            "project(':sub').projectDir = new File(settingsDir, '../sub')"
         );
         getTestDirectory().createDir("sub").file("build.gradle").writelns("task thing");
 
@@ -363,11 +371,11 @@ public class ProjectLoadingIntegrationTest extends AbstractIntegrationTest {
         TestFile settingsDir = testFile("gradle");
         TestFile settingsFile = settingsDir.file("settings.gradle");
         settingsFile.writelns(
-                "rootProject.projectDir = new File(settingsDir, '../root')"
+            "rootProject.projectDir = new File(settingsDir, '../root')"
         );
         getTestDirectory().createDir("root").file("build.gradle").writelns("task thing");
 
         inTestDirectory().withArguments("-p", settingsDir.getAbsolutePath()).withTasks("thing").runWithFailure()
-                .assertHasDescription("Task 'thing' not found in root project 'gradle'.");
+            .assertHasDescription("Task 'thing' not found in root project 'gradle'.");
     }
 }

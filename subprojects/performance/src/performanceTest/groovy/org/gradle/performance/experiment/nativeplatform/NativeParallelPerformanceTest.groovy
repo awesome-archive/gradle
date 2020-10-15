@@ -19,29 +19,31 @@ package org.gradle.performance.experiment.nativeplatform
 import org.gradle.performance.AbstractCrossBuildPerformanceTest
 import org.gradle.performance.categories.PerformanceExperiment
 import org.junit.experimental.categories.Category
-import spock.lang.Unroll
 
 @Category(PerformanceExperiment)
 class NativeParallelPerformanceTest extends AbstractCrossBuildPerformanceTest {
-    @Unroll
-    def "clean assemble on #testProject with parallel workers" () {
-        when:
+
+    def "clean assemble with parallel workers" () {
+        given:
         runner.testGroup = 'parallel builds'
         runner.buildSpec {
-            projectName(testProject).displayName("parallel").invocation {
+            displayName("parallel")
+            invocation {
                 tasksToRun("clean", "assemble")
             }
         }
         runner.baseline {
-            projectName(testProject).displayName("serial").invocation {
-                tasksToRun("clean", "assemble").disableParallelWorkers()
+            displayName("serial")
+            invocation {
+                tasksToRun("clean", "assemble")
+                disableParallelWorkers()
             }
         }
 
-        then:
-        runner.run()
+        when:
+        def results = runner.run()
 
-        where:
-        testProject << [ "smallNative", "mediumNative", "bigNative", "multiNative" ]
+        then:
+        results
     }
 }

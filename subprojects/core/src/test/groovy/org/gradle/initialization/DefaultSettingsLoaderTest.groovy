@@ -15,51 +15,55 @@
  */
 package org.gradle.initialization
 
-import org.gradle.StartParameter
+
 import org.gradle.api.internal.GradleInternal
 import org.gradle.api.internal.SettingsInternal
+import org.gradle.api.internal.StartParameterInternal
 import org.gradle.api.internal.initialization.ClassLoaderScope
 import org.gradle.api.internal.project.ProjectRegistry
-import org.gradle.initialization.buildsrc.BuildSourceBuilder
+import org.gradle.groovy.scripts.ScriptSource
+import org.gradle.initialization.layout.BuildLayout
+import org.gradle.initialization.layout.BuildLayoutFactory
 import org.gradle.internal.FileUtils
 import org.gradle.internal.service.ServiceRegistry
 import org.gradle.util.Path
-import org.gradle.util.WrapUtil
 import spock.lang.Specification
 
 class DefaultSettingsLoaderTest extends Specification {
 
     def gradle = Mock(GradleInternal)
     def settings = Mock(SettingsInternal)
-    def settingsLocation = new SettingsLocation(FileUtils.canonicalize(new File("someDir")), null);
-    def startParameter = new StartParameter();
+    def buildLayout = new BuildLayout(null, FileUtils.canonicalize(new File("someDir")), null)
+    def buildLayoutFactory = Mock(BuildLayoutFactory)
+    def settingsScript = Mock(ScriptSource)
+    def startParameter = new StartParameterInternal()
     def classLoaderScope = Mock(ClassLoaderScope)
-    def settingsFinder = Mock(ISettingsFinder)
     def settingsProcessor = Mock(SettingsProcessor)
-    def buildSourceBuilder = Mock(BuildSourceBuilder)
-    def settingsHandler = new DefaultSettingsLoader(settingsFinder, settingsProcessor, buildSourceBuilder);
+    def gradlePropertiesController = Mock(GradlePropertiesController)
+    def settingsHandler = new DefaultSettingsLoader(settingsProcessor, buildLayoutFactory, gradlePropertiesController)
 
     void findAndLoadSettingsWithExistingSettings() {
         when:
         def projectRegistry = Mock(ProjectRegistry)
-        def projectDescriptor = Mock(DefaultProjectDescriptor)
+        def projectDescriptor = Mock(DefaultProjectDescriptor) {
+            getPath() >> ":"
+        }
         def services = Mock(ServiceRegistry)
-        startParameter.setCurrentDir(settingsLocation.getSettingsDir())
+        startParameter.setCurrentDir(buildLayout.settingsDir)
 
         settings.getProjectRegistry() >> projectRegistry
-        projectRegistry.getAllProjects() >> WrapUtil.toSet(projectDescriptor)
-        projectDescriptor.getProjectDir() >> settingsLocation.settingsDir
-        projectDescriptor.getBuildFile() >> new File(settingsLocation.getSettingsDir(), "build.gradle")
+        projectRegistry.getAllProjects() >> Collections.singleton(projectDescriptor)
+        projectDescriptor.getProjectDir() >> buildLayout.settingsDir
+        projectDescriptor.getBuildFile() >> new File(buildLayout.settingsDir, "build.gradle")
         gradle.getStartParameter() >> startParameter
         gradle.getServices() >> services
         gradle.getIdentityPath() >> Path.ROOT
-        settingsFinder.find(startParameter) >> settingsLocation
-        1 * buildSourceBuilder.buildAndCreateClassLoader(_, _, _) >> { GradleInternal gradle, File rootDir, StartParameter sp ->
-            assert rootDir == settingsLocation.getSettingsDir()
-            assert sp == startParameter
-            classLoaderScope
-        }
-        1 * settingsProcessor.process(gradle, settingsLocation, classLoaderScope, startParameter) >> settings
+        buildLayoutFactory.getLayoutFor(_) >> buildLayout
+        gradle.getClassLoaderScope() >> classLoaderScope
+        1 * settingsProcessor.process(gradle, buildLayout, classLoaderScope, startParameter) >> settings
+        1 * settings.settingsScript >> settingsScript
+        1 * settingsScript.displayName >> "foo"
+        1 * gradlePropertiesController.loadGradlePropertiesFrom(buildLayout.settingsDir)
 
         then:
         settingsHandler.findAndLoadSettings(gradle).is(settings)

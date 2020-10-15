@@ -17,10 +17,13 @@ package org.gradle.initialization;
 
 import org.gradle.api.internal.GradleInternal;
 import org.gradle.api.internal.SettingsInternal;
+import org.gradle.initialization.layout.BuildLayout;
 import org.gradle.internal.concurrent.Stoppable;
 
+import java.io.File;
+
 /**
- * This was the old Gradle embedding API (it used to be in the public `org.gradle` package). It is now internal and is due to be merged into {@link org.gradle.internal.invocation.BuildController}.
+ * This was the old Gradle embedding API (it used to be in the public `org.gradle` package). It is now internal and is due to be merged into {@link org.gradle.internal.invocation.BuildController} and {@link org.gradle.internal.build.BuildState}.
  */
 public interface GradleLauncher extends Stoppable {
 
@@ -29,7 +32,6 @@ public interface GradleLauncher extends Stoppable {
     /**
      * Evaluates the settings for this build.
      *
-     * @throws ReportedException On build failure. The failure will have been logged.
      * @return The loaded settings instance.
      */
     SettingsInternal getLoadedSettings();
@@ -37,10 +39,16 @@ public interface GradleLauncher extends Stoppable {
     /**
      * Configures the build.
      *
-     * @throws ReportedException On build failure. The failure will have been logged.
      * @return The configured Gradle build instance.
      */
     GradleInternal getConfiguredBuild();
+
+    /**
+     * The root directory of the build, never null.
+     *
+     * @see BuildLayout#getRootDirectory()
+     */
+    File getBuildRootDir();
 
     /**
      * Schedules the specified tasks for this build.
@@ -50,7 +58,6 @@ public interface GradleLauncher extends Stoppable {
     /**
      * Executes the tasks scheduled for this build.
      *
-     * @throws ReportedException On build failure. The failure will have been logged.
      * @return The configured Gradle build instance.
      */
     GradleInternal executeTasks();

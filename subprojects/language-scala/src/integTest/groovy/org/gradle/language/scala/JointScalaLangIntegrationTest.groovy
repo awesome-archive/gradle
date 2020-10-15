@@ -16,18 +16,17 @@
 
 package org.gradle.language.scala
 
-import com.sun.xml.internal.ws.util.StringUtils
+import org.apache.commons.lang.StringUtils
+import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
 import org.gradle.integtests.fixtures.jvm.JvmSourceFile
 import org.gradle.integtests.fixtures.jvm.TestJvmComponent
 import org.gradle.integtests.language.AbstractJvmLanguageIntegrationTest
 import org.gradle.language.scala.fixtures.TestJointCompiledComponent
-import org.gradle.util.Requires
-import org.gradle.util.TestPrecondition
 
+@UnsupportedWithConfigurationCache(because = "software model")
 class JointScalaLangIntegrationTest extends AbstractJvmLanguageIntegrationTest {
     TestJvmComponent app = new TestJointCompiledComponent()
 
-    @Requires(TestPrecondition.JDK8_OR_LATER)
     def "can compile class files with Java 8 features" () {
         app.sources.add java8SpecificClassFile
 

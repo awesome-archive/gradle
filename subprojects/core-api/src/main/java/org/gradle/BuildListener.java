@@ -15,21 +15,35 @@
  */
 package org.gradle;
 
+import org.gradle.api.Incubating;
 import org.gradle.api.initialization.Settings;
 import org.gradle.api.invocation.Gradle;
+import org.gradle.internal.service.scopes.EventScope;
+import org.gradle.internal.service.scopes.Scopes;
 
 /**
  * <p>A {@code BuildListener} is notified of the major lifecycle events as a build is executed.</p>
  *
  * @see org.gradle.api.invocation.Gradle#addListener(Object)
  */
+@EventScope(Scopes.Build.class)
 public interface BuildListener {
     /**
      * <p>Called when the build is started.</p>
      *
      * @param gradle The build which is being started. Never null.
      */
+    @Deprecated
     void buildStarted(Gradle gradle);
+
+    /**
+     * Called when the build settings are about to be loaded and evaluated.
+     *
+     * @param settings The settings. Never null.
+     * @since 6.0
+     */
+    @Incubating
+    default void beforeSettings(Settings settings) {}
 
     /**
      * <p>Called when the build settings have been loaded and evaluated. The settings object is fully configured and is

@@ -15,6 +15,8 @@
  */
 package org.gradle.internal.serialize
 
+import groovy.transform.CompileStatic
+import org.gradle.internal.exceptions.Contextual
 import org.gradle.internal.exceptions.DefaultMultiCauseException
 import spock.lang.Issue
 import spock.lang.Specification
@@ -234,7 +236,9 @@ class MessageTest extends Specification {
     }
 
     def "transports unserializable exception with broken methods"() {
-        def broken = new CompletelyBrokenException() { def Object o = new Object() }
+        def broken = new CompletelyBrokenException() {
+            def Object o = new Object()
+        }
 
         when:
         def transported = transport(broken)
@@ -293,12 +297,65 @@ class MessageTest extends Specification {
         transported == ReadReplaceException.singleton
     }
 
+    def "can transport broken multicause exception"() {
+        def ok = new RuntimeException("broken 1")
+        def notOk = new ExceptionWithNonSerializableField("broken 2", new RuntimeException("broken 3"))
+        def original = new MultiCauseExceptionWithExceptionField("original", notOk, [ok, notOk])
+
+        when:
+        def transported = transport(original)
+
+        then:
+        transported instanceof DefaultMultiCauseException
+        transported.message == "original"
+        transported.causes.size() == 2
+        transported.causes[0].message == "broken 1"
+        transported.causes[1].message == "broken 2"
+        transported.causes[1].cause.message == "broken 3"
+    }
+
+    def "retains @Contextual annotation on placeholder"() {
+        def notOk = new ContextualExceptionWithNonSerializableField("broken 2", new RuntimeException("broken 3"))
+
+        when:
+        def transported = transport(notOk)
+
+        then:
+        transported instanceof ContextualPlaceholderException
+        transported.class.getAnnotation(Contextual) != null
+        looksLike(notOk, transported)
+    }
+
+    def "preserves assertion errors"() {
+        def assertionError = new CustomAssertionError("true == false")
+
+        when:
+        def transported = transport(assertionError)
+
+        then:
+        transported instanceof PlaceholderAssertionError
+        looksLike(assertionError, transported)
+    }
+
+    def "preserves nested assertion errors"() {
+        def assertionError = new CustomAssertionError("Boom", new CustomAssertionError("Boom cause!"))
+
+        when:
+        def transported = transport(assertionError)
+
+        then:
+        transported instanceof PlaceholderAssertionError
+        looksLike(assertionError, transported)
+        looksLike(assertionError.cause, transported.cause)
+    }
+
     void looksLike(Throwable original, Throwable transported) {
-        assert transported instanceof PlaceholderException
+        assert transported instanceof PlaceholderExceptionSupport
         assert transported.exceptionClassName == original.class.name
         assert transported.message == original.message
         assert transported.toString() == original.toString()
         assert transported.stackTrace == original.stackTrace
+        assert (transported.class.getAnnotation(Contextual) != null) == (original.class.getAnnotation(Contextual) != null)
     }
 
     private Object transport(Object arg) {
@@ -322,12 +379,28 @@ class MessageTest extends Specification {
         }
     }
 
+    @Contextual
+    static class ContextualExceptionWithNonSerializableField extends ExceptionWithNonSerializableField {
+        ContextualExceptionWithNonSerializableField(String message, Throwable cause) {
+            super(message, cause)
+        }
+    }
+
     static class ExceptionWithExceptionField extends RuntimeException {
         Throwable throwable
 
         ExceptionWithExceptionField(String message, Throwable cause) {
             super(message, cause)
             throwable = cause
+        }
+    }
+
+    static class MultiCauseExceptionWithExceptionField extends DefaultMultiCauseException {
+        Throwable throwable
+
+        MultiCauseExceptionWithExceptionField(String message, Throwable field, List<Throwable> causes) {
+            super(message, causes)
+            throwable = field
         }
     }
 
@@ -377,7 +450,7 @@ class MessageTest extends Specification {
             super(message, cause)
         }
 
-        private void readObject(ObjectInputStream outstr)  {
+        private void readObject(ObjectInputStream outstr) {
             throw new RuntimeException("broken readObject()")
         }
     }
@@ -390,12 +463,12 @@ class MessageTest extends Specification {
             throwable = cause
         }
 
-        private void writeObject(ObjectOutputStream outstr)  {
+        private void writeObject(ObjectOutputStream outstr) {
             outstr.defaultWriteObject()
             outstr.writeObject(throwable)
         }
 
-        private void readObject(ObjectInputStream instr)  {
+        private void readObject(ObjectInputStream instr) {
             instr.defaultReadObject()
             throwable = instr.readObject()
         }
@@ -416,6 +489,21 @@ class MessageTest extends Specification {
 
         private Object readResolve() {
             return singleton
+        }
+    }
+
+    @CompileStatic
+    static class CustomAssertionError extends AssertionError {
+        CustomAssertionError(Object message) {
+            super(message)
+        }
+
+        CustomAssertionError(String message, Throwable cause) {
+            super(message, cause)
+        }
+
+        private void readObject(ObjectInputStream outstr) {
+            throw new RuntimeException("broken readObject()")
         }
     }
 }

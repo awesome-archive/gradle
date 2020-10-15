@@ -14,14 +14,15 @@
  * limitations under the License.
  */
 package org.gradle.nativeplatform
+
 import org.gradle.api.reporting.model.ModelReportOutput
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.nativeplatform.fixtures.AbstractInstalledToolChainIntegrationSpec
 import org.gradle.nativeplatform.fixtures.NativePlatformsTestFixture
 import org.gradle.nativeplatform.fixtures.app.CHelloWorldApp
 import org.gradle.nativeplatform.fixtures.app.CppCallingCHelloWorldApp
 import org.gradle.util.Requires
 import org.gradle.util.TestPrecondition
-import org.hamcrest.Matchers
 import spock.lang.Ignore
 
 import static org.gradle.util.Matchers.containsText
@@ -51,6 +52,7 @@ model {
         executable("build/binaries/mainExecutable/main").assertDoesNotExist()
     }
 
+    @ToBeFixedForConfigurationCache
     def "assemble task constructs all buildable binaries"() {
         given:
         new CHelloWorldApp().writeSources(file("src/main"))
@@ -89,7 +91,8 @@ model {
         executable("build/exe/main/unknown/main").assertDoesNotExist()
     }
 
-    def "assemble task produces sensible error when there are no buildable binaries" () {
+    @ToBeFixedForConfigurationCache
+    def "assemble task produces sensible error when there are no buildable binaries"() {
         buildFile << """
 apply plugin: 'c'
 
@@ -119,16 +122,24 @@ model {
 
         then:
         failureDescriptionContains("Execution failed for task ':assemble'.")
-        failure.assertThatCause(Matchers.<String>allOf(
-                Matchers.startsWith("No buildable binaries found:"),
-                Matchers.containsString("shared library 'hello:sharedLibrary': No tool chain is available to build for platform 'unknown'"),
-                Matchers.containsString("static library 'hello:staticLibrary': No tool chain is available to build for platform 'unknown'"),
-                Matchers.containsString("executable 'main:executable': No tool chain is available to build for platform 'unknown'"),
-                Matchers.containsString("static library 'another:staticLibrary': Disabled by user"),
-                Matchers.containsString("shared library 'another:sharedLibrary': Disabled by user")
-        ))
+        failure.assertHasCause("""No buildable binaries found:
+  - shared library 'another:sharedLibrary': Disabled by user
+  - static library 'another:staticLibrary': Disabled by user
+  - shared library 'hello:sharedLibrary':
+      - No tool chain is available to build for platform 'unknown':
+          - ${toolChain.instanceDisplayName}:
+              - Don't know how to build for platform 'unknown'.
+  - static library 'hello:staticLibrary':
+      - No tool chain is available to build for platform 'unknown':
+          - ${toolChain.instanceDisplayName}:
+              - Don't know how to build for platform 'unknown'.
+  - executable 'main:executable':
+      - No tool chain is available to build for platform 'unknown':
+          - ${toolChain.instanceDisplayName}:
+              - Don't know how to build for platform 'unknown'.""")
     }
 
+    @ToBeFixedForConfigurationCache
     def "assemble executable from component with multiple language source sets"() {
         given:
         useMixedSources()
@@ -163,6 +174,7 @@ model {
         executable("build/exe/main/main").exec().out == helloWorldApp.englishOutput
     }
 
+    @ToBeFixedForConfigurationCache
     def "assemble executable binary directly from language source sets"() {
         given:
         useMixedSources()
@@ -233,13 +245,14 @@ model {
         fails "mainExecutable"
         failure.assertHasCause("Exception thrown while executing model rule: main(org.gradle.nativeplatform.NativeExecutableSpec) { ... } @ build.gradle line 8, column 9");
         failure.assertHasCause("Cannot create a 'org.gradle.language.java.JavaSourceSet' because this type is not known to sourceSets. " +
-                "Known types are: org.gradle.language.c.CSourceSet, org.gradle.language.cpp.CppSourceSet")
+            "Known types are: org.gradle.language.c.CSourceSet, org.gradle.language.cpp.CppSourceSet")
     }
 
     private def useMixedSources() {
         helloWorldApp.writeSources(file("src/test"))
     }
 
+    @ToBeFixedForConfigurationCache
     def "build fails when link executable fails"() {
         given:
         buildFile << """
@@ -264,6 +277,7 @@ model {
         failure.assertThatCause(containsText("Linker failed while linking ${exeName}"))
     }
 
+    @ToBeFixedForConfigurationCache
     def "build fails when link library fails"() {
         given:
         buildFile << """
@@ -297,6 +311,7 @@ model {
         failure.assertThatCause(containsText("Linker failed while linking ${libName}"))
     }
 
+    @ToBeFixedForConfigurationCache
     def "build fails when create static library fails"() {
         given:
         buildFile << """
@@ -331,6 +346,7 @@ model {
     }
 
     @Requires(TestPrecondition.CAN_INSTALL_EXECUTABLE)
+    @ToBeFixedForConfigurationCache
     def "installed executable receives command-line parameters"() {
         buildFile << """
 apply plugin: 'c'
@@ -366,6 +382,7 @@ int main (int argc, char *argv[]) {
         installation.exec("foo", "bar").out == "[foo] [bar] \n"
     }
 
+    @ToBeFixedForConfigurationCache(because = ":model")
     def "model report should display configured components"() {
         given:
         buildFile << """

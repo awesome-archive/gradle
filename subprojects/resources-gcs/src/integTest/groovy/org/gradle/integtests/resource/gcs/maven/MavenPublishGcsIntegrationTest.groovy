@@ -16,14 +16,20 @@
 
 package org.gradle.integtests.resource.gcs.maven
 
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.integtests.fixtures.publish.maven.AbstractMavenPublishIntegTest
 import org.gradle.integtests.resource.gcs.fixtures.GcsArtifact
 import org.gradle.integtests.resource.gcs.fixtures.GcsServer
 import org.gradle.integtests.resource.gcs.fixtures.MavenGcsRepository
+import org.gradle.util.Requires
+import org.gradle.util.TestPrecondition
 import org.junit.Rule
 
-import static org.gradle.internal.resource.transport.gcp.gcs.GcsConnectionProperties.*
+import static org.gradle.internal.resource.transport.gcp.gcs.GcsConnectionProperties.GCS_DISABLE_AUTH_PROPERTY
+import static org.gradle.internal.resource.transport.gcp.gcs.GcsConnectionProperties.GCS_ENDPOINT_PROPERTY
+import static org.gradle.internal.resource.transport.gcp.gcs.GcsConnectionProperties.GCS_SERVICE_PATH_PROPERTY
 
+@Requires(TestPrecondition.NOT_WINDOWS)
 class MavenPublishGcsIntegrationTest extends AbstractMavenPublishIntegTest {
     @Rule
     public GcsServer server = new GcsServer(temporaryFolder)
@@ -35,6 +41,7 @@ class MavenPublishGcsIntegrationTest extends AbstractMavenPublishIntegTest {
         executer.withArgument("-D${GCS_DISABLE_AUTH_PROPERTY}=true")
     }
 
+    @ToBeFixedForConfigurationCache(skip = ToBeFixedForConfigurationCache.Skip.FAILS_TO_CLEANUP)
     def "can publish to a Gcs Maven repository"() {
         given:
         def mavenRepo = new MavenGcsRepository(server, file("repo"), "/maven", "testGcsBucket")
@@ -78,6 +85,8 @@ publishing {
     private static void expectPublish(GcsArtifact artifact) {
         artifact.expectUpload()
         artifact.sha1.expectUpload()
+        artifact.sha256.expectUpload()
+        artifact.sha512.expectUpload()
         artifact.md5.expectUpload()
     }
 }

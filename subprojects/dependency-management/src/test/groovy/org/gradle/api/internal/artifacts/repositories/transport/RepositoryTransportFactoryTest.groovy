@@ -25,8 +25,11 @@ import org.gradle.authentication.Authentication
 import org.gradle.cache.internal.ProducerGuard
 import org.gradle.internal.authentication.AbstractAuthentication
 import org.gradle.internal.resource.connector.ResourceConnectorFactory
+import org.gradle.internal.resource.local.FileResourceListener
 import org.gradle.internal.resource.local.FileResourceRepository
 import org.gradle.internal.resource.transport.ResourceConnectorRepositoryTransport
+import org.gradle.internal.verifier.HttpRedirectVerifier
+import org.gradle.util.TestUtil
 import spock.lang.Specification
 import spock.lang.Unroll
 
@@ -35,7 +38,7 @@ class RepositoryTransportFactoryTest extends Specification {
     def connectorFactory1 = Mock(ResourceConnectorFactory)
     def connectorFactory2 = Mock(ResourceConnectorFactory)
     def producerGuard = Mock(ProducerGuard)
-    def repositoryTransportFactory
+    RepositoryTransportFactory repositoryTransportFactory
 
     def setup() {
         connectorFactory1.getSupportedProtocols() >> (["protocol1"] as Set)
@@ -43,13 +46,21 @@ class RepositoryTransportFactoryTest extends Specification {
         connectorFactory2.getSupportedProtocols() >> (["protocol2a", "protocol2b"] as Set)
         connectorFactory2.getSupportedAuthentication() >> ([] as Set)
         List<ResourceConnectorFactory> resourceConnectorFactories = Lists.newArrayList(connectorFactory1, connectorFactory2)
-        StartParameterResolutionOverride override = new StartParameterResolutionOverride(new StartParameter())
-        repositoryTransportFactory = new RepositoryTransportFactory(resourceConnectorFactories, null, null, null, null, null, null, override, producerGuard, Mock(FileResourceRepository))
+        StartParameterResolutionOverride override = new StartParameterResolutionOverride(new StartParameter(), Mock(File))
+        repositoryTransportFactory = new RepositoryTransportFactory(resourceConnectorFactories, null, null, null, null, null, null, override, producerGuard, Mock(FileResourceRepository), TestUtil.checksumService, Stub(FileResourceListener))
+    }
+
+    RepositoryTransport createTransport(String scheme, String name, Collection<Authentication> authentications) {
+        return createTransport(Collections.singleton(scheme), name, authentications)
+    }
+
+    RepositoryTransport createTransport(Set<String> schemes, String name, Collection<Authentication> authentications) {
+        return repositoryTransportFactory.createTransport(schemes, name, authentications, Mock(HttpRedirectVerifier))
     }
 
     def "cannot create a transport for url with unsupported scheme"() {
         when:
-        repositoryTransportFactory.createTransport(['unsupported'] as Set, null, [])
+        createTransport(['unsupported'] as Set, null, [])
 
         then:
         InvalidUserDataException e = thrown()
@@ -58,7 +69,7 @@ class RepositoryTransportFactoryTest extends Specification {
 
     def "cannot creates a transport for mixed url scheme"() {
         when:
-        repositoryTransportFactory.createTransport(['protocol1', 'protocol2b'] as Set, null, [])
+        createTransport(['protocol1', 'protocol2b'] as Set, null, [])
 
         then:
         InvalidUserDataException e = thrown()
@@ -70,7 +81,7 @@ class RepositoryTransportFactoryTest extends Specification {
         authentication.credentials = Mock(GoodCredentials)
 
         when:
-        def transport = repositoryTransportFactory.createTransport(['protocol1'] as Set, null, [authentication])
+        def transport = createTransport(['protocol1'] as Set, null, [authentication])
 
         then:
         transport.class == ResourceConnectorRepositoryTransport
@@ -81,7 +92,7 @@ class RepositoryTransportFactoryTest extends Specification {
         authentication.credentials = Mock(GoodCredentials)
 
         when:
-        def transport = repositoryTransportFactory.createTransport(['protocol1'] as Set, null, [authentication])
+        def transport = createTransport(['protocol1'] as Set, null, [authentication])
 
         then:
         transport.class == ResourceConnectorRepositoryTransport
@@ -92,7 +103,7 @@ class RepositoryTransportFactoryTest extends Specification {
         authentication.credentials = credentials
 
         when:
-        repositoryTransportFactory.createTransport(protocols as Set, null, [authentication])
+        createTransport(protocols as Set, null, [authentication])
 
         then:
         def ex = thrown(InvalidUserDataException)
@@ -109,7 +120,7 @@ class RepositoryTransportFactoryTest extends Specification {
         authentication*.credentials = credentials
 
         when:
-        repositoryTransportFactory.createTransport(['protocol1'] as Set, null, authentication)
+        createTransport(['protocol1'] as Set, null, authentication)
 
         then:
         def ex = thrown(InvalidUserDataException)
@@ -123,7 +134,7 @@ class RepositoryTransportFactoryTest extends Specification {
 
     def "should throw when specifying authentication types with null credentials"() {
         when:
-        repositoryTransportFactory.createTransport(['protocol1'] as Set, null, [new GoodCredentialsAuthentication('good')])
+        createTransport(['protocol1'] as Set, null, [new GoodCredentialsAuthentication('good')])
 
         then:
         def ex = thrown(InvalidUserDataException)
@@ -132,7 +143,7 @@ class RepositoryTransportFactoryTest extends Specification {
 
     def "should accept no credentials for auth"() {
         when:
-        def transport = repositoryTransportFactory.createTransport(['protocol1'] as Set, null, [new AuthenticationWithoutCredentials('good')])
+        def transport = repositoryTransportFactory.createTransport(['protocol1'] as Set, null, [new AuthenticationWithoutCredentials('good')], Mock(HttpRedirectVerifier))
 
         then:
         transport.class == ResourceConnectorRepositoryTransport
@@ -143,7 +154,7 @@ class RepositoryTransportFactoryTest extends Specification {
         authentication.credentials = Mock(GoodCredentials)
 
         when:
-        repositoryTransportFactory.createTransport(['protocol1'] as Set, null, [authentication, authentication])
+        createTransport(['protocol1'] as Set, null, [authentication, authentication])
 
         then:
         def ex = thrown(InvalidUserDataException)

@@ -16,97 +16,69 @@
 
 package org.gradle.performance
 
-import groovy.json.JsonSlurper
-import org.gradle.integtests.fixtures.executer.IntegrationTestBuildContext
+import org.apache.commons.io.FileUtils
 import org.gradle.performance.categories.PerformanceRegressionTest
-import org.gradle.performance.fixture.BuildExperimentRunner
-import org.gradle.performance.fixture.BuildExperimentSpec
-import org.gradle.performance.fixture.BuildScanPerformanceTestRunner
-import org.gradle.performance.fixture.CrossBuildPerformanceTestRunner
-import org.gradle.performance.fixture.GradleSessionProvider
-import org.gradle.performance.results.BuildScanResultsStore
-import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
-import org.junit.Rule
+import org.gradle.profiler.BuildContext
+import org.gradle.profiler.BuildMutator
+import org.gradle.profiler.InvocationSettings
+import org.gradle.profiler.Phase
+import org.gradle.profiler.ScenarioContext
+import org.gradle.test.fixtures.file.TestFile
 import org.junit.experimental.categories.Category
-import spock.lang.AutoCleanup
-import spock.lang.Shared
-import spock.lang.Specification
-
-import static org.gradle.performance.measure.Duration.millis
+import spock.lang.Unroll
 
 @Category(PerformanceRegressionTest)
-class BuildScanPluginPerformanceTest extends Specification {
+class BuildScanPluginPerformanceTest extends AbstractBuildScanPluginPerformanceTest {
 
-    @Rule
-    TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider()
+    private static final int MEDIAN_PERCENTAGES_SHIFT = 10
 
-    @AutoCleanup
-    @Shared
-    def resultStore = new BuildScanResultsStore()
+    private static final String WITHOUT_PLUGIN_LABEL = "1 without plugin"
+    private static final String WITH_PLUGIN_LABEL = "2 with plugin"
+    public static final int WARMUPS = 10
+    public static final int INVOCATIONS = 20
 
-    private static final String WITH_PLUGIN_LABEL = "with plugin"
-    private static final String WITHOUT_PLUGIN_LABEL = "without plugin"
-
-    protected final IntegrationTestBuildContext buildContext = new IntegrationTestBuildContext()
-    CrossBuildPerformanceTestRunner runner
-
-    private int warmupBuilds = 1
-    private int measuredBuilds = 7
-
-    void setup() {
-        def incomingDir = "../../incoming" // System.getProperty('incomingArtifactDir')
-        assert incomingDir: "'incomingArtifactDir' system property is not set"
-        def versionJsonFile = new File(incomingDir, "version.json")
-        assert versionJsonFile.exists()
-
-        def versionJsonData = new JsonSlurper().parse(versionJsonFile) as Map<String, ?>
-        assert versionJsonData.commitId
-        def pluginCommitId = versionJsonData.commitId as String
-
-        runner = new BuildScanPerformanceTestRunner(new BuildExperimentRunner(new GradleSessionProvider(buildContext)), resultStore, pluginCommitId, buildContext) {
-            @Override
-            protected void defaultSpec(BuildExperimentSpec.Builder builder) {
-                super.defaultSpec(builder)
-                builder.workingDirectory = tmpDir.testDirectory
-            }
-        }
-    }
-
-    def "build scan plugin comparison"() {
+    @Unroll
+    def "with and without plugin application (#scenario)"() {
         given:
-        def sourceProject = "largeJavaProjectWithBuildScanPlugin"
-        def tasks = ['clean', 'build']
-        def jobArgs = ['--continue', '--parallel', '--max-workers=2', '-q']
-        def opts = ['-Xms256m', '-Xmx256m']
-
-        runner.testGroup = "build scan plugin"
-        runner.testId = "large java project with and without build scan"
-
+        def jobArgs = ['--continue', '-Dscan.capture-task-input-files'] + scenarioArgs
+        def opts = ['-Xms4096m', '-Xmx4096m']
 
         runner.baseline {
-            warmUpCount warmupBuilds
-            invocationCount measuredBuilds
-            projectName(sourceProject)
+            warmUpCount WARMUPS
+            invocationCount INVOCATIONS
             displayName(WITHOUT_PLUGIN_LABEL)
             invocation {
                 args(*jobArgs)
                 tasksToRun(*tasks)
                 gradleOpts(*opts)
-                expectFailure()
+                if (withFailure) {
+                    expectFailure()
+                }
+                addBuildMutator { invocationSettings -> new InjectBuildScanPlugin(invocationSettings.projectDir, pluginVersionNumber) }
+                addBuildMutator { invocationSettings -> new SaveScanSpoolFile(invocationSettings, scenario) }
+                if (manageCacheState) {
+                    addBuildMutator { new ManageLocalCacheState(it.projectDir) }
+                }
             }
         }
 
         runner.buildSpec {
-            warmUpCount warmupBuilds
-            invocationCount measuredBuilds
-            projectName(sourceProject)
+            warmUpCount WARMUPS
+            invocationCount INVOCATIONS
             displayName(WITH_PLUGIN_LABEL)
             invocation {
                 args(*jobArgs)
-                args("-Dscan", "-Dscan.dump")
+                args("-DenableScan=true")
                 tasksToRun(*tasks)
                 gradleOpts(*opts)
-                expectFailure()
+                if (withFailure) {
+                    expectFailure()
+                }
+                addBuildMutator { invocationSettings -> new InjectBuildScanPlugin(invocationSettings.projectDir, pluginVersionNumber) }
+                addBuildMutator { invocationSettings -> new SaveScanSpoolFile(invocationSettings, scenario) }
+                if (manageCacheState) {
+                    addBuildMutator { new ManageLocalCacheState(it.projectDir) }
+                }
             }
         }
 
@@ -114,9 +86,126 @@ class BuildScanPluginPerformanceTest extends Specification {
         def results = runner.run()
 
         then:
-        def (with, without) = [results.buildResult(WITH_PLUGIN_LABEL), results.buildResult(WITHOUT_PLUGIN_LABEL)]
+        def withoutResults = buildBaselineResults(results, WITHOUT_PLUGIN_LABEL)
+        def withResults = results.buildResult(WITH_PLUGIN_LABEL)
+        def speedStats = withoutResults.getSpeedStatsAgainst(withResults.name, withResults)
+        println(speedStats)
 
-        // cannot be more than 1s slower
-        with.totalTime.average - without.totalTime.average < millis(1000)
+        def shiftedResults = buildShiftedResults(results, WITHOUT_PLUGIN_LABEL, MEDIAN_PERCENTAGES_SHIFT)
+        if (shiftedResults.significantlyFasterThan(withResults)) {
+            throw new AssertionError(speedStats)
+        }
+
+        where:
+        scenario                                                | expectedMedianPercentageShift | tasks                              | withFailure | scenarioArgs                                                                                   | manageCacheState
+        "clean build - 50 projects"                             | MEDIAN_PERCENTAGES_SHIFT      | ['clean', 'build']                 | true        | ['--build-cache', '--parallel', '--max-workers=4']                                             | true
+        "clean build - 20 projects - slow tasks - less console" | MEDIAN_PERCENTAGES_SHIFT      | ['clean', 'project20:buildNeeded'] | true        | ['--build-cache', '--parallel', '--max-workers=4', '-DreducedOutput=true', '-DslowTasks=true'] | true
+        "help"                                                  | MEDIAN_PERCENTAGES_SHIFT      | ['help']                           | false       | []                                                                                             | false
+        "help - no console output"                              | MEDIAN_PERCENTAGES_SHIFT      | ['help']                           | false       | ['-DreducedOutput=true']                                                                       | false
+    }
+
+
+    static class ManageLocalCacheState implements BuildMutator {
+        final File projectDir
+
+        ManageLocalCacheState(File projectDir) {
+            this.projectDir = projectDir
+        }
+
+        @Override
+        void beforeBuild(BuildContext context) {
+            def projectTestDir = new TestFile(projectDir)
+            def cacheDir = projectTestDir.file('local-build-cache')
+            def settingsFile = projectTestDir.file('settings.gradle')
+            settingsFile << """
+                    buildCache {
+                        local {
+                            directory = '${cacheDir.absoluteFile.toURI()}'
+                        }
+                    }
+                """.stripIndent()
+        }
+
+        @Override
+        void afterBuild(BuildContext context, Throwable t) {
+            assert !new File(projectDir, 'error.log').exists()
+            def buildCacheDirectory = new TestFile(projectDir, 'local-build-cache')
+            def cacheEntries = buildCacheDirectory.listFiles().sort()
+            cacheEntries.eachWithIndex { TestFile entry, int i ->
+                if (i % 2 == 0) {
+                    entry.delete()
+                }
+            }
+        }
+    }
+
+    static class SaveScanSpoolFile implements BuildMutator {
+        final InvocationSettings invocationSettings
+        final String testId
+
+        SaveScanSpoolFile(InvocationSettings invocationSettings, String testId) {
+            this.invocationSettings = invocationSettings
+            this.testId = testId.replaceAll(/[- ]/, '_')
+        }
+
+        @Override
+        void beforeBuild(BuildContext context) {
+            spoolDir().deleteDir()
+        }
+
+        @Override
+        void afterBuild(BuildContext context, Throwable t) {
+            def spoolDir = this.spoolDir()
+            if (context.phase == Phase.MEASURE && (context.iteration == invocationSettings.buildCount) && spoolDir.exists()) {
+                def targetDirectory = new File("build/scan-dumps/$testId")
+                targetDirectory.deleteDir()
+                FileUtils.moveToDirectory(spoolDir, targetDirectory, true)
+            }
+        }
+
+        private File spoolDir() {
+            new File(invocationSettings.gradleUserHome, "build-scan-data")
+        }
+    }
+
+    static class InjectBuildScanPlugin implements BuildMutator {
+        final File projectDir
+        final String buildScanPluginVersion
+
+        InjectBuildScanPlugin(File projectDir, String buildScanPluginVersion) {
+            this.projectDir = projectDir
+            this.buildScanPluginVersion = buildScanPluginVersion
+            println "InjectBuildScanPlugin buildScanPluginVersion = $buildScanPluginVersion"
+        }
+
+        @Override
+        void beforeScenario(ScenarioContext context) {
+            def projectTestDir = new TestFile(projectDir)
+            def settingsScript = projectTestDir.file('settings.gradle')
+            settingsScript.text = """
+                    buildscript {
+                        repositories {
+                            maven {
+                                url 'https://repo.gradle.org/gradle/enterprise-libs-snapshots-local/'
+                                credentials {
+                                    username = System.getenv("ARTIFACTORY_USERNAME")
+                                    password = System.getenv("ARTIFACTORY_PASSWORD")
+                                }
+                                authentication {
+                                    basic(BasicAuthentication)
+                                }
+                            }
+                        }
+
+                        dependencies {
+                            classpath "com.gradle:gradle-enterprise-gradle-plugin:${buildScanPluginVersion}"
+                        }
+                    }
+
+                    if (System.getProperty('enableScan')) {
+                        apply plugin: 'com.gradle.enterprise'
+                    }
+                    """ + settingsScript.text
+        }
     }
 }

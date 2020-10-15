@@ -16,15 +16,11 @@
 
 package org.gradle.api.internal.tasks.testing.testng
 
-import org.gradle.api.Action
-import org.gradle.api.internal.AsmBackedClassGenerator
-import org.gradle.api.internal.ClassGeneratorBackedInstantiator
-import org.gradle.api.internal.initialization.loadercache.ClassLoaderCache
+import org.gradle.api.file.FileCollection
 import org.gradle.api.internal.tasks.testing.filter.DefaultTestFilter
+import org.gradle.api.model.ObjectFactory
 import org.gradle.api.tasks.testing.Test
 import org.gradle.api.tasks.testing.testng.TestNGOptions
-import org.gradle.internal.reflect.DirectInstantiator
-import org.gradle.internal.reflect.Instantiator
 import org.gradle.internal.service.ServiceRegistry
 import org.gradle.testfixtures.ProjectBuilder
 import org.gradle.util.TestUtil
@@ -33,9 +29,9 @@ import spock.lang.Specification
 
 public class TestNGTestFrameworkTest extends Specification {
 
-    @Shared Instantiator instantiator = new ClassGeneratorBackedInstantiator(new AsmBackedClassGenerator(), DirectInstantiator.INSTANCE)
+    @Shared ObjectFactory objects = TestUtil.objectFactory()
 
-    private project = new ProjectBuilder().build()
+    private project = ProjectBuilder.builder().build()
     Test testTask = TestUtil.createTask(Test, project)
 
     void setup() {
@@ -49,21 +45,21 @@ public class TestNGTestFrameworkTest extends Specification {
 
         then:
         processor instanceof TestNGTestClassProcessor
-        framework.testTask == testTask
+        framework.testTaskPath == testTask.path
         framework.detector
     }
 
     def "can configure TestNG with an Action"() {
         when:
-        testTask.useTestNG({TestNGOptions options ->
+        testTask.useTestNG { TestNGOptions options ->
             options.suiteName = 'Custom Suite'
-        } as Action<TestNGOptions>)
+        }
 
         then:
-        (testTask.options as TestNGOptions).suiteName == 'Custom Suite'
+        testTask.options.suiteName == 'Custom Suite'
     }
 
     TestNGTestFramework createFramework() {
-        new TestNGTestFramework(testTask, new DefaultTestFilter(), instantiator, Stub(ClassLoaderCache))
+        new TestNGTestFramework(testTask, Stub(FileCollection), new DefaultTestFilter(), objects)
     }
 }

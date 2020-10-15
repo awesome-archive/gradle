@@ -40,23 +40,21 @@ import java.util.Set;
 import java.util.TreeSet;
 
 public class DefaultResolvedDependency implements ResolvedDependency, DependencyGraphNodeResult {
-    private final Set<DefaultResolvedDependency> children = new LinkedHashSet<DefaultResolvedDependency>();
-    private final Set<ResolvedDependency> parents = new LinkedHashSet<ResolvedDependency>();
+    private final Set<DefaultResolvedDependency> children = new LinkedHashSet<>();
+    private final Set<ResolvedDependency> parents = new LinkedHashSet<>();
     private final ListMultimap<ResolvedDependency, ResolvedArtifactSet> parentArtifacts = ArrayListMultimap.create();
-    private final Long id;
     private final String name;
     private final ResolvedConfigurationIdentifier resolvedConfigId;
     private final BuildOperationExecutor buildOperationProcessor;
     private final Set<ResolvedArtifactSet> moduleArtifacts;
-    private final Map<ResolvedDependency, Set<ResolvedArtifact>> allArtifactsCache = new HashMap<ResolvedDependency, Set<ResolvedArtifact>>();
+    private final Map<ResolvedDependency, Set<ResolvedArtifact>> allArtifactsCache = new HashMap<>();
     private Set<ResolvedArtifact> allModuleArtifactsCache;
 
-    public DefaultResolvedDependency(Long id, ResolvedConfigurationIdentifier resolvedConfigurationIdentifier, BuildOperationExecutor buildOperationProcessor) {
-        this.id = id;
+    public DefaultResolvedDependency(ResolvedConfigurationIdentifier resolvedConfigurationIdentifier, BuildOperationExecutor buildOperationProcessor) {
         this.name = String.format("%s:%s:%s", resolvedConfigurationIdentifier.getModuleGroup(), resolvedConfigurationIdentifier.getModuleName(), resolvedConfigurationIdentifier.getModuleVersion());
         this.resolvedConfigId = resolvedConfigurationIdentifier;
         this.buildOperationProcessor = buildOperationProcessor;
-        this.moduleArtifacts = new LinkedHashSet<ResolvedArtifactSet>();
+        this.moduleArtifacts = new LinkedHashSet<>();
     }
 
     @Override
@@ -64,37 +62,39 @@ public class DefaultResolvedDependency implements ResolvedDependency, Dependency
         return this;
     }
 
+    @Override
     public String getName() {
         return name;
     }
 
     @Override
-    public Long getNodeId() {
-        return id;
-    }
-
     public String getModuleGroup() {
         return resolvedConfigId.getModuleGroup();
     }
 
+    @Override
     public String getModuleName() {
         return resolvedConfigId.getModuleName();
     }
 
+    @Override
     public String getModuleVersion() {
         return resolvedConfigId.getModuleVersion();
     }
 
+    @Override
     public String getConfiguration() {
         return resolvedConfigId.getConfiguration();
     }
 
+    @Override
     public ResolvedModuleVersion getModule() {
         return new DefaultResolvedModuleVersion(resolvedConfigId.getId());
     }
 
+    @Override
     public Set<ResolvedDependency> getChildren() {
-        return ImmutableSet.<ResolvedDependency>copyOf(children);
+        return ImmutableSet.copyOf(children);
     }
 
     @Override
@@ -102,14 +102,15 @@ public class DefaultResolvedDependency implements ResolvedDependency, Dependency
         return children;
     }
 
+    @Override
     public Set<ResolvedArtifact> getModuleArtifacts() {
         return sort(CompositeResolvedArtifactSet.of(moduleArtifacts));
     }
 
+    @Override
     public Set<ResolvedArtifact> getAllModuleArtifacts() {
         if (allModuleArtifactsCache == null) {
-            Set<ResolvedArtifact> allArtifacts = new LinkedHashSet<ResolvedArtifact>();
-            allArtifacts.addAll(getModuleArtifacts());
+            Set<ResolvedArtifact> allArtifacts = new LinkedHashSet<>(getModuleArtifacts());
             for (ResolvedDependency childResolvedDependency : getChildren()) {
                 allArtifacts.addAll(childResolvedDependency.getAllModuleArtifacts());
             }
@@ -118,12 +119,13 @@ public class DefaultResolvedDependency implements ResolvedDependency, Dependency
         return allModuleArtifactsCache;
     }
 
+    @Override
     public Set<ResolvedArtifact> getParentArtifacts(ResolvedDependency parent) {
         return sort(getArtifactsForIncomingEdge((DependencyGraphNodeResult) parent));
     }
 
     private Set<ResolvedArtifact> sort(ResolvedArtifactSet artifacts) {
-        ArtifactCollectingVisitor visitor = new ArtifactCollectingVisitor(new TreeSet<ResolvedArtifact>(new ResolvedArtifactComparator()));
+        ArtifactCollectingVisitor visitor = new ArtifactCollectingVisitor(new TreeSet<>(new ResolvedArtifactComparator()));
         ParallelResolveArtifactSet.wrap(artifacts, buildOperationProcessor).visit(visitor);
         return visitor.getArtifacts();
     }
@@ -140,14 +142,15 @@ public class DefaultResolvedDependency implements ResolvedDependency, Dependency
         return CompositeResolvedArtifactSet.of(parentArtifacts.get((ResolvedDependency) parent));
     }
 
+    @Override
     public Set<ResolvedArtifact> getArtifacts(ResolvedDependency parent) {
         return getParentArtifacts(parent);
     }
 
+    @Override
     public Set<ResolvedArtifact> getAllArtifacts(ResolvedDependency parent) {
         if (allArtifactsCache.get(parent) == null) {
-            Set<ResolvedArtifact> allArtifacts = new LinkedHashSet<ResolvedArtifact>();
-            allArtifacts.addAll(getArtifacts(parent));
+            Set<ResolvedArtifact> allArtifacts = new LinkedHashSet<>(getArtifacts(parent));
             for (ResolvedDependency childResolvedDependency : getChildren()) {
                 for (ResolvedDependency childParent : childResolvedDependency.getParents()) {
                     allArtifacts.addAll(childResolvedDependency.getAllArtifacts(childParent));
@@ -158,6 +161,7 @@ public class DefaultResolvedDependency implements ResolvedDependency, Dependency
         return allArtifactsCache.get(parent);
     }
 
+    @Override
     public Set<ResolvedDependency> getParents() {
         return parents;
     }
@@ -199,6 +203,7 @@ public class DefaultResolvedDependency implements ResolvedDependency, Dependency
     }
 
     private static class ResolvedArtifactComparator implements Comparator<ResolvedArtifact> {
+        @Override
         public int compare(ResolvedArtifact artifact1, ResolvedArtifact artifact2) {
             int diff = artifact1.getName().compareTo(artifact2.getName());
             if (diff != 0) {

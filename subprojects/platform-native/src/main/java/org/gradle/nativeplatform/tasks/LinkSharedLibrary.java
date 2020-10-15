@@ -15,9 +15,9 @@
  */
 package org.gradle.nativeplatform.tasks;
 
-import org.gradle.api.Incubating;
 import org.gradle.api.file.RegularFile;
 import org.gradle.api.file.RegularFileProperty;
+import org.gradle.api.provider.Property;
 import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.Optional;
 import org.gradle.api.tasks.OutputFile;
@@ -28,17 +28,15 @@ import org.gradle.nativeplatform.platform.internal.NativePlatformInternal;
 import org.gradle.nativeplatform.toolchain.internal.NativeToolChainInternal;
 import org.gradle.nativeplatform.toolchain.internal.PlatformToolProvider;
 
-import javax.annotation.Nullable;
 import java.io.File;
 import java.util.concurrent.Callable;
 
 /**
  * Links a binary shared library from object files and imported libraries.
  */
-@Incubating
 public class LinkSharedLibrary extends AbstractLinkTask {
-    private String installName;
-    private final RegularFileProperty importLibrary = newOutputFile();
+    private final Property<String> installName = getProject().getObjects().property(String.class);
+    private final RegularFileProperty importLibrary = getProject().getObjects().fileProperty();
 
     public LinkSharedLibrary() {
         importLibrary.set(getProject().getLayout().getProjectDirectory().file(getProject().getProviders().provider(new Callable<String>() {
@@ -72,21 +70,21 @@ public class LinkSharedLibrary extends AbstractLinkTask {
         return importLibrary;
     }
 
-    @Nullable
+    /**
+     * Returns the install name to use by this task. Defaults to no install name specified for the binary produced.
+     *
+     * @since 5.1
+     */
     @Optional
     @Input
-    public String getInstallName() {
+    public Property<String> getInstallName() {
         return installName;
-    }
-
-    public void setInstallName(@Nullable String installName) {
-        this.installName = installName;
     }
 
     @Override
     protected LinkerSpec createLinkerSpec() {
         Spec spec = new Spec();
-        spec.setInstallName(getInstallName());
+        spec.setInstallName(getInstallName().getOrNull());
         spec.setImportLibrary(importLibrary.getAsFile().getOrNull());
         return spec;
     }

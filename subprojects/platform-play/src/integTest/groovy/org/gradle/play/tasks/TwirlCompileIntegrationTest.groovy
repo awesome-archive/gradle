@@ -16,13 +16,14 @@
 
 package org.gradle.play.tasks
 
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.play.integtest.fixtures.PlayMultiVersionIntegrationTest
 import org.gradle.test.fixtures.archive.JarTestFixture
 import org.gradle.util.VersionNumber
 import spock.lang.Unroll
 
 import static org.gradle.play.integtest.fixtures.Repositories.PLAY_REPOSITORIES
-import static org.hamcrest.Matchers.containsString
+import static org.hamcrest.CoreMatchers.containsString
 
 class TwirlCompileIntegrationTest extends PlayMultiVersionIntegrationTest {
 
@@ -87,11 +88,12 @@ class TwirlCompileIntegrationTest extends PlayMultiVersionIntegrationTest {
 
         // Modifying user templates causes TwirlCompile to be out-of-date
         when:
+        executer.noDeprecationChecks()
         buildFile << """
             model {
                 components {
                     play {
-                        sources {                        
+                        sources {
                             withType(TwirlSourceSet) {
                                 addUserTemplateFormat("unused", "views.formats.unused.UnusedFormat")
                             }
@@ -124,7 +126,7 @@ class TwirlCompileIntegrationTest extends PlayMultiVersionIntegrationTest {
         """
         file("app/my/pkg/MyClass.scala") << """
             package my.pkg
-            
+
             object MyClass;
         """
 
@@ -137,6 +139,7 @@ class TwirlCompileIntegrationTest extends PlayMultiVersionIntegrationTest {
 
         // Changing the imports causes TwirlCompile to be out-of-date
         when:
+        executer.noDeprecationChecks()
         buildFile << """
             model {
                 components {
@@ -158,6 +161,7 @@ class TwirlCompileIntegrationTest extends PlayMultiVersionIntegrationTest {
         generatedFile.assertContents(containsString("import my.pkg.MyClass"))
     }
 
+    @ToBeFixedForConfigurationCache
     def "runs compiler incrementally"() {
         when:
         withTwirlTemplate("input1.scala.html")
@@ -168,11 +172,13 @@ class TwirlCompileIntegrationTest extends PlayMultiVersionIntegrationTest {
         def input1FirstCompileSnapshot = destinationDir.file("html/input1.template.scala").snapshot()
 
         when:
+        executer.noDeprecationChecks()
         succeeds("compilePlayBinaryPlayTwirlTemplates")
         then:
         skipped(":compilePlayBinaryPlayTwirlTemplates")
 
         when:
+        executer.noDeprecationChecks()
         withTwirlTemplate("input2.scala.html")
         and:
         succeeds("compilePlayBinaryPlayTwirlTemplates")
@@ -182,6 +188,7 @@ class TwirlCompileIntegrationTest extends PlayMultiVersionIntegrationTest {
         destinationDir.file("html/input1.template.scala").assertHasNotChangedSince(input1FirstCompileSnapshot)
 
         when:
+        executer.noDeprecationChecks()
         file("app/views/input2.scala.html").delete()
         then:
         succeeds("compilePlayBinaryPlayTwirlTemplates")
@@ -189,6 +196,7 @@ class TwirlCompileIntegrationTest extends PlayMultiVersionIntegrationTest {
         destinationDir.assertHasDescendants("html/input1.template.scala")
     }
 
+    @ToBeFixedForConfigurationCache
     def "removes stale output files in incremental compile"(){
         given:
         withTwirlTemplate("input1.scala.html")
@@ -200,6 +208,7 @@ class TwirlCompileIntegrationTest extends PlayMultiVersionIntegrationTest {
         def input1FirstCompileSnapshot = destinationDir.file("html/input1.template.scala").snapshot()
 
         when:
+        executer.noDeprecationChecks()
         file("app/views/input2.scala.html").delete()
 
         then:
@@ -236,6 +245,7 @@ class TwirlCompileIntegrationTest extends PlayMultiVersionIntegrationTest {
             .containsDescendants("views/html/index.class", "templates/html/other.class", "html/extra.class")
     }
 
+    @ToBeFixedForConfigurationCache
     def "can build twirl source set with default Java imports" () {
         withTwirlJavaSourceSets()
         withTemplateSourceExpectingJavaImports(file("twirlJava", "javaTemplate.scala.html"))
@@ -271,6 +281,7 @@ class TwirlCompileIntegrationTest extends PlayMultiVersionIntegrationTest {
             .containsDescendants("html/javaTemplate.class", "views/html/index.class")
     }
 
+    @ToBeFixedForConfigurationCache
     def "twirl source sets default to Scala imports" () {
         withTemplateSource(file("app", "views", "index.scala.html"))
         validateThatPlayJavaDependencyIsNotAdded()
@@ -283,6 +294,7 @@ class TwirlCompileIntegrationTest extends PlayMultiVersionIntegrationTest {
         executedAndNotSkipped ":compilePlayBinaryPlayTwirlTemplates"
     }
 
+    @ToBeFixedForConfigurationCache(because = ":components")
     def "extra sources appear in the component report"() {
         withExtraSourceSets()
 
@@ -327,7 +339,7 @@ Binaries
             model {
                 components {
                     play {
-                        sources {                        
+                        sources {
                             withType(TwirlSourceSet) {
                                 addUserTemplateFormat($template)
                             }
@@ -340,7 +352,7 @@ Binaries
         when:
         result = executer.withTasks('components').runWithFailure()
         then:
-        result.error.contains(errorMessage)
+        result.assertHasCause(errorMessage)
 
         where:
         template                      | errorMessage
@@ -354,7 +366,7 @@ Binaries
         when:
         fails("compilePlayBinaryScala")
         then:
-        result.error.contains("Twirl compiler could not find a matching template for 'test.scala.custom'.")
+        failure.assertHasCause("Twirl compiler could not find a matching template for 'test.scala.custom'.")
     }
 
     def withTemplateSource(File templateFile) {
@@ -482,7 +494,7 @@ Binaries
             model {
                 components {
                     play {
-                        sources {                        
+                        sources {
                             withType(TwirlSourceSet) {
                                 addUserTemplateFormat("csv", "views.formats.csv.CsvFormat", "views.formats.csv._")
                             }
@@ -510,7 +522,7 @@ object Csv {
   implicit def contentTypeCsv(implicit codec: Codec): ContentTypeOf[Csv] = ContentTypeOf[Csv](Some(Csv.contentType))
 
   def apply(text: String): Csv = new Csv(new StringBuilder(text))
-  
+
   def empty: Csv = new Csv(new StringBuilder)
 }
 

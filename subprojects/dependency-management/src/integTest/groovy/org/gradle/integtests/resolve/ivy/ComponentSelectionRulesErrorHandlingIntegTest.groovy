@@ -16,11 +16,13 @@
 
 package org.gradle.integtests.resolve.ivy
 
-import org.gradle.integtests.fixtures.GradleMetadataResolveRunner
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.test.fixtures.ivy.IvyModule
 import org.gradle.test.fixtures.maven.MavenModule
 
 class ComponentSelectionRulesErrorHandlingIntegTest extends AbstractComponentSelectionRulesIntegrationTest {
+
+    @ToBeFixedForConfigurationCache(because = "broken file collection")
     def "produces sensible error when bad code is supplied in component selection rule"() {
         buildFile << """
             dependencies {
@@ -49,7 +51,7 @@ class ComponentSelectionRulesErrorHandlingIntegTest extends AbstractComponentSel
         fails ':checkDeps'
         failure.assertHasDescription("Execution failed for task ':checkDeps'.")
         failure.assertHasFileName("Build file '$buildFile.path'")
-        failure.assertHasLineNumber(36)
+        failure.assertHasLineNumber(45)
         failure.assertHasCause("There was an error while evaluating a component selection rule for org.utils:api:1.2.")
         failure.assertHasCause("Could not find method foo()")
     }
@@ -80,18 +82,17 @@ class ComponentSelectionRulesErrorHandlingIntegTest extends AbstractComponentSel
         fails ':checkDeps'
         failureDescriptionStartsWith("A problem occurred evaluating root project")
         failure.assertHasFileName("Build file '$buildFile.path'")
-        failure.assertHasLineNumber(35)
+        failure.assertHasLineNumber(44)
         failureHasCause("The closure provided is not valid as a rule for 'ComponentSelectionRules'.")
         failureHasCause(message)
 
         where:
         parameters                           | message
         "String vs ->"                       | "First parameter of rule action closure must be of type 'ComponentSelection'."
-        "ComponentSelection vs, String s ->" | "Rule may not have an input parameter of type: java.lang.String. " +
-            "Valid types (for the second and subsequent parameters) are: " +
-            "[org.gradle.api.artifacts.ComponentMetadata, org.gradle.api.artifacts.ivy.IvyModuleDescriptor]."
+        "ComponentSelection vs, String s ->" | "Rule may not have an input parameter of type: java.lang.String."
     }
 
+    @ToBeFixedForConfigurationCache(because = "broken file collection")
     def "produces sensible error when closure rule throws an exception"() {
         buildFile << """
             dependencies {
@@ -118,7 +119,7 @@ class ComponentSelectionRulesErrorHandlingIntegTest extends AbstractComponentSel
         fails ':checkDeps'
         failure.assertHasDescription("Execution failed for task ':checkDeps'.")
         failure.assertHasFileName("Build file '$buildFile.path'")
-        failure.assertHasLineNumber(35)
+        failure.assertHasLineNumber(44)
         failure.assertHasCause("There was an error while evaluating a component selection rule for org.utils:api:1.2.")
         failure.assertHasCause("From test")
     }
@@ -149,7 +150,7 @@ class ComponentSelectionRulesErrorHandlingIntegTest extends AbstractComponentSel
         fails ':checkDeps'
         failureDescriptionStartsWith("A problem occurred evaluating root project")
         failure.assertHasFileName("Build file '$buildFile.path'")
-        failure.assertHasLineNumber(35)
+        failure.assertHasLineNumber(44)
         failureHasCause("Could not add a component selection rule for module 'org.utils'.")
         failureHasCause("Cannot convert the provided notation to an object of type ModuleIdentifier: org.utils")
     }
@@ -176,11 +177,12 @@ class ComponentSelectionRulesErrorHandlingIntegTest extends AbstractComponentSel
         fails ':checkDeps'
         failureDescriptionStartsWith("A problem occurred evaluating root project")
         failure.assertHasFileName("Build file '$buildFile.path'")
-        failure.assertHasLineNumber(31)
+        failure.assertHasLineNumber(40)
         failureHasCause("""Type BadRuleSource is not a valid rule source:
 - Method select(java.lang.String) is not a valid rule method: First parameter of a rule method must be of type org.gradle.api.artifacts.ComponentSelection""")
     }
 
+    @ToBeFixedForConfigurationCache(because = "broken file collection")
     def "produces sensible error when rule source throws an exception"() {
         buildFile << """
             dependencies {
@@ -218,17 +220,19 @@ class ComponentSelectionRulesErrorHandlingIntegTest extends AbstractComponentSel
         fails ':checkDeps'
         failure.assertHasDescription("Execution failed for task ':checkDeps'.")
         failure.assertHasFileName("Build file '$buildFile.path'")
-        failure.assertHasLineNumber(47)
+        failure.assertHasLineNumber(56)
         failure.assertHasCause("There was an error while evaluating a component selection rule for org.utils:api:1.2.")
         failure.assertHasCause("java.lang.Exception: thrown from rule")
     }
 
+    @ToBeFixedForConfigurationCache
     def "reports missing module when component selection rule requires meta-data"() {
         buildFile << """
 configurations {
     conf {
         resolutionStrategy.componentSelection {
-            all { ComponentSelection selection, ComponentMetadata metadata ->
+            all { ComponentSelection selection ->
+                selection.metadata // Access the metadata
             }
         }
     }
@@ -248,9 +252,6 @@ dependencies {
                 expectVersionListing()
                 '2.1' {
                     expectGetMetadataMissing()
-                    if (!GradleMetadataResolveRunner.isExperimentalResolveBehaviorEnabled()) {
-                        expectHeadArtifactMissing()
-                    }
                 }
             }
         }
@@ -259,8 +260,8 @@ dependencies {
         fails ":checkDeps"
         failure.assertHasCause("""Could not find any matches for org.utils:api:+ as no versions of org.utils:api are available.
 Searched in the following locations:
-    ${versionListingURI('org.utils', 'api')}
-${triedMetadata('org.utils', 'api', '2.1', !GradleMetadataResolveRunner.isExperimentalResolveBehaviorEnabled(), false)}
+  - ${versionListingURI('org.utils', 'api')}
+${triedMetadata('org.utils', 'api', '2.1', false)}
 Required by:
 """)
 
@@ -276,12 +277,14 @@ Required by:
         succeeds ":checkDeps"
     }
 
+    @ToBeFixedForConfigurationCache
     def "reports broken module when component selection rule requires meta-data"() {
         buildFile << """
 configurations {
     conf {
         resolutionStrategy.componentSelection {
-            all { ComponentSelection selection, ComponentMetadata metadata ->
+            all { ComponentSelection selection ->
+                selection.metadata // Access the metadata
             }
         }
     }
@@ -296,17 +299,11 @@ dependencies {
             'org.utils:api' {
                 expectVersionListing()
                 '2.1' {
-                    if (!GradleMetadataResolveRunner.isExperimentalResolveBehaviorEnabled()) {
-                        withModule(IvyModule) {
-                            ivy.expectGetBroken()
-                        }
-                        withModule(MavenModule) {
-                            pom.expectGetBroken()
-                        }
-                    } else {
-                        withModule {
-                            moduleMetadata.expectGetBroken()
-                        }
+                    withModule(IvyModule) {
+                        ivy.expectGetBroken()
+                    }
+                    withModule(MavenModule) {
+                        pom.expectGetBroken()
                     }
                 }
             }
@@ -316,7 +313,7 @@ dependencies {
         fails ":checkDeps"
         failure.assertHasCause("Could not resolve org.utils:api:+.")
         failure.assertHasCause("Could not resolve org.utils:api:2.1.")
-        failure.assertHasCause("Could not GET '${metadataURI('org.utils', 'api', '2.1')}'. Received status code 500 from server: broken")
+        failure.assertHasCause("Could not GET '${legacyMetadataURI('org.utils', 'api', '2.1')}'. Received status code 500 from server: broken")
 
         when:
         resetExpectations()
@@ -331,12 +328,7 @@ dependencies {
 
         then:
         fails ":checkDeps"
-        if (GradleMetadataResolveRunner.isGradleMetadataEnabled()) {
-            // why is the error message different?!
-            failure.assertHasCause("Could not download api-2.1.jar (org.utils:api:2.1)")
-        } else {
-            failure.assertHasCause("Could not download api.jar (org.utils:api:2.1)")
-        }
+        failure.assertHasCause("Could not download api-2.1.jar (org.utils:api:2.1)")
         failure.assertHasCause("Could not GET '${artifactURI('org.utils', 'api', '2.1')}'. Received status code 500 from server: broken")
 
         when:

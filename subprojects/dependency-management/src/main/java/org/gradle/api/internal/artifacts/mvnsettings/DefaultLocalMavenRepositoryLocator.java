@@ -25,7 +25,7 @@ import java.util.regex.Pattern;
 
 public class DefaultLocalMavenRepositoryLocator implements LocalMavenRepositoryLocator {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultLocalMavenRepositoryLocator.class);
-    private static final Pattern PLACEHOLDER_PATTERN = Pattern.compile("\\$\\{([^\\}]*)\\}");
+    private static final Pattern PLACEHOLDER_PATTERN = Pattern.compile("\\$\\{([^}]*)}");
 
     private final MavenSettingsProvider settingsProvider;
     private final SystemPropertyAccess system;
@@ -40,6 +40,7 @@ public class DefaultLocalMavenRepositoryLocator implements LocalMavenRepositoryL
         this.system = system;
     }
 
+    @Override
     public File getLocalMavenRepository() throws CannotLocateLocalMavenRepositoryException {
         String localOverride = system.getProperty("maven.repo.local");
         if (localOverride != null) {

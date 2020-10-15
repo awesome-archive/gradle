@@ -16,9 +16,11 @@
 
 package org.gradle.integtests.composite
 
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.integtests.fixtures.build.BuildTestFile
 import org.gradle.integtests.fixtures.resolve.ResolveTestFixture
 import org.gradle.test.fixtures.maven.MavenModule
+
 /**
  * Tests for resolving dependency artifacts with substitution within a composite build.
  */
@@ -60,6 +62,7 @@ class CompositeBuildCommandLineArgsIntegrationTest extends AbstractCompositeBuil
         assertTaskExecuted(":buildB", ":jar")
     }
 
+    @ToBeFixedForConfigurationCache
     def "passes system property arguments to included build"() {
         given:
         dependency 'org.test:buildB:1.0'
@@ -159,7 +162,7 @@ includeBuild '../buildB'
 
     void skipped(String... taskNames) {
         for (String taskName : taskNames) {
-            result.assertOutputContains(taskName + " SKIPPED\n")
+            outputContains(taskName + " SKIPPED\n")
         }
     }
 

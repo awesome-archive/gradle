@@ -17,10 +17,12 @@
 package org.gradle.model.dsl.internal.transform
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
 import spock.lang.Unroll
 
-import static org.hamcrest.Matchers.containsString
+import static org.hamcrest.CoreMatchers.containsString
 
+@UnsupportedWithConfigurationCache(because = "software model")
 class ModelDslRuleInputDetectionIntegrationSpec extends AbstractIntegrationSpec {
 
     @Unroll
@@ -165,7 +167,7 @@ class ModelDslRuleInputDetectionIntegrationSpec extends AbstractIntegrationSpec 
 
         then:
         succeeds "tasks"
-        result.output.contains '''thing configured
+        outputContains '''thing configured
 tasks configured
 '''
 
@@ -229,7 +231,7 @@ tasks configured
 
         then:
         succeeds "echo"
-        output.contains "values: [true, false, false]"
+        outputContains "values: [true, false, false]"
     }
 
     @Unroll
@@ -351,6 +353,7 @@ tasks configured
             }
 
             class PrintTask extends DefaultTask {
+                @Internal
                 String message
 
                 @TaskAction
@@ -370,7 +373,7 @@ tasks configured
 
         then:
         succeeds "printMessage"
-        output.contains("message: [foo]")
+        outputContains("message: [foo]")
 
         where:
         code << [

@@ -18,7 +18,7 @@ package org.gradle.integtests.fixtures
 
 import org.gradle.integtests.fixtures.executer.GradleExecuter
 import org.gradle.internal.operations.notify.BuildOperationFinishedNotification
-import org.gradle.internal.operations.notify.BuildOperationNotificationListener2
+import org.gradle.internal.operations.notify.BuildOperationNotificationListener
 import org.gradle.internal.operations.notify.BuildOperationNotificationListenerRegistrar
 import org.gradle.internal.operations.notify.BuildOperationProgressNotification
 import org.gradle.internal.operations.notify.BuildOperationStartedNotification
@@ -52,34 +52,34 @@ class BuildOperationNotificationsFixture {
     static String injectNotificationListenerBuildLogic() {
         """
             rootProject {
-                if(gradle.getParent() == null) {
+                if(gradle.isRootBuild()) {
                     def listener = new BuildOperationNotificationsEvaluationListener()
                     def registrar = project.services.get($BuildOperationNotificationListenerRegistrar.name)
                     registrar.register(listener)
                 }
-            } 
-            
+            }
+
             $EVALUATION_LISTENER_SOURCE
         """
     }
 
     public static final String EVALUATION_LISTENER_SOURCE = """
-        class BuildOperationNotificationsEvaluationListener implements $BuildOperationNotificationListener2.name {
+        class BuildOperationNotificationsEvaluationListener implements $BuildOperationNotificationListener.name {
                 @Override
                 void started($BuildOperationStartedNotification.name notification) {
                     verify(notification.getNotificationOperationDetails(), 'Details')
                 }
-        
+
                 @Override
                 void progress($BuildOperationProgressNotification.name notification) {
                     verify(notification.getNotificationOperationProgressDetails())
                 }
-        
+
                 @Override
                 void finished($BuildOperationFinishedNotification.name notification) {
                     verify(notification.getNotificationOperationResult(), 'Result')
                 }
-                
+
                 private void verify(Object obj, String suffix = null) {
                     def matchingInterfaces = findPublicInterfaces(obj, suffix)
                     if (matchingInterfaces.empty) {
@@ -89,22 +89,22 @@ class BuildOperationNotificationsFixture {
                             throw new org.gradle.api.GradleException("No interface with suffix '\$suffix' found.")
                         }
                     }
-                    
+
                     matchingInterfaces.each { i ->
                         invokeMethods(obj, i)
                     }
                 }
-                
+
                 List<Class<?>> findPublicInterfaces(Object object, String suffix) {
                     def interfaces = object.getClass().interfaces
-                    
+
                     if (suffix == null) {
-                        interfaces 
+                        interfaces
                     } else {
                         interfaces.findAll { it.name.endsWith(suffix) }
                     }
                 }
-                
+
                 void invokeMethods(Object object, Class<?> clazz) {
                     for (def method : clazz.methods) {
                         try {
@@ -116,7 +116,7 @@ class BuildOperationNotificationsFixture {
                             if (any instanceof $InvocationTargetException.name) {
                                 cause = any.cause
                             }
-                            throw new RuntimeException("Failed to invoke \$method.name() of \$clazz.name", cause)                         
+                            throw new RuntimeException("Failed to invoke \$method.name() of \$clazz.name", cause)
                         }
                     }
                 }

@@ -102,7 +102,7 @@ function initializeProjectPage(report) {
             var $insightDiv = $('#insight');
             $insightDiv.html('');
             $insightDiv.append($('<i> </i>').attr('id', 'dismissInsight').attr('title', 'Close'));
-            $insightDiv.append($('<h3>Insight for module </h3>').append(module));
+            $insightDiv.append($('<h3>Insight for module </h3>').append(document.createTextNode(module)));
             var $tree = $('<div>').addClass('insightTree');
             var insight = findInsight(moduleInsights, module);
             var nodes = [];
@@ -131,7 +131,7 @@ function initializeProjectPage(report) {
             $insightDiv.fadeIn();
         }
 
-        // generates the configuration dependeny trees
+        // generates the configuration dependency trees
         var $dependencies = $('#dependencies');
         var project = report.project;
 
@@ -192,7 +192,7 @@ function initializeProjectPage(report) {
             $(this).toggleClass('closed');
         });
 
-        $('#projectBreacrumb').text(project.name);
+        $('#projectBreadcrumb').text(project.name);
         populateFooter(report);
     });
 }

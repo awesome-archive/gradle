@@ -17,14 +17,16 @@
 package org.gradle.language.java
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
 import spock.lang.Unroll
 
 import static org.gradle.language.java.JavaIntegrationTesting.applyJavaPlugin
 
+@UnsupportedWithConfigurationCache(because = "software model")
 class JavaLanguageExternalDependencyResolutionIntegrationTest extends AbstractIntegrationSpec {
 
     def theModel(String model) {
-        applyJavaPlugin(buildFile)
+        applyJavaPlugin(buildFile, executer)
         buildFile << """
             repositories {
                 maven { url '${mavenRepo.uri}' }
@@ -242,7 +244,7 @@ class JavaLanguageExternalDependencyResolutionIntegrationTest extends AbstractIn
         fails 'mainJar'
 
         and:
-        failureDescriptionContains("Could not resolve all dependencies for 'Jar 'main:jar''")
+        failureCauseContains("Could not resolve all dependencies for 'Jar 'main:jar''")
         failureCauseContains('Could not find org.gradle:test:1.0')
     }
 

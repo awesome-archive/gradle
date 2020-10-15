@@ -25,6 +25,7 @@ import java.util.Map;
 
 public interface IvyModule extends Module {
     String getOrganisation();
+    @Override
     String getModule();
     String getRevision();
 
@@ -56,6 +57,12 @@ public interface IvyModule extends Module {
 
     IvyModule extendsFrom(Map<String, ?> attributes);
 
+    IvyModule withoutGradleMetadataRedirection();
+
+    IvyModule withoutExtraChecksums();
+
+    IvyModule withExtraChecksums();
+
     /**
      * Attributes:
      *  organisation
@@ -74,6 +81,15 @@ public interface IvyModule extends Module {
     IvyModule dependencyConstraint(Module module);
 
     IvyModule dependencyConstraint(Map<String, ?> attributes, Module module);
+
+    /**
+     * Responsible for exclusions at configuration level
+     * @param group
+     * @param module
+     * @param configuration
+     * @return
+     */
+    IvyModule excludeFromConfig(String group, String module, String configuration);
 
     /**
      * Options:
@@ -109,12 +125,14 @@ public interface IvyModule extends Module {
     /**
      * Publishes ivy.xml plus all artifacts with different content (and size) to previous publication.
      */
+    @Override
     IvyModule publishWithChangedContent();
 
     /**
      * Publishes ivy.xml plus all artifacts. Publishes only those artifacts whose content has changed since the
      * last call to {@code #publish()}.
      */
+    @Override
     IvyModule publish();
 
     IvyDescriptor getParsedIvy();

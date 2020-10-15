@@ -22,6 +22,7 @@ import org.gradle.api.artifacts.VersionConstraint;
 import org.gradle.api.artifacts.component.ComponentSelector;
 import org.gradle.api.artifacts.component.ModuleComponentSelector;
 import org.gradle.api.artifacts.component.ProjectComponentSelector;
+import org.gradle.api.capabilities.Capability;
 import org.gradle.api.internal.attributes.AttributesSchemaInternal;
 import org.gradle.api.internal.attributes.ImmutableAttributes;
 import org.gradle.internal.component.local.model.DefaultProjectDependencyMetadata;
@@ -30,34 +31,44 @@ import org.gradle.internal.component.model.ComponentResolveMetadata;
 import org.gradle.internal.component.model.ConfigurationMetadata;
 import org.gradle.internal.component.model.DependencyMetadata;
 import org.gradle.internal.component.model.ExcludeMetadata;
+import org.gradle.internal.component.model.ForcingDependencyMetadata;
 import org.gradle.internal.component.model.IvyArtifactName;
 
-import java.util.Collections;
+import javax.annotation.Nullable;
+import java.util.Collection;
 import java.util.List;
 
-public class GradleDependencyMetadata implements ModuleDependencyMetadata {
+public class GradleDependencyMetadata implements ModuleDependencyMetadata, ForcingDependencyMetadata {
     private final ModuleComponentSelector selector;
     private final List<ExcludeMetadata> excludes;
-    private final boolean pending;
+    private final boolean constraint;
+    private final boolean endorsing;
     private final String reason;
+    private final boolean force;
+    private final List<IvyArtifactName> artifacts;
 
-    public GradleDependencyMetadata(ModuleComponentSelector selector, boolean pending, String reason) {
-        this.selector = selector;
-        this.reason = reason;
-        this.excludes = Collections.emptyList();
-        this.pending = pending;
+    public GradleDependencyMetadata(ModuleComponentSelector selector, List<ExcludeMetadata> excludes, boolean constraint, boolean endorsing, @Nullable String reason, boolean force, @Nullable IvyArtifactName artifact) {
+        this(selector, excludes, constraint, endorsing, reason, force, artifact == null ? ImmutableList.of() : ImmutableList.of(artifact));
     }
 
-    public GradleDependencyMetadata(ModuleComponentSelector selector, List<ExcludeMetadata> excludes, String reason) {
+    private GradleDependencyMetadata(ModuleComponentSelector selector, List<ExcludeMetadata> excludes, boolean constraint, boolean endorsing, @Nullable String reason, boolean force, List<IvyArtifactName> artifacts) {
         this.selector = selector;
         this.excludes = excludes;
         this.reason = reason;
-        this.pending = false;
+        this.constraint = constraint;
+        this.endorsing = endorsing;
+        this.force = force;
+        this.artifacts = artifacts;
     }
 
     @Override
     public List<IvyArtifactName> getArtifacts() {
-        return ImmutableList.of();
+        return artifacts;
+    }
+
+    @Nullable
+    public IvyArtifactName getDependencyArtifact() {
+        return artifacts.isEmpty() ? null : artifacts.get(0);
     }
 
     @Override
@@ -65,7 +76,7 @@ public class GradleDependencyMetadata implements ModuleDependencyMetadata {
         if (requestedVersion.equals(selector.getVersionConstraint())) {
             return this;
         }
-        return new GradleDependencyMetadata(DefaultModuleComponentSelector.newSelector(selector.getGroup(), selector.getModule(), requestedVersion), pending, reason);
+        return new GradleDependencyMetadata(DefaultModuleComponentSelector.newSelector(selector.getModuleIdentifier(), requestedVersion, selector.getAttributes(), selector.getRequestedCapabilities()), excludes, constraint, endorsing, reason, force, artifacts);
     }
 
     @Override
@@ -73,17 +84,32 @@ public class GradleDependencyMetadata implements ModuleDependencyMetadata {
         if (Objects.equal(reason, this.reason)) {
             return this;
         }
-        return new GradleDependencyMetadata(selector, pending, reason);
+        return new GradleDependencyMetadata(selector, excludes, constraint, endorsing, reason, force, artifacts);
+    }
+
+    @Override
+    public ModuleDependencyMetadata withEndorseStrictVersions(boolean endorse) {
+        if (endorse == this.endorsing) {
+            return this;
+        }
+        return new GradleDependencyMetadata(selector, excludes, constraint, endorse, reason, force, artifacts);
     }
 
     @Override
     public DependencyMetadata withTarget(ComponentSelector target) {
         if (target instanceof ModuleComponentSelector) {
-            return new GradleDependencyMetadata((ModuleComponentSelector) target, pending, reason);
+            return new GradleDependencyMetadata((ModuleComponentSelector) target, excludes, constraint, endorsing, reason, force, artifacts);
         }
         return new DefaultProjectDependencyMetadata((ProjectComponentSelector) target, this);
     }
 
+    @Override
+    public DependencyMetadata withTargetAndArtifacts(ComponentSelector target, List<IvyArtifactName> artifacts) {
+        if (target instanceof ModuleComponentSelector) {
+            return new GradleDependencyMetadata((ModuleComponentSelector) target, excludes, constraint, endorsing, reason, force, artifacts);
+        }
+        return new DefaultProjectDependencyMetadata((ProjectComponentSelector) target, this);
+    }
     @Override
     public ModuleComponentSelector getSelector() {
         return selector;
@@ -98,8 +124,8 @@ public class GradleDependencyMetadata implements ModuleDependencyMetadata {
      * Always use attribute matching to choose a target variant.
      */
     @Override
-    public List<ConfigurationMetadata> selectConfigurations(ImmutableAttributes consumerAttributes, ComponentResolveMetadata targetComponent, AttributesSchemaInternal consumerSchema) {
-        return ImmutableList.of(AttributeConfigurationSelector.selectConfigurationUsingAttributeMatching(consumerAttributes, targetComponent, consumerSchema));
+    public List<ConfigurationMetadata> selectConfigurations(ImmutableAttributes consumerAttributes, ComponentResolveMetadata targetComponent, AttributesSchemaInternal consumerSchema, Collection<? extends Capability> explicitRequestedCapabilities) {
+        return ImmutableList.of(AttributeConfigurationSelector.selectConfigurationUsingAttributeMatching(consumerAttributes, explicitRequestedCapabilities, targetComponent, consumerSchema, getArtifacts()));
     }
 
     @Override
@@ -109,12 +135,18 @@ public class GradleDependencyMetadata implements ModuleDependencyMetadata {
 
     @Override
     public boolean isTransitive() {
-        return true;
+        // Constraints are _never_ transitive
+        return !isConstraint();
     }
 
     @Override
-    public boolean isPending() {
-        return pending;
+    public boolean isConstraint() {
+        return constraint;
+    }
+
+    @Override
+    public boolean isEndorsingStrictVersions() {
+        return endorsing;
     }
 
     @Override
@@ -122,4 +154,40 @@ public class GradleDependencyMetadata implements ModuleDependencyMetadata {
         return reason;
     }
 
+    @Override
+    public String toString() {
+        return "GradleDependencyMetadata: " + selector.toString();
+    }
+
+    @Override
+    public boolean isForce() {
+        return force;
+    }
+
+    @Override
+    public ForcingDependencyMetadata forced() {
+        return new GradleDependencyMetadata(selector, excludes, constraint, endorsing, reason, true, artifacts);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        GradleDependencyMetadata that = (GradleDependencyMetadata) o;
+        return constraint == that.constraint &&
+            force == that.force &&
+            Objects.equal(selector, that.selector) &&
+            Objects.equal(excludes, that.excludes) &&
+            Objects.equal(reason, that.reason) &&
+            Objects.equal(artifacts, that.artifacts);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hashCode(selector, excludes, constraint, reason, force, artifacts);
+    }
 }

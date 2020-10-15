@@ -16,10 +16,12 @@
 
 package org.gradle.integtests.resolve.caching
 
+import org.apache.commons.lang.StringUtils
 import org.gradle.integtests.fixtures.AbstractHttpDependencyResolutionTest
+import org.gradle.internal.hash.HashUtil
 import org.gradle.test.fixtures.file.TestFile
-import org.gradle.test.fixtures.server.http.IvyHttpModule
 import org.gradle.test.fixtures.server.http.HttpServer
+import org.gradle.test.fixtures.server.http.IvyHttpModule
 import spock.lang.Issue
 
 /**
@@ -220,19 +222,21 @@ task retrieve(type: Sync) {
     @Issue("GRADLE-2781")
     def "no leading zeros in sha1 checksums supported"() {
         given:
+        def sha1 = new File("${module.jarFile.absolutePath}.sha1")
         server.etags = null
         server.sendLastModified = false
-        byte[] jarBytes = [0, 0, 0, 5]
+        byte[] jarBytes = [0, 0, 0, 5] // this should produce leading zeros
         module.jarFile.bytes = jarBytes
+        sha1.text = StringUtils.leftPad(HashUtil.sha1(jarBytes).asHexString(), 40, '0')
         initialResolve()
         expect:
         headThenSha1Requests()
-        trimLeadingZerosFromSHA1()
+        trimLeadingZerosFromSHA1(sha1)
         unchangedResolve()
     }
 
-    def trimLeadingZerosFromSHA1() {
+    def trimLeadingZerosFromSHA1(File sha1) {
         //remove leading zeros from sha1 checksum
-        new File("${module.jarFile.absolutePath}.sha1").text = "e14c6ef59816760e2c9b5a57157e8ac9de4012"
+        sha1.text = sha1.text.replaceAll("^0+", "")
     }
 }

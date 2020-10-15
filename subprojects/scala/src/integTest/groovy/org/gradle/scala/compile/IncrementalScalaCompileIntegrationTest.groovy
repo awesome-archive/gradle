@@ -16,6 +16,7 @@
 package org.gradle.scala.compile
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.integtests.fixtures.TestResources
 import org.gradle.integtests.fixtures.ZincScalaCompileFixture
 import org.junit.Rule
@@ -26,6 +27,11 @@ class IncrementalScalaCompileIntegrationTest extends AbstractIntegrationSpec {
     @Rule TestResources resources = new TestResources(temporaryFolder)
     @Rule public final ZincScalaCompileFixture zincScalaCompileFixture = new ZincScalaCompileFixture(executer, temporaryFolder)
 
+    def setup() {
+        executer.withRepositoryMirrors()
+    }
+
+    @ToBeFixedForConfigurationCache
     def recompilesSourceWhenPropertiesChange() {
         expect:
         run('compileScala').assertTasksSkipped(':compileJava')
@@ -39,6 +45,7 @@ class IncrementalScalaCompileIntegrationTest extends AbstractIntegrationSpec {
         run('compileScala').assertTasksSkipped(':compileJava', ':compileScala')
     }
 
+    @ToBeFixedForConfigurationCache
     def recompilesDependentClasses() {
         given:
         run("classes")
@@ -50,7 +57,28 @@ class IncrementalScalaCompileIntegrationTest extends AbstractIntegrationSpec {
         runAndFail("classes").assertHasDescription("Execution failed for task ':compileScala'.")
     }
 
+    @Issue("gradle/gradle#13392")
+    @ToBeFixedForConfigurationCache
+    def restoresClassesOnCompilationFailure() {
+        given:
+        run("classes")
+        def iperson = scalaClassFile("IPerson.class")
+        def person = scalaClassFile("Person.class")
+
+        when: // Update interface, compile should fail
+        file('src/main/scala/IPerson.scala').assertIsFile().copyFrom(file('NewIPerson.scala'))
+
+        runAndFail("classes").assertHasDescription("Execution failed for task ':compileScala'.")
+
+        then:
+        // both files must exist (same content as in previous compilation)
+        // this is needed for incremental compilation, outputs must be kept in sync with analysis file
+        iperson.assertIsFile()
+        person.assertIsFile()
+    }
+
     @Issue("GRADLE-2548")
+    @ToBeFixedForConfigurationCache
     def recompilesScalaWhenJavaChanges() {
         file("build.gradle") << """
             apply plugin: 'scala'
@@ -58,7 +86,7 @@ class IncrementalScalaCompileIntegrationTest extends AbstractIntegrationSpec {
             ${mavenCentralRepository()}
 
             dependencies {
-                compile 'org.scala-lang:scala-library:2.11.1'
+                implementation 'org.scala-lang:scala-library:2.11.12'
             }
         """
 

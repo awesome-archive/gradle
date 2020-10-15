@@ -29,7 +29,7 @@ public class BuildScriptClasspathIntegrationTest extends AbstractIntegrationTest
     public void providesADefaultBuildForBuildSrcProject() {
         testFile("buildSrc/src/main/java/BuildClass.java").writelns("public class BuildClass { }");
         testFile("build.gradle").writelns("new BuildClass()");
-        inTestDirectory().withTaskList().run();
+        inTestDirectory().withTasks("help").run();
     }
 
     @Test
@@ -43,10 +43,10 @@ public class BuildScriptClasspathIntegrationTest extends AbstractIntegrationTest
 
         testFile("buildSrc/build.gradle").writelns(
                 "repositories { flatDir { dirs '../repo' } }",
-                "dependencies { compile name: 'test', version: '1.3' }");
+                "dependencies { implementation name: 'test', version: '1.3' }");
         testFile("buildSrc/src/main/java/BuildClass.java").writelns("public class BuildClass extends org.gradle.test.DepClass { }");
         testFile("build.gradle").writelns("new BuildClass()");
-        inTestDirectory().withTaskList().run();
+        inTestDirectory().withTasks("help").run();
     }
 
     @Test
@@ -79,7 +79,7 @@ public class BuildScriptClasspathIntegrationTest extends AbstractIntegrationTest
                 "} catch(ClassNotFoundException e) { /* expected */ }",
                 "gradle.class.classLoader.loadClass('com.google.common.collect.Multimap')");
 
-        inTestDirectory().withTaskList().run();
+        inTestDirectory().withTasks("help").run();
     }
 
     @Test

@@ -16,34 +16,53 @@
 
 package org.gradle.performance.results;
 
+import java.util.Arrays;
 import java.util.List;
 
 public abstract class PerformanceTestResult {
+    private String testId;
+    private String testClass;
+    private String testProject;
+    private String teamCityBuildId;
+    private String jvm;
+    private String operatingSystem;
+    private String host;
+    private long startTime;
+    private long endTime;
+    private String vcsBranch;
+    private List<String> vcsCommits;
+    private List<String> previousTestIds;
+    private String versionUnderTest;
+    private String channel;
+    private Throwable whereAmI;
 
-    String testId;
-    String jvm;
-    String operatingSystem;
-    String host;
-    long startTime;
-    long endTime;
-    String vcsBranch;
-    List<String> vcsCommits;
-    List<String> previousTestIds;
-    String versionUnderTest;
-    String channel;
-    Throwable whereAmI;
-
-    public  PerformanceTestResult() {
+    public PerformanceTestResult() {
         whereAmI = new Throwable();
     }
 
-    protected static Checks whatToCheck() {
-        Checks result = Checks.ALL;
-        String override = System.getProperty("org.gradle.performance.execution.checks");
-        if (override != null) {
-            result = Checks.valueOf(override.toUpperCase());
-        }
-        return result;
+    /**
+     * Returns true if regression checks is enabled.
+     *
+     * When checks is enabled, an exception is thrown upon the performance test regression.
+     * Otherwise the regression is ignored.
+     *
+     * @return true if regression checks enabled, false otherwise.
+     */
+    public static boolean hasRegressionChecks() {
+        String check = System.getProperty("org.gradle.performance.regression.checks", "true");
+        return Arrays.asList("true", "all").contains(check);
+    }
+
+    public PerformanceExperiment getPerformanceExperiment() {
+        return new PerformanceExperiment(testProject, new PerformanceScenario(testClass, testId));
+    }
+
+    public String getTestClass() {
+        return testClass;
+    }
+
+    public void setTestClass(String testClass) {
+        this.testClass = testClass;
     }
 
     public String getTestId() {
@@ -52,6 +71,22 @@ public abstract class PerformanceTestResult {
 
     public void setTestId(String testId) {
         this.testId = testId;
+    }
+
+    public String getTestProject() {
+        return testProject;
+    }
+
+    public void setTestProject(String testProject) {
+        this.testProject = testProject;
+    }
+
+    public String getTeamCityBuildId() {
+        return teamCityBuildId;
+    }
+
+    public void setTeamCityBuildId(String teamCityBuildId) {
+        this.teamCityBuildId = teamCityBuildId;
     }
 
     public List<String> getPreviousTestIds() {
@@ -125,8 +160,6 @@ public abstract class PerformanceTestResult {
     public void setChannel(String channel) {
         this.channel = channel;
     }
-
-    public abstract void assertEveryBuildSucceeds();
 
     public String getHost() {
         return host;

@@ -27,11 +27,6 @@ public class UnknownProjectFinder implements ProjectFinder {
     }
 
     @Override
-    public ProjectInternal findProject(String path) {
-        return null;
-    }
-
-    @Override
     public ProjectInternal getProject(String path) {
         throw new UnknownProjectException(exceptionMessage);
     }

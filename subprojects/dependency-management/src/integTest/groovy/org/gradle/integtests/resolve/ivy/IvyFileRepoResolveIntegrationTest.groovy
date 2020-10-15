@@ -16,9 +16,10 @@
 package org.gradle.integtests.resolve.ivy
 
 import org.gradle.integtests.fixtures.AbstractDependencyResolutionTest
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 
 class IvyFileRepoResolveIntegrationTest extends AbstractDependencyResolutionTest {
-    public void "does not cache local artifacts or metadata"() {
+    void "does not cache local artifacts or metadata"() {
         given:
         def repo = ivyRepo()
         def moduleA = repo.module('group', 'projectA', '1.2')
@@ -61,7 +62,7 @@ task retrieve(type: Sync) {
         file('libs/projectB-9-beta.jar').assertIsCopyOf(moduleB.jarFile)
     }
 
-    public void "does not cache resolution of dynamic versions or changing modules"() {
+    void "does not cache resolution of dynamic versions or changing modules"() {
         def repo = ivyRepo()
 
         given:
@@ -123,6 +124,7 @@ task retrieve(type: Sync) {
         jarC1.assertHasChangedSince(jarCsnapshot)
     }
 
+    @ToBeFixedForConfigurationCache
     def "cannot define authentication for local file repo"() {
         given:
         def repo = ivyRepo()

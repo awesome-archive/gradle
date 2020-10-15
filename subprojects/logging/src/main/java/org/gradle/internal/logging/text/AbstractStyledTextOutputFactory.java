@@ -19,15 +19,18 @@ package org.gradle.internal.logging.text;
 import org.gradle.api.logging.LogLevel;
 
 public abstract class AbstractStyledTextOutputFactory implements StyledTextOutputFactory {
-    public StyledTextOutput create(Class logCategory) {
+    @Override
+    public StyledTextOutput create(Class<?> logCategory) {
         return create(logCategory.getName());
     }
 
+    @Override
     public StyledTextOutput create(String logCategory) {
         return create(logCategory, null);
     }
 
-    public StyledTextOutput create(Class logCategory, LogLevel logLevel) {
+    @Override
+    public StyledTextOutput create(Class<?> logCategory, LogLevel logLevel) {
         return create(logCategory.getName(), logLevel);
     }
 }

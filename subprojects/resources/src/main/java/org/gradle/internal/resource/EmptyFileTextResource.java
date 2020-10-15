@@ -15,14 +15,21 @@
  */
 package org.gradle.internal.resource;
 
+import org.gradle.api.resources.ResourceException;
+import org.gradle.internal.file.RelativeFilePathResolver;
+import org.gradle.internal.hash.HashCode;
+import org.gradle.internal.hash.Hashing;
+
 import java.io.File;
 import java.io.Reader;
 import java.io.StringReader;
 import java.nio.charset.Charset;
 
 public class EmptyFileTextResource extends UriTextResource {
-    EmptyFileTextResource(String description, File sourceFile) {
-        super(description, sourceFile);
+    private static final HashCode SIGNATURE = Hashing.signature(EmptyFileTextResource.class);
+
+    EmptyFileTextResource(String description, File sourceFile, RelativeFilePathResolver resolver) {
+        super(description, sourceFile, resolver);
     }
 
     @Override
@@ -48,6 +55,11 @@ public class EmptyFileTextResource extends UriTextResource {
     @Override
     public Reader getAsReader() {
         return new StringReader("");
+    }
+
+    @Override
+    public HashCode getContentHash() throws ResourceException {
+        return SIGNATURE;
     }
 
     @Override

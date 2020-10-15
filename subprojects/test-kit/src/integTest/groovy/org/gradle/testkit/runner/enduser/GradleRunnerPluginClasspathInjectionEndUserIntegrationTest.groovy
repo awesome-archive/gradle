@@ -16,8 +16,11 @@
 
 package org.gradle.testkit.runner.enduser
 
+import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
 import org.gradle.testkit.runner.fixtures.PluginUnderTest
+import spock.lang.IgnoreIf
 
+@IgnoreIf({ GradleContextualExecuter.embedded }) // These tests run builds that themselves run a build in a test worker with 'gradleTestKit()' dependency, which needs to pick up Gradle modules from a real distribution
 class GradleRunnerPluginClasspathInjectionEndUserIntegrationTest extends BaseTestKitEndUserIntegrationTest {
 
     def plugin = new PluginUnderTest(testDirectory)
@@ -38,12 +41,12 @@ class GradleRunnerPluginClasspathInjectionEndUserIntegrationTest extends BaseTes
             }
 
             dependencies {
-                compile localGroovy()
-                testCompile('org.spockframework:spock-core:1.0-groovy-2.4') {
+                implementation localGroovy()
+                testImplementation('org.spockframework:spock-core:1.0-groovy-2.4') {
                     exclude module: 'groovy-all'
                 }
-                testCompile gradleTestKit()
-                testCompile files(createClasspathManifest)
+                testImplementation gradleTestKit()
+                testImplementation files(createClasspathManifest)
             }
 
             ${jcenterRepository()}
@@ -60,10 +63,11 @@ class GradleRunnerPluginClasspathInjectionEndUserIntegrationTest extends BaseTes
             import spock.lang.Specification
 
             class Test extends Specification {
-                @Rule final TemporaryFolder testProjectDir = new TemporaryFolder()
+                @Rule TemporaryFolder testProjectDir = new TemporaryFolder()
                 File buildFile
 
                 def setup() {
+                    testProjectDir.newFile('settings.gradle') << "rootProject.name = 'test'"
                     buildFile = testProjectDir.newFile('build.gradle')
                     def pluginClasspath = getClass().classLoader.findResource("plugin-classpath.txt")
                       .readLines()
@@ -112,11 +116,12 @@ class GradleRunnerPluginClasspathInjectionEndUserIntegrationTest extends BaseTes
             import spock.lang.Specification
 
             class Test extends Specification {
-                @Rule final TemporaryFolder testProjectDir = new TemporaryFolder()
+                @Rule TemporaryFolder testProjectDir = new TemporaryFolder()
                 File buildFile
                 List<File> pluginClasspath
 
                 def setup() {
+                    testProjectDir.newFile('settings.gradle') << "rootProject.name = 'test'"
                     buildFile = testProjectDir.newFile('build.gradle')
                     pluginClasspath = getClass().classLoader.findResource("plugin-classpath.txt")
                       .readLines()

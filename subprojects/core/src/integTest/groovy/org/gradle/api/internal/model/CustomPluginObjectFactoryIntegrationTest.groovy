@@ -18,6 +18,7 @@ package org.gradle.api.internal.model
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 
 class CustomPluginObjectFactoryIntegrationTest extends AbstractIntegrationSpec {
+
     def "plugin can create unnamed instances of class using injected factory"() {
         buildFile << """
             
@@ -67,9 +68,7 @@ class CustomPluginObjectFactoryIntegrationTest extends AbstractIntegrationSpec {
                 void apply(Project project) {
                     project.extensions.create('custom', CustomExtension, factory.newInstance(NestedExtension))
                 }
-                
             }
-           
             
             apply plugin: CustomPlugin
             
@@ -78,10 +77,10 @@ class CustomPluginObjectFactoryIntegrationTest extends AbstractIntegrationSpec {
                     name = 'foo'
                 }
             }
-            
-            task checkFoo {
+
+            tasks.register('checkFoo') {
+                def nested = project.extensions.custom.nested
                 doLast {
-                    def nested = project.extensions.custom.nested 
                     assert nested.name == 'foo'
                     nested.checkRiker {
                         assert name == 'Riker'

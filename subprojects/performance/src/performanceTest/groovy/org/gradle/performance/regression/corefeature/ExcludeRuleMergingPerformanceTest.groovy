@@ -21,20 +21,17 @@ import org.gradle.performance.WithExternalRepository
 
 class ExcludeRuleMergingPerformanceTest extends AbstractCrossVersionPerformanceTest implements WithExternalRepository {
 
-    private final static TEST_PROJECT_NAME = 'excludeRuleMergingBuild'
-
     def setup() {
-        runner.minimumVersion = '4.0'
-        runner.targetVersions = ["4.7-20180308002700+0000"]
+        runner.minimumBaseVersion = '4.9'
+        runner.targetVersions = ["6.7-20200824220048+0000"]
     }
 
     def "merge exclude rules"() {
-        runner.testProject = TEST_PROJECT_NAME
         startServer()
 
         given:
         runner.tasksToRun = ['resolveDependencies']
-        runner.gradleOpts = ["-Xms256m", "-Xmx256m"]
+        runner.gradleOpts = ["-Xms512m", "-Xmx512m"]
         runner.args = ['-PuseHttp', "-PhttpPort=${serverPort}"]
 
         when:
@@ -48,12 +45,11 @@ class ExcludeRuleMergingPerformanceTest extends AbstractCrossVersionPerformanceT
     }
 
     def "merge exclude rules (parallel)"() {
-        runner.testProject = TEST_PROJECT_NAME
         startServer()
 
         given:
         runner.tasksToRun = ['resolveDependencies']
-        runner.gradleOpts = ["-Xms512m", "-Xmx512m"]
+        runner.gradleOpts = ["-Xms800m", "-Xmx800m"]
         runner.args = ['-PuseHttp', "-PhttpPort=${serverPort}", "--parallel"]
         when:
         def result = runner.run()

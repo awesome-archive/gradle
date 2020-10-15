@@ -17,6 +17,7 @@
 package org.gradle.integtests.resolve.maven
 
 import org.gradle.integtests.fixtures.AbstractDependencyResolutionTest
+import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.integtests.fixtures.resolve.ResolveTestFixture
 
 class MavenScopesIntegrationTest extends AbstractDependencyResolutionTest {
@@ -24,6 +25,7 @@ class MavenScopesIntegrationTest extends AbstractDependencyResolutionTest {
 
     def setup() {
         resolve.prepare()
+        resolve.addDefaultVariantDerivationStrategy()
         settingsFile << """
             rootProject.name = 'testproject'
         """
@@ -37,7 +39,7 @@ class MavenScopesIntegrationTest extends AbstractDependencyResolutionTest {
 """
     }
 
-    def "default includes runtime dependencies of compile and runtime scoped dependencies of module"() {
+    def "prefers the runtime variant of a Maven module"() {
         def notRequired = mavenRepo.module('test', 'dont-include-me', '1.0')
         def m1 = mavenRepo.module('test', 'test1', '1.0').publish()
         def m2 = mavenRepo.module('test', 'test2', '1.0').publish()
@@ -69,6 +71,7 @@ dependencies {
 """
         expect:
         succeeds 'checkDep'
+        resolve.expectDefaultConfiguration("runtime")
         resolve.expectGraph {
             root(':', ':testproject:') {
                 module('test:target:1.0') {
@@ -363,6 +366,7 @@ dependencies {
         }
     }
 
+    @ToBeFixedForConfigurationCache
     def "fails when referencing a scope that does not exist"() {
         mavenRepo.module('test', 'target', '1.0')
             .publish()

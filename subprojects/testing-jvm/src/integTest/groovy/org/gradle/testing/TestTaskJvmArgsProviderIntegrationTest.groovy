@@ -43,9 +43,9 @@ class TestTaskJvmArgsProviderIntegrationTest extends AbstractIntegrationSpec {
             ${mavenCentralRepository()}
 
             dependencies {
-                testCompile "junit:junit:4.12"
-            }              
-                                   
+                testImplementation "junit:junit:4.13"
+            }
+
             class MyTestSystemProperties implements CommandLineArgumentProvider {
                 @InputFile
                 @PathSensitive(PathSensitivity.NONE)
@@ -57,7 +57,9 @@ class TestTaskJvmArgsProviderIntegrationTest extends AbstractIntegrationSpec {
                 }
             }
 
-            test.jvmArgumentProviders << new MyTestSystemProperties(inputFile: file(project.property('inputFile')))
+            test.jvmArgumentProviders << new MyTestSystemProperties(
+                inputFile: file(providers.gradleProperty('inputFile').forUseAtConfigurationTime().get())
+            )
         """
         file('inputFile.txt').text = "Test"
 

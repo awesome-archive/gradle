@@ -17,19 +17,21 @@
 package org.gradle.internal.logging.events;
 
 import org.gradle.api.logging.LogLevel;
+import org.gradle.internal.SystemProperties;
 import org.gradle.internal.logging.events.operations.StyledTextBuildOperationProgressDetails;
 import org.gradle.internal.logging.text.StyledTextOutput;
 import org.gradle.internal.operations.OperationIdentifier;
 import org.gradle.internal.scan.UsedByScanPlugin;
 
 import javax.annotation.Nullable;
-import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
 @UsedByScanPlugin
 public class StyledTextOutputEvent extends RenderableOutputEvent implements StyledTextBuildOperationProgressDetails {
+    public static final StyledTextOutputEvent.Span EOL = new StyledTextOutputEvent.Span(SystemProperties.getInstance().getLineSeparator());
+
     private final List<Span> spans;
 
     public StyledTextOutputEvent(long timestamp, String category, LogLevel logLevel, @Nullable OperationIdentifier buildOperationIdentifier, String text) {
@@ -62,6 +64,12 @@ public class StyledTextOutputEvent extends RenderableOutputEvent implements Styl
         return new StyledTextOutputEvent(getTimestamp(), getCategory(), logLevel, getBuildOperationId(), spans);
     }
 
+    @Override
+    public StyledTextOutputEvent withBuildOperationId(OperationIdentifier buildOperationId) {
+        return new StyledTextOutputEvent(getTimestamp(), getCategory(), getLogLevel(), buildOperationId, spans);
+    }
+
+    @Override
     public List<Span> getSpans() {
         return spans;
     }
@@ -75,7 +83,7 @@ public class StyledTextOutputEvent extends RenderableOutputEvent implements Styl
     }
 
     @UsedByScanPlugin
-    public static class Span implements StyledTextBuildOperationProgressDetails.Span, Serializable {
+    public static class Span implements StyledTextBuildOperationProgressDetails.Span {
         private final String text;
         private final StyledTextOutput.Style style;
 
@@ -89,6 +97,23 @@ public class StyledTextOutputEvent extends RenderableOutputEvent implements Styl
             this.text = text;
         }
 
+        @Override
+        public boolean equals(Object obj) {
+            if (obj == this) {
+                return true;
+            }
+            if (obj == null || obj.getClass() != getClass()) {
+                return false;
+            }
+            Span other = (Span) obj;
+            return text.equals(other.text) && style.equals(other.style);
+        }
+
+        @Override
+        public int hashCode() {
+            return text.hashCode() ^ style.hashCode();
+        }
+
         public StyledTextOutput.Style getStyle() {
             return style;
         }
@@ -98,8 +123,14 @@ public class StyledTextOutputEvent extends RenderableOutputEvent implements Styl
             return getStyle().name();
         }
 
+        @Override
         public String getText() {
             return text;
+        }
+
+        @Override
+        public String toString() {
+            return style.toString() + ":" + text;
         }
     }
 }

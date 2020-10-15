@@ -26,15 +26,39 @@ public class DefaultScalaJavaJointCompileSpec extends DefaultJavaCompileSpec imp
     private BaseScalaCompileOptions options;
     private Iterable<File> scalaClasspath;
     private Iterable<File> zincClasspath;
+    private Iterable<File> scalaCompilerPlugins;
     private Map<File, File> analysisMap;
+    private File analysisFile;
+    private File classfileBackupDir;
+    private long buildStartTimestamp;
 
     @Override
     public BaseScalaCompileOptions getScalaCompileOptions() {
         return options;
     }
 
+    @Override
+    public File getAnalysisFile() {
+        return analysisFile;
+    }
+
+    @Override
+    public void setAnalysisFile(File analysisFile) {
+        this.analysisFile = analysisFile;
+    }
+
     public void setScalaCompileOptions(BaseScalaCompileOptions options) {
         this.options = options;
+    }
+
+    @Override
+    public File getClassfileBackupDir() {
+        return classfileBackupDir;
+    }
+
+    @Override
+    public void setClassfileBackupDir(File classfileBackupDir) {
+        this.classfileBackupDir = classfileBackupDir;
     }
 
     public Iterable<File> getScalaClasspath() {
@@ -54,6 +78,16 @@ public class DefaultScalaJavaJointCompileSpec extends DefaultJavaCompileSpec imp
     }
 
     @Override
+    public Iterable<File> getScalaCompilerPlugins() {
+        return scalaCompilerPlugins;
+    }
+
+    @Override
+    public void setScalaCompilerPlugins(Iterable<File> scalaCompilerPlugins) {
+        this.scalaCompilerPlugins = scalaCompilerPlugins;
+    }
+
+    @Override
     public Map<File, File> getAnalysisMap() {
         return analysisMap;
     }
@@ -61,5 +95,14 @@ public class DefaultScalaJavaJointCompileSpec extends DefaultJavaCompileSpec imp
     @Override
     public void setAnalysisMap(Map<File, File> analysisMap) {
         this.analysisMap = analysisMap;
+    }
+
+    @Override
+    public long getBuildStartTimestamp() {
+        return buildStartTimestamp;
+    }
+
+    public void setBuildStartTimestamp(long buildStartTimestamp) {
+        this.buildStartTimestamp = buildStartTimestamp;
     }
 }

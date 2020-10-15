@@ -21,8 +21,9 @@ import org.gradle.api.artifacts.component.ComponentArtifactIdentifier;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.artifact.ArtifactSet;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.artifact.DefaultArtifactSet;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.artifact.ResolvableArtifact;
-import org.gradle.api.internal.artifacts.ivyservice.resolveengine.excludes.ModuleExclusion;
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.excludes.specs.ExcludeSpec;
 import org.gradle.api.internal.artifacts.type.ArtifactTypeRegistry;
+import org.gradle.api.internal.attributes.ImmutableAttributes;
 import org.gradle.internal.component.model.ComponentArtifactMetadata;
 import org.gradle.internal.component.model.ComponentArtifacts;
 import org.gradle.internal.component.model.ComponentResolveMetadata;
@@ -36,7 +37,7 @@ import java.util.Map;
  * Uses a fixed set of artifacts for all configurations.
  */
 public class FixedComponentArtifacts implements ComponentArtifacts {
-    private final List<ComponentArtifactMetadata> artifacts;
+    private final ImmutableList<ComponentArtifactMetadata> artifacts;
 
     public FixedComponentArtifacts(Iterable<? extends ComponentArtifactMetadata> artifacts) {
         this.artifacts = ImmutableList.copyOf(artifacts);
@@ -47,7 +48,7 @@ public class FixedComponentArtifacts implements ComponentArtifacts {
     }
 
     @Override
-    public ArtifactSet getArtifactsFor(ComponentResolveMetadata component, ConfigurationMetadata configuration, ArtifactResolver artifactResolver, Map<ComponentArtifactIdentifier, ResolvableArtifact> allResolvedArtifacts, ArtifactTypeRegistry artifactTypeRegistry, ModuleExclusion exclusions) {
-        return DefaultArtifactSet.singleVariant(component.getComponentId(), component.getId(), configuration.asDescribable(), artifacts, component.getSource(), exclusions, component.getAttributesSchema(), artifactResolver, allResolvedArtifacts, artifactTypeRegistry);
+    public ArtifactSet getArtifactsFor(ComponentResolveMetadata component, ConfigurationMetadata configuration, ArtifactResolver artifactResolver, Map<ComponentArtifactIdentifier, ResolvableArtifact> allResolvedArtifacts, ArtifactTypeRegistry artifactTypeRegistry, ExcludeSpec exclusions, ImmutableAttributes overriddenAttributes) {
+        return DefaultArtifactSet.createForConfiguration(component.getId(), component.getModuleVersionId(), configuration, artifacts, component.getSources(), exclusions, component.getAttributesSchema(), artifactResolver, allResolvedArtifacts, artifactTypeRegistry, overriddenAttributes);
     }
 }

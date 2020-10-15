@@ -21,7 +21,9 @@ import org.gradle.api.tasks.SourceSet
 import org.gradle.test.fixtures.AbstractProjectBuilderSpec
 
 import static org.gradle.api.tasks.TaskDependencyMatchers.dependsOn
-import static org.hamcrest.Matchers.*
+import static org.hamcrest.CoreMatchers.hasItem
+import static org.hamcrest.CoreMatchers.hasItems
+import static org.hamcrest.CoreMatchers.not
 import static spock.util.matcher.HamcrestSupport.that
 
 class PmdPluginTest extends AbstractProjectBuilderSpec {
@@ -48,12 +50,13 @@ class PmdPluginTest extends AbstractProjectBuilderSpec {
     def "configures pmd extension"() {
         expect:
         PmdExtension extension = project.extensions.pmd
-        extension.ruleSets == ["java-basic"]
+        extension.ruleSets == ["category/java/errorprone.xml"]
         extension.ruleSetConfig == null
         extension.ruleSetFiles.empty
         extension.reportsDir == project.file("build/reports/pmd")
         !extension.ignoreFailures
-        extension.rulePriority == 5
+        extension.maxFailures.get() == 0
+        extension.rulesMinimumPriority.get() == 5
     }
 
     def "configures pmd task for each source set"() {
@@ -100,13 +103,15 @@ class PmdPluginTest extends AbstractProjectBuilderSpec {
             assert description == "Run PMD analysis for ${sourceSet.name} classes"
             source as List == sourceSet.allJava as List
             assert pmdClasspath == project.configurations.pmd
-            assert ruleSets == ["java-basic"]
+            assert ruleSets == ["category/java/errorprone.xml"]
             assert ruleSetConfig == null
             assert ruleSetFiles.empty
             assert reports.xml.destination == project.file("build/reports/pmd/${sourceSet.name}.xml")
             assert reports.html.destination == project.file("build/reports/pmd/${sourceSet.name}.html")
             assert ignoreFailures == false
-            assert rulePriority == 5
+            assert maxFailures.get() == 0
+            assert rulesMinimumPriority.get() == 5
+            assert incrementalAnalysis.get() == true
         }
     }
 
@@ -117,13 +122,15 @@ class PmdPluginTest extends AbstractProjectBuilderSpec {
         task.description == null
         task.source.empty
         task.pmdClasspath == project.configurations.pmd
-        task.ruleSets == ["java-basic"]
+        task.ruleSets == ["category/java/errorprone.xml"]
         task.ruleSetConfig == null
         task.ruleSetFiles.empty
         task.reports.xml.destination == project.file("build/reports/pmd/custom.xml")
         task.reports.html.destination == project.file("build/reports/pmd/custom.html")
         task.ignoreFailures == false
-        task.rulePriority == 5
+        task.maxFailures.get() == 0
+        task.rulesMinimumPriority.get() == 5
+        task.incrementalAnalysis.get() == true
     }
 
     def "adds pmd tasks to check lifecycle task"() {
@@ -150,10 +157,11 @@ class PmdPluginTest extends AbstractProjectBuilderSpec {
             sourceSets = [project.sourceSets.main]
             ruleSets = ["java-braces", "java-unusedcode"]
             ruleSetConfig = project.resources.text.fromString("ruleset contents")
-            ruleSetFiles = project.files("my-ruleset.xml")
+            ruleSetFiles = project.getLayout().files("my-ruleset.xml")
             reportsDir = project.file("pmd-reports")
             ignoreFailures = true
-            rulePriority = 3
+            maxFailures = 17
+            rulesMinimumPriority = 3
         }
 
         expect:
@@ -177,7 +185,8 @@ class PmdPluginTest extends AbstractProjectBuilderSpec {
             assert reports.xml.destination == project.file("pmd-reports/${sourceSet.name}.xml")
             assert reports.html.destination == project.file("pmd-reports/${sourceSet.name}.html")
             assert ignoreFailures == true
-            assert rulePriority == 3
+            assert maxFailures.get() == 17
+            assert rulesMinimumPriority.get() == 3
         }
     }
 
@@ -186,10 +195,11 @@ class PmdPluginTest extends AbstractProjectBuilderSpec {
         project.pmd {
             ruleSets = ["java-braces", "java-unusedcode"]
             ruleSetConfig = project.resources.text.fromString("ruleset contents")
-            ruleSetFiles = project.files("my-ruleset.xml")
+            ruleSetFiles = project.getLayout().files("my-ruleset.xml")
             reportsDir = project.file("pmd-reports")
             ignoreFailures = true
-            rulePriority = 3
+            maxFailures = 5
+            rulesMinimumPriority = 3
         }
 
         expect:
@@ -203,7 +213,8 @@ class PmdPluginTest extends AbstractProjectBuilderSpec {
         task.reports.html.destination == project.file("pmd-reports/custom.html")
         task.outputs.files.files == task.reports.enabled*.destination as Set
         task.ignoreFailures == true
-        task.rulePriority == 3
+        task.maxFailures.get() == 5
+        task.rulesMinimumPriority.get() == 3
     }
 
     def "configures pmd classpath based on sourcesets"() {

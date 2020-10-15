@@ -18,11 +18,12 @@ package org.gradle.test.fixtures.server.http
 
 import org.gradle.test.fixtures.HttpModule
 import org.gradle.test.fixtures.ModuleArtifact
+import org.gradle.test.fixtures.ResettableExpectations
 import org.gradle.test.fixtures.file.TestFile
 import org.gradle.test.fixtures.ivy.IvyFileModule
 import org.gradle.test.fixtures.ivy.RemoteIvyModule
 
-class IvyHttpModule extends DelegatingIvyModule<IvyHttpModule> implements RemoteIvyModule, HttpModule {
+class IvyHttpModule extends DelegatingIvyModule<IvyHttpModule> implements RemoteIvyModule, HttpModule, ResettableExpectations {
     public final IvyHttpRepository repository
     private final IvyFileModule backingModule
     private final HttpServer server
@@ -76,6 +77,11 @@ class IvyHttpModule extends DelegatingIvyModule<IvyHttpModule> implements Remote
         return new IvyModuleHttpArtifact(server, prefix, backingModule.moduleMetadata)
     }
 
+    @Override
+    void resetExpectations() {
+        server?.resetExpectations()
+    }
+
     private class IvyModuleHttpArtifact extends HttpArtifact {
         final ModuleArtifact backingArtifact
 
@@ -95,6 +101,11 @@ class IvyHttpModule extends DelegatingIvyModule<IvyHttpModule> implements Remote
         }
 
         @Override
+        String getName() {
+            return backingArtifact.name
+        }
+
+        @Override
         protected TestFile getSha1File() {
             return backingModule.getSha1File(file)
         }
@@ -102,6 +113,16 @@ class IvyHttpModule extends DelegatingIvyModule<IvyHttpModule> implements Remote
         @Override
         protected TestFile getMd5File() {
             return backingModule.getMd5File(file)
+        }
+
+        @Override
+        protected TestFile getSha256File() {
+            backingModule.getSha256File(file)
+        }
+
+        @Override
+        protected TestFile getSha512File() {
+            backingModule.getSha512File(file)
         }
 
         @Override

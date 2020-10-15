@@ -20,28 +20,38 @@ import org.gradle.integtests.fixtures.DefaultTestExecutionResult
 import org.gradle.integtests.fixtures.Sample
 import org.gradle.integtests.fixtures.TestNGExecutionResult
 import org.gradle.integtests.fixtures.UsesSample
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 
-public class SampleTestNGIntegrationTest extends AbstractIntegrationTest {
+class SampleTestNGIntegrationTest extends AbstractIntegrationTest {
 
     @Rule public final Sample sample = new Sample(testDirectoryProvider)
 
-    @Test @UsesSample('testing/testng/suitexmlbuilder')
-    public void suiteXmlBuilder() {
-        executer.inDirectory(sample.dir).withTasks('clean', 'test').run()
+    @Before
+    void setUp() {
+        executer.withRepositoryMirrors()
+    }
 
-        def result = new DefaultTestExecutionResult(sample.dir)
+    @Test
+    @UsesSample('testing/testng-suitexmlbuilder')
+     void suiteXmlBuilder() {
+        def testDir = sample.dir.file('groovy')
+        executer.inDirectory(testDir).withTasks('clean', 'test').run()
+
+        def result = new DefaultTestExecutionResult(testDir)
         result.assertTestClassesExecuted('org.gradle.testng.UserImplTest')
         result.testClass('org.gradle.testng.UserImplTest').assertTestsExecuted('testOkFirstName')
         result.testClass('org.gradle.testng.UserImplTest').assertTestPassed('testOkFirstName')
     }
 
-    @Test @UsesSample('testing/testng/java-passing')
-    public void javaPassing() {
-        executer.inDirectory(sample.dir).withTasks('clean', 'test').run()
+    @Test
+    @UsesSample('testing/testng-java-passing')
+    void javaPassing() {
+        def testDir = sample.dir.file('groovy')
+        executer.inDirectory(testDir).withTasks('clean', 'test').run()
 
-        def result = new TestNGExecutionResult(sample.dir)
+        def result = new TestNGExecutionResult(testDir)
         result.assertTestClassesExecuted('org.gradle.OkTest', 'org.gradle.ConcreteTest', 'org.gradle.SuiteSetup', 'org.gradle.SuiteCleanup', 'org.gradle.TestSetup', 'org.gradle.TestCleanup')
         result.testClass('org.gradle.OkTest').assertTestsExecuted('passingTest', 'expectedFailTest')
         result.testClass('org.gradle.OkTest').assertTestPassed('passingTest')

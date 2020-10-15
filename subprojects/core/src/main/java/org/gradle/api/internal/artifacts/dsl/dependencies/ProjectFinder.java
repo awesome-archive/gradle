@@ -25,12 +25,4 @@ public interface ProjectFinder {
      * @return The project belonging to the path, never null.
      */
     ProjectInternal getProject(String path);
-
-    /**
-     * Locates the project with the provided path, or <code>null</code> if not found.
-     *
-     * @param path Can be relative or absolute
-     * @return The project belonging to the path, or null if not found.
-     */
-    ProjectInternal findProject(String path);
 }

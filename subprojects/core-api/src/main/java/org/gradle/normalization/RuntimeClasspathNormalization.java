@@ -16,6 +16,7 @@
 
 package org.gradle.normalization;
 
+import org.gradle.api.Action;
 import org.gradle.api.Incubating;
 import org.gradle.internal.HasInternalProtocol;
 
@@ -24,11 +25,18 @@ import org.gradle.internal.HasInternalProtocol;
  *
  * @since 4.0
  */
-@Incubating
 @HasInternalProtocol
 public interface RuntimeClasspathNormalization extends InputNormalization {
     /**
      * Ignore resources in classpath entries matching {@code pattern}.
      */
     void ignore(String pattern);
+
+    /**
+     * Configures the normalization strategy for the {@code META-INF} directory in archives.
+     *
+     * @since 6.6
+     */
+    @Incubating
+    void metaInf(Action<? super MetaInfNormalization> configuration);
 }

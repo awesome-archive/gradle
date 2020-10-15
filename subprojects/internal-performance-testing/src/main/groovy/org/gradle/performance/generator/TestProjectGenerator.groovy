@@ -20,10 +20,12 @@ class TestProjectGenerator {
 
     TestProjectGeneratorConfiguration config
     FileContentGenerator fileContentGenerator
+    BazelFileContentGenerator bazelContentGenerator
 
     TestProjectGenerator(TestProjectGeneratorConfiguration config) {
         this.config = config
-        this.fileContentGenerator = new FileContentGenerator(config)
+        this.fileContentGenerator = FileContentGenerator.forConfig(config)
+        this.bazelContentGenerator = new BazelFileContentGenerator(config)
     }
 
     def generate(File outputBaseDir) {
@@ -60,10 +62,15 @@ class TestProjectGenerator {
     def generateProject(File projectDir, DependencyTree dependencyTree, Integer subProjectNumber) {
         def isRoot = subProjectNumber == null
 
-        file projectDir, "build.gradle", fileContentGenerator.generateBuildGradle(subProjectNumber, dependencyTree)
-        file projectDir, "settings.gradle", fileContentGenerator.generateSettingsGradle(isRoot)
+        file projectDir, config.dsl.fileNameFor('build'), fileContentGenerator.generateBuildGradle(config.language, subProjectNumber, dependencyTree)
+        file projectDir, config.dsl.fileNameFor('settings'), fileContentGenerator.generateSettingsGradle(isRoot)
         file projectDir, "gradle.properties", fileContentGenerator.generateGradleProperties(isRoot)
         file projectDir, "pom.xml", fileContentGenerator.generatePomXML(subProjectNumber, dependencyTree)
+        file projectDir, "BUILD.bazel", bazelContentGenerator.generateBuildFile(subProjectNumber, dependencyTree)
+        if (isRoot) {
+            file projectDir, "WORKSPACE", bazelContentGenerator.generateWorkspace()
+            file projectDir, "junit.bzl", bazelContentGenerator.generateJunitHelper()
+        }
         file projectDir, "performance.scenarios", fileContentGenerator.generatePerformanceScenarios(isRoot)
 
         if (!isRoot || config.subProjects == 0) {
@@ -72,10 +79,22 @@ class TestProjectGenerator {
             println "Generating Project: $projectDir"
             (sourceFileRangeStart..sourceFileRangeEnd).each {
                 def packageName = fileContentGenerator.packageName(it, subProjectNumber, '/')
-                file projectDir, "src/main/java/${packageName}/Production${it}.java", fileContentGenerator.generateProductionClassFile(subProjectNumber, it, dependencyTree)
-                file projectDir, "src/test/java/${packageName}/Test${it}.java", fileContentGenerator.generateTestClassFile(subProjectNumber, it, dependencyTree)
+                file projectDir, "src/main/${config.language.name}/${packageName}/Production${it}.${config.language.name}", fileContentGenerator.generateProductionClassFile(subProjectNumber, it, dependencyTree)
+                file projectDir, "src/test/${config.language.name}/${packageName}/Test${it}.${config.language.name}", fileContentGenerator.generateTestClassFile(subProjectNumber, it, dependencyTree)
             }
         }
+
+        if (isRoot && config.buildSrc) {
+            addDummyBuildSrcProject(projectDir)
+        }
+    }
+
+    /**
+     * This is just to ensure we test the overhead of having a buildSrc project, e.g. snapshotting the Gradle API.
+     */
+    private addDummyBuildSrcProject(File projectDir) {
+        file projectDir, "buildSrc/src/main/${config.language.name}/Thing.${config.language.name}", "public class Thing {}"
+        file projectDir, "buildSrc/build.gradle", "compileJava.options.incremental = true"
     }
 
     void file(File dir, String name, String content) {
@@ -91,7 +110,7 @@ class TestProjectGenerator {
         def projectName = args[0]
         def outputDir = new File(args[1])
 
-        JavaTestProject project = JavaTestProject.values().find { it.projectName == projectName }
+        JavaTestProjectGenerator project = JavaTestProjectGenerator.values().find { it.projectName == projectName }
         if (project == null) {
             throw new IllegalArgumentException("Project not defined: $projectName")
         }
