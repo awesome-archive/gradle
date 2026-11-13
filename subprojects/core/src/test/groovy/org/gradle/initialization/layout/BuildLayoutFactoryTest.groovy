@@ -15,27 +15,22 @@
  */
 package org.gradle.initialization.layout
 
-import org.gradle.StartParameter
-import org.gradle.groovy.scripts.ScriptSource
-import org.gradle.groovy.scripts.TextResourceScriptSource
+import org.gradle.api.internal.StartParameterInternal
+import org.gradle.internal.FileUtils
+import org.gradle.internal.scripts.ScriptFileUtil
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
-
 import org.junit.Rule
+import org.junit.rules.TemporaryFolder
 import spock.lang.Specification
-import spock.lang.Unroll
 
 class BuildLayoutFactoryTest extends Specification {
 
-    static final def TEST_CASES = [
-        'settings.gradle',
-        'settings.gradle.kts'
-    ]
+    static final def TEST_CASES = ScriptFileUtil.getValidSettingsFileNames()
 
     @Rule
-    public final TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider()
+    public final TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider(getClass())
 
-    @Unroll
-    def "returns current directory when it contains a #settingsFilename file when script languages #extensions"() {
+    def "returns current directory when it contains a #settingsFilename file"() {
         given:
         def locator = buildLayoutFactoryFor()
 
@@ -47,14 +42,14 @@ class BuildLayoutFactoryTest extends Specification {
         def layout = locator.getLayoutFor(currentDir, true)
         layout.rootDirectory == currentDir
         layout.settingsDir == currentDir
-        refersTo(layout.settingsScriptSource, settingsFile)
+        layout.settingsFile == settingsFile
+        !layout.buildDefinitionMissing
 
         where:
         settingsFilename << TEST_CASES
     }
 
-    @Unroll
-    def "returns current directory when no ancestor directory contains a #settingsFilename file when script languages #extensions"() {
+    def "returns current directory when no ancestor directory contains a settings file or build file"() {
         given:
         def locator = buildLayoutFactoryFor()
 
@@ -68,74 +63,13 @@ class BuildLayoutFactoryTest extends Specification {
         def layout = locator.getLayoutFor(currentDir, true)
         layout.rootDirectory == currentDir
         layout.settingsDir == currentDir
-        isEmpty(layout.settingsScriptSource)
+        layout.settingsFile == new File(currentDir, "settings.gradle") // this is the current behaviour
+        layout.buildDefinitionMissing
 
         cleanup: "temporary tree"
         tmpDir.deleteDir()
     }
 
-    @Unroll
-    def "looks for sibling directory called 'master' that it contains a #settingsFilename file"() {
-        given:
-        def locator = buildLayoutFactoryFor()
-
-        and:
-        def currentDir = tmpDir.createDir("current")
-        def masterDir = tmpDir.createDir("master")
-        def settingsFile = masterDir.createFile(settingsFilename)
-
-        expect:
-        def layout = locator.getLayoutFor(currentDir, true)
-        layout.rootDirectory == masterDir.parentFile
-        layout.settingsDir == masterDir
-        refersTo(layout.settingsScriptSource, settingsFile)
-
-        where:
-        settingsFilename << TEST_CASES
-    }
-
-    @Unroll
-    def "searches ancestors for a directory called 'master' that contains a #settingsFilename file"() {
-        given:
-        def locator = buildLayoutFactoryFor()
-
-        and:
-        def currentDir = tmpDir.createDir("sub/current")
-        def masterDir = tmpDir.createDir("master")
-        def settingsFile = masterDir.createFile("settings.gradle")
-
-        expect:
-        def layout = locator.getLayoutFor(currentDir, true)
-        layout.rootDirectory == masterDir.parentFile
-        layout.settingsDir == masterDir
-        refersTo(layout.settingsScriptSource, settingsFile)
-
-        where:
-        settingsFilename << TEST_CASES
-    }
-
-    @Unroll
-    def "ignores 'master' directory when it does not contain a #settingsFilename file"() {
-        given:
-        def locator = buildLayoutFactoryFor()
-
-        and:
-        def currentDir = tmpDir.createDir("sub/current")
-        def masterDir = tmpDir.createDir("sub/master")
-        masterDir.createFile("gradle.properties")
-        def settingsFile = tmpDir.createFile(settingsFilename)
-
-        expect:
-        def layout = locator.getLayoutFor(currentDir, true)
-        layout.rootDirectory == tmpDir.testDirectory
-        layout.settingsDir == tmpDir.testDirectory
-        refersTo(layout.settingsScriptSource, settingsFile)
-
-        where:
-        settingsFilename << TEST_CASES
-    }
-
-    @Unroll
     def "returns closest ancestor directory that contains a #settingsFilename file"() {
         given:
         def locator = buildLayoutFactoryFor()
@@ -150,13 +84,13 @@ class BuildLayoutFactoryTest extends Specification {
         def layout = locator.getLayoutFor(currentDir, true)
         layout.rootDirectory == subDir
         layout.settingsDir == subDir
-        refersTo(layout.settingsScriptSource, settingsFile)
+        layout.settingsFile == settingsFile
+        !layout.buildDefinitionMissing
 
         where:
         settingsFilename << TEST_CASES
     }
 
-    @Unroll
     def "prefers the current directory as root directory with a #settingsFilename file"() {
         given:
         def locator = buildLayoutFactoryFor()
@@ -171,34 +105,13 @@ class BuildLayoutFactoryTest extends Specification {
         def layout = locator.getLayoutFor(currentDir, true)
         layout.rootDirectory == currentDir
         layout.settingsDir == currentDir
-        refersTo(layout.settingsScriptSource, settingsFile)
+        layout.settingsFile == settingsFile
+        !layout.buildDefinitionMissing
 
         where:
         settingsFilename << TEST_CASES
     }
 
-    @Unroll
-    def "prefers the 'master' directory over ancestor directory with a #settingsFilename file"() {
-        given:
-        def locator = buildLayoutFactoryFor()
-
-        and:
-        def currentDir = tmpDir.createDir("sub/current")
-        def masterDir = tmpDir.createDir("sub/master")
-        def settingsFile = masterDir.createFile(settingsFilename)
-        tmpDir.createFile(settingsFilename)
-
-        expect:
-        def layout = locator.getLayoutFor(currentDir, true)
-        layout.rootDirectory == masterDir.parentFile
-        layout.settingsDir == masterDir
-        refersTo(layout.settingsScriptSource, settingsFile)
-
-        where:
-        settingsFilename << TEST_CASES
-    }
-
-    @Unroll
     def "returns start directory when search upwards is disabled with a #settingsFilename file"() {
         given:
         def locator = buildLayoutFactoryFor()
@@ -212,54 +125,34 @@ class BuildLayoutFactoryTest extends Specification {
         def layout = locator.getLayoutFor(currentDir, false)
         layout.rootDirectory == currentDir
         layout.settingsDir == currentDir
-        isEmpty(layout.settingsScriptSource)
+        layout.settingsFile == new File(currentDir, "settings.gradle") // this is the current behaviour
+        layout.buildDefinitionMissing
 
         where:
         settingsFilename << TEST_CASES
     }
 
-    @Unroll
-    def "returns current directory when no settings or wrapper properties files"() {
+    def "returns current directory when no settings files in current and all parent directories"() {
         given:
         def locator = buildLayoutFactoryFor()
+        // A directory that will not have Gradle settings file in any of its parents up to the file system root
+        def tmpDir = new TemporaryFolder()
+        tmpDir.create()
 
         and:
-        def currentDir = tmpDir.createDir("sub/current")
+        def currentDir = tmpDir.newFolder("sub", "current")
 
         expect:
-        def layout = locator.getLayoutFor(currentDir, tmpDir.testDirectory)
+        def layout = locator.getLayoutFor(currentDir, true)
         layout.rootDirectory == currentDir
         layout.settingsDir == currentDir
-        isEmpty(layout.settingsScriptSource)
+        layout.settingsFile == FileUtils.canonicalize(new File(currentDir, "settings.gradle"))
+        layout.buildDefinitionMissing
+
+        cleanup:
+        tmpDir.delete()
     }
 
-    @Unroll
-    def "can override build layout by specifying the settings file to #overrideSettingsFilename with existing #settingsFilename"() {
-        given:
-        def locator = buildLayoutFactoryFor()
-
-        and:
-        def currentDir = tmpDir.createDir("current")
-        currentDir.createFile(settingsFilename)
-        def rootDir = tmpDir.createDir("root")
-        def settingsFile = rootDir.createFile(overrideSettingsFilename)
-        def startParameter = new StartParameter()
-        startParameter.currentDir = currentDir
-        startParameter.settingsFile = settingsFile
-        def config = new BuildLayoutConfiguration(startParameter)
-
-        expect:
-        def layout = locator.getLayoutFor(config)
-        layout.rootDirectory == rootDir
-        layout.settingsDir == rootDir
-        refersTo(layout.settingsScriptSource, settingsFile)
-
-        where:
-        settingsFilename << TEST_CASES
-        overrideSettingsFilename = "some-$settingsFilename"
-    }
-
-    @Unroll
     def "can override build layout by specifying an empty settings script with existing #settingsFilename"() {
         given:
         def locator = buildLayoutFactoryFor()
@@ -267,16 +160,16 @@ class BuildLayoutFactoryTest extends Specification {
         and:
         def currentDir = tmpDir.createDir("current")
         currentDir.createFile(settingsFilename)
-        def startParameter = new StartParameter()
+        def startParameter = new StartParameterInternal()
         startParameter.currentDir = currentDir
-        startParameter.useEmptySettings()
-        def config = new BuildLayoutConfiguration(startParameter)
+        def config = startParameter.toBuildLayoutConfiguration()
 
         expect:
         def layout = locator.getLayoutFor(config)
         layout.rootDirectory == currentDir
         layout.settingsDir == currentDir
-        isEmpty(layout.settingsScriptSource)
+        layout.settingsFile == new File(currentDir, settingsFilename) // this is the current behaviour
+        !layout.buildDefinitionMissing
 
         where:
         settingsFilename << TEST_CASES
@@ -284,14 +177,5 @@ class BuildLayoutFactoryTest extends Specification {
 
     BuildLayoutFactory buildLayoutFactoryFor() {
         new BuildLayoutFactory()
-    }
-
-    void refersTo(ScriptSource scriptSource, File file) {
-        assert scriptSource instanceof TextResourceScriptSource
-        assert scriptSource.resource.sourceFile == file
-    }
-
-    void isEmpty(ScriptSource scriptSource) {
-        assert scriptSource.resource.text == ''
     }
 }

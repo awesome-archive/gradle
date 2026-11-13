@@ -17,28 +17,29 @@
 package org.gradle.api.internal.plugins;
 
 import org.gradle.api.Plugin;
+import org.gradle.api.internal.project.ProjectInternal;
 import org.gradle.configuration.ConfigurationTargetIdentifier;
-import org.gradle.model.RuleSource;
+import org.gradle.internal.deprecation.DeprecationLogger;
+import org.gradle.internal.deprecation.DeprecationMessageBuilder;
 import org.gradle.model.internal.inspect.ExtractedRuleSource;
 import org.gradle.model.internal.inspect.ModelRuleExtractor;
 import org.gradle.model.internal.inspect.ModelRuleSourceDetector;
 import org.gradle.model.internal.registry.ModelRegistry;
-import org.gradle.model.internal.registry.ModelRegistryScope;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
+@SuppressWarnings("deprecation")
+public class RuleBasedPluginTarget implements PluginTarget {
 
-public class RuleBasedPluginTarget<T extends ModelRegistryScope & PluginAwareInternal> implements PluginTarget {
-
-    private final T target;
+    private final ProjectInternal target;
     private final PluginTarget imperativeTarget;
     private final ModelRuleExtractor ruleInspector;
     private final ModelRuleSourceDetector ruleDetector;
 
-    public RuleBasedPluginTarget(T target, ModelRuleExtractor ruleInspector, ModelRuleSourceDetector ruleDetector) {
+    public RuleBasedPluginTarget(ProjectInternal target, PluginTarget imperativeTarget, ModelRuleExtractor ruleInspector, ModelRuleSourceDetector ruleDetector) {
         this.target = target;
         this.ruleInspector = ruleInspector;
         this.ruleDetector = ruleDetector;
-        this.imperativeTarget = new ImperativeOnlyPluginTarget<T>(target);
+        this.imperativeTarget = imperativeTarget;
     }
 
     @Override
@@ -46,14 +47,25 @@ public class RuleBasedPluginTarget<T extends ModelRegistryScope & PluginAwareInt
         return imperativeTarget.getConfigurationTargetIdentifier();
     }
 
+    @Override
     public void applyImperative(@Nullable String pluginId, Plugin<?> plugin) {
         imperativeTarget.applyImperative(pluginId, plugin);
     }
 
+    @Override
     public void applyRules(@Nullable String pluginId, Class<?> clazz) {
+        final DeprecationMessageBuilder.DeprecatePlugin deprecatePlugin;
+        if (pluginId == null) {
+            deprecatePlugin = DeprecationLogger.deprecatePlugin(clazz.getCanonicalName());
+        } else {
+            deprecatePlugin = DeprecationLogger.deprecatePlugin(pluginId);
+        }
+        deprecatePlugin.withContext("Rule-based/software model plugins are no longer supported.").willBeRemovedInGradle10().withUpgradeGuideSection(9, "deprecated_software_model").nagUser();
+
+        target.prepareForRuleBasedPlugins();
         ModelRegistry modelRegistry = target.getModelRegistry();
-        Iterable<Class<? extends RuleSource>> declaredSources = ruleDetector.getDeclaredSources(clazz);
-        for (Class<? extends RuleSource> ruleSource : declaredSources) {
+        Iterable<Class<? extends org.gradle.model.RuleSource>> declaredSources = ruleDetector.getDeclaredSources(clazz);
+        for (Class<? extends org.gradle.model.RuleSource> ruleSource : declaredSources) {
             ExtractedRuleSource<?> rules = ruleInspector.extract(ruleSource);
             for (Class<?> dependency : rules.getRequiredPlugins()) {
                 target.getPluginManager().apply(dependency);
@@ -62,9 +74,10 @@ public class RuleBasedPluginTarget<T extends ModelRegistryScope & PluginAwareInt
         }
     }
 
-    public void applyImperativeRulesHybrid(@Nullable String pluginId, Plugin<?> plugin) {
+    @Override
+    public void applyImperativeRulesHybrid(@Nullable String pluginId, Plugin<?> plugin, Class<?> declaringClass) {
         applyImperative(pluginId, plugin);
-        applyRules(pluginId, plugin.getClass());
+        applyRules(pluginId, declaringClass);
     }
 
     @Override

@@ -16,18 +16,25 @@
 
 package org.gradle.api.internal.tasks;
 
-import org.gradle.api.GradleException;
-import org.gradle.api.internal.TaskOutputCachingState;
+import org.gradle.api.tasks.TaskExecutionException;
 import org.gradle.api.tasks.TaskState;
+import org.gradle.util.internal.CollectionUtils;
+import org.jspecify.annotations.Nullable;
+
+import java.util.ArrayList;
+import java.util.List;
 
 public class TaskStateInternal implements TaskState {
     private boolean executing;
     private boolean actionable = true;
     private boolean didWork;
-    private Throwable failure;
-    private TaskOutputCachingState taskOutputCaching = DefaultTaskOutputCachingState.disabled(TaskOutputCachingDisabledReasonCategory.UNKNOWN, "Cacheability was not determined");
-    private TaskExecutionOutcome outcome;
+    private RuntimeException failure;
+    private volatile TaskExecutionOutcome outcome;
 
+    @Nullable
+    private String skipReasonMessage;
+
+    @Override
     public boolean getDidWork() {
         return didWork;
     }
@@ -36,6 +43,7 @@ public class TaskStateInternal implements TaskState {
         this.didWork = didWork;
     }
 
+    @Override
     public boolean getExecuted() {
         return outcome != null;
     }
@@ -44,6 +52,7 @@ public class TaskStateInternal implements TaskState {
         return !getExecuted() && !executing;
     }
 
+    @Nullable
     public TaskExecutionOutcome getOutcome() {
         return outcome;
     }
@@ -54,12 +63,50 @@ public class TaskStateInternal implements TaskState {
     }
 
     /**
+     * The detailed reason why the task was skipped, if provided.
+     *
+     * @return the reason. returns null if the task was not skipped or if the reason was not provided.
+     * @see org.gradle.api.Task#onlyIf(String, org.gradle.api.specs.Spec)
+     * @since 7.6
+     */
+    @Nullable
+    public String getSkipReasonMessage() {
+        return skipReasonMessage;
+    }
+
+    /**
+     * Sets the detailed reason why the task was skipped.
+     *
+     * @see TaskStateInternal#getSkipReasonMessage()
+     */
+    public void setSkipReasonMessage(@Nullable String skipReasonMessage) {
+        this.skipReasonMessage = skipReasonMessage;
+    }
+
+    /**
      * Marks this task as executed with the given failure. This method can be called at most once.
      */
-    public void setOutcome(Throwable failure) {
+    public void setOutcome(RuntimeException failure) {
         assert this.failure == null;
         this.outcome = TaskExecutionOutcome.EXECUTED;
         this.failure = failure;
+    }
+
+    public void addFailure(TaskExecutionException failure) {
+        if (this.failure == null) {
+            this.failure = failure;
+        } else if (this.failure instanceof TaskExecutionException) {
+            TaskExecutionException taskExecutionException = (TaskExecutionException) this.failure;
+            List<Throwable> causes = new ArrayList<>(taskExecutionException.getCauses());
+            CollectionUtils.addAll(causes, failure.getCauses());
+            taskExecutionException.initCauses(causes);
+        } else {
+            List<Throwable> causes = new ArrayList<>();
+            causes.add(this.failure);
+            causes.addAll(failure.getCauses());
+            failure.initCauses(causes);
+            this.failure = failure;
+        }
     }
 
     public boolean getExecuting() {
@@ -70,39 +117,29 @@ public class TaskStateInternal implements TaskState {
         this.executing = executing;
     }
 
-    public void setTaskOutputCaching(TaskOutputCachingState taskOutputCaching) {
-        this.taskOutputCaching = taskOutputCaching;
-    }
-
-    public TaskOutputCachingState getTaskOutputCaching() {
-        return taskOutputCaching;
-    }
-
+    @Override
     public Throwable getFailure() {
         return failure;
     }
 
+    @Override
     public void rethrowFailure() {
-        if (failure == null) {
-            return;
+        if (failure != null) {
+            throw failure;
         }
-        if (failure instanceof RuntimeException) {
-            throw (RuntimeException) failure;
-        }
-        if (failure instanceof Error) {
-            throw (Error) failure;
-        }
-        throw new GradleException("Task failed with an exception.", failure);
     }
 
+    @Override
     public boolean getSkipped() {
         return outcome != null && outcome.isSkipped();
     }
 
+    @Override
     public String getSkipMessage() {
         return outcome != null ? outcome.getMessage() : null;
     }
 
+    @Override
     public boolean getUpToDate() {
         return outcome != null && outcome.isUpToDate();
     }
@@ -123,5 +160,4 @@ public class TaskStateInternal implements TaskState {
     public void setActionable(boolean actionable) {
         this.actionable = actionable;
     }
-
 }

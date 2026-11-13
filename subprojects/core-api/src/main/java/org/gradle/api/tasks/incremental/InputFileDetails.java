@@ -15,36 +15,38 @@
  */
 package org.gradle.api.tasks.incremental;
 
-import org.gradle.api.Incubating;
-
 import java.io.File;
 
 /**
  * A change to an input file.
+ * @since 1.6
  */
-@Incubating
 public interface InputFileDetails {
     /**
      * Was the file added?
      * @return true if the file was added since the last execution
+     * @since 1.6
      */
     boolean isAdded();
 
     /**
      * Was the file modified?
      * @return if the file was modified
+     * @since 1.6
      */
     boolean isModified();
 
     /**
      * Was the file removed?
      * @return true if the file was removed since the last execution
+     * @since 1.6
      */
     boolean isRemoved();
 
     /**
      * The input file, which may no longer exist.
      * @return the input file
+     * @since 1.6
      */
     File getFile();
 }

@@ -17,7 +17,26 @@ package org.gradle.api.tasks;
 
 /**
  * Provides information about some work which was performed.
+ * @since 0.8
  */
 public interface WorkResult {
+    /**
+     * Returns the did work.
+     *
+     * @since 0.8
+     */
     boolean getDidWork();
+
+    /**
+     * Returns this result if it did work, otherwise returns the result given as a parameter.
+     *
+     * @since 6.0
+     */
+    default WorkResult or(WorkResult other) {
+        if (!getDidWork()) {
+            return other;
+        } else {
+            return this;
+        }
+    }
 }

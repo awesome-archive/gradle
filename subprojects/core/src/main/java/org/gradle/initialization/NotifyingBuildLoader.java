@@ -16,91 +16,91 @@
 
 package org.gradle.initialization;
 
-import com.google.common.collect.ImmutableSortedSet;
-import org.gradle.api.Project;
 import org.gradle.api.internal.GradleInternal;
 import org.gradle.api.internal.SettingsInternal;
-import org.gradle.api.internal.project.ProjectInternal;
 import org.gradle.internal.operations.BuildOperationContext;
-import org.gradle.internal.operations.BuildOperationExecutor;
-import org.gradle.internal.operations.CallableBuildOperation;
 import org.gradle.internal.operations.BuildOperationDescriptor;
-
-import java.util.Comparator;
-import java.util.Set;
+import org.gradle.internal.operations.BuildOperationProgressEventEmitter;
+import org.gradle.internal.operations.BuildOperationRunner;
+import org.gradle.internal.operations.CallableBuildOperation;
+import org.gradle.internal.operations.RunnableBuildOperation;
 
 public class NotifyingBuildLoader implements BuildLoader {
-    private final BuildLoader buildLoader;
-    private final BuildOperationExecutor buildOperationExecutor;
+    private static final NotifyProjectsLoadedBuildOperationType.Result PROJECTS_LOADED_OP_RESULT = new NotifyProjectsLoadedBuildOperationType.Result() {
+    };
 
-    public NotifyingBuildLoader(BuildLoader buildLoader, BuildOperationExecutor buildOperationExecutor) {
+    private final BuildLoader buildLoader;
+    private final BuildOperationRunner buildOperationRunner;
+    private final BuildOperationProgressEventEmitter emitter;
+
+    public NotifyingBuildLoader(BuildLoader buildLoader, BuildOperationRunner buildOperationRunner, BuildOperationProgressEventEmitter emitter) {
         this.buildLoader = buildLoader;
-        this.buildOperationExecutor = buildOperationExecutor;
+        this.buildOperationRunner = buildOperationRunner;
+        this.emitter = emitter;
     }
 
     @Override
     public void load(final SettingsInternal settings, final GradleInternal gradle) {
-        try {
-            buildOperationExecutor.call(new CallableBuildOperation<Void>() {
-                @Override
-                public BuildOperationDescriptor.Builder description() {
-                    return BuildOperationDescriptor.displayName("Load projects").
-                        progressDisplayName("Loading projects").
-                        details(new LoadProjectsBuildOperationType.Details() {
-                            @Override
-                            public String getBuildPath() {
-                                return gradle.getIdentityPath().toString();
-                            }
-                        });
-                }
+        final String buildPath = gradle.getIdentityPath().toString();
+        buildOperationRunner.call(new CallableBuildOperation<Void>() {
+            @Override
+            public BuildOperationDescriptor.Builder description() {
+                //noinspection Convert2Lambda
+                return BuildOperationDescriptor
+                    .displayName("Load projects")
+                    .progressDisplayName("Loading projects")
+                    .owner(gradle.getOwner())
+                    .details(new LoadProjectsBuildOperationType.Details() {
+                        @Override
+                        public String getBuildPath() {
+                            return buildPath;
+                        }
+                    });
+            }
 
-                @Override
-                public Void call(BuildOperationContext context) {
-                    buildLoader.load(settings, gradle);
-                    context.setResult(createOperationResult(gradle));
-                    return null;
-                }
-            });
-        } finally {
-            gradle.getBuildListenerBroadcaster().projectsLoaded(gradle);
-        }
-    }
+            @Override
+            public Void call(BuildOperationContext context) {
+                buildLoader.load(settings, gradle);
+                BuildStructureOperationProject rootProject = BuildStructureOperationProject.from(gradle.getOwner());
+                emitter.emitNowForCurrent(new DefaultProjectsIdentifiedProgressDetails(rootProject, buildPath));
+                context.setResult(new BuildStructureOperationResult(rootProject, buildPath));
+                return null;
+            }
+        });
+        buildOperationRunner.run(new RunnableBuildOperation() {
+            @Override
+            public void run(BuildOperationContext context) {
+                gradle.getBuildListenerBroadcaster().projectsLoaded(gradle);
+                context.setResult(PROJECTS_LOADED_OP_RESULT);
+            }
 
-    private BuildStructureOperationResult createOperationResult(GradleInternal gradle) {
-        String buildPath = gradle.getIdentityPath().toString();
-        LoadProjectsBuildOperationType.Result.Project rootProject = convert(gradle.getRootProject());
-        return new BuildStructureOperationResult(rootProject, buildPath);
-    }
-
-    private LoadProjectsBuildOperationType.Result.Project convert(org.gradle.api.Project project) {
-        return new BuildStructureOperationProject(
-            project.getName(),
-            project.getPath(),
-            ((ProjectInternal) project).getIdentityPath().toString(),
-            project.getProjectDir().getAbsolutePath(),
-            project.getBuildFile().getAbsolutePath(),
-            convert(project.getChildProjects().values()));
-    }
-
-    private Set<LoadProjectsBuildOperationType.Result.Project> convert(Iterable<Project> children) {
-        ImmutableSortedSet.Builder<LoadProjectsBuildOperationType.Result.Project> builder = new ImmutableSortedSet.Builder<LoadProjectsBuildOperationType.Result.Project>(PROJECT_COMPARATOR);
-        for (org.gradle.api.Project child : children) {
-            builder.add(convert(child));
-        }
-        return builder.build();
+            @Override
+            public BuildOperationDescriptor.Builder description() {
+                //noinspection Convert2Lambda
+                return BuildOperationDescriptor
+                    .displayName("Notify projectsLoaded listeners").owner(gradle.getOwner())
+                    .progressDisplayName("Running projects loaded listeners")
+                    .details(new NotifyProjectsLoadedBuildOperationType.Details() {
+                        @Override
+                        public String getBuildPath() {
+                            return buildPath;
+                        }
+                    });
+            }
+        });
     }
 
     private static class BuildStructureOperationResult implements LoadProjectsBuildOperationType.Result {
-        private final Project rootProject;
+        private final LoadProjectsBuildOperationType.Result.Project rootProject;
         private final String buildPath;
 
-        public BuildStructureOperationResult(Project rootProject, String buildPath) {
+        public BuildStructureOperationResult(LoadProjectsBuildOperationType.Result.Project rootProject, String buildPath) {
             this.rootProject = rootProject;
             this.buildPath = buildPath;
         }
 
         @Override
-        public Project getRootProject() {
+        public LoadProjectsBuildOperationType.Result.Project getRootProject() {
             return rootProject;
         }
 
@@ -110,58 +110,23 @@ public class NotifyingBuildLoader implements BuildLoader {
         }
     }
 
-    private static class BuildStructureOperationProject implements LoadProjectsBuildOperationType.Result.Project {
-        private final String name;
-        private final String path;
-        private final String identityPath;
-        private final String projectDir;
-        private final String buildFile;
-        private final Set<LoadProjectsBuildOperationType.Result.Project> children;
+    private static class DefaultProjectsIdentifiedProgressDetails implements ProjectsIdentifiedProgressDetails {
+        private final String buildPath;
+        private final Project rootProject;
 
-        public BuildStructureOperationProject(String name, String path, String identityPath, String projectDir, String buildFile, Set<LoadProjectsBuildOperationType.Result.Project> children) {
-            this.name = name;
-            this.path = path;
-            this.identityPath = identityPath;
-            this.projectDir = projectDir;
-            this.buildFile = buildFile;
-            this.children = children;
+        public DefaultProjectsIdentifiedProgressDetails(Project rootProject, String buildPath) {
+            this.buildPath = buildPath;
+            this.rootProject = rootProject;
         }
 
         @Override
-        public String getName() {
-            return name;
+        public String getBuildPath() {
+            return buildPath;
         }
 
         @Override
-        public String getPath() {
-            return path;
-        }
-
-        @Override
-        public String getIdentityPath() {
-            return identityPath;
-        }
-
-        @Override
-        public String getProjectDir() {
-            return projectDir;
-        }
-
-        @Override
-        public String getBuildFile() {
-            return buildFile;
-        }
-
-        @Override
-        public Set<LoadProjectsBuildOperationType.Result.Project> getChildren() {
-            return children;
+        public Project getRootProject() {
+            return rootProject;
         }
     }
-
-    private static final Comparator<LoadProjectsBuildOperationType.Result.Project> PROJECT_COMPARATOR = new Comparator<LoadProjectsBuildOperationType.Result.Project>() {
-        @Override
-        public int compare(LoadProjectsBuildOperationType.Result.Project o1, LoadProjectsBuildOperationType.Result.Project o2) {
-            return o1.getName().compareTo(o2.getName());
-        }
-    };
 }

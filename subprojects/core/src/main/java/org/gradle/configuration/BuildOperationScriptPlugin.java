@@ -16,15 +16,20 @@
 
 package org.gradle.configuration;
 
+import org.gradle.api.internal.project.ProjectInternal;
 import org.gradle.groovy.scripts.ScriptSource;
+import org.gradle.internal.code.UserCodeApplicationContext;
+import org.gradle.internal.code.UserCodeApplicationId;
+import org.gradle.internal.code.UserCodeSource;
 import org.gradle.internal.operations.BuildOperationContext;
-import org.gradle.internal.operations.BuildOperationExecutor;
-import org.gradle.internal.operations.RunnableBuildOperation;
 import org.gradle.internal.operations.BuildOperationDescriptor;
+import org.gradle.internal.operations.BuildOperationRunner;
+import org.gradle.internal.operations.RunnableBuildOperation;
 import org.gradle.internal.resource.ResourceLocation;
 import org.gradle.internal.resource.TextResource;
+import org.gradle.util.Path;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.io.File;
 import java.net.URI;
 
@@ -35,12 +40,14 @@ import java.net.URI;
  */
 public class BuildOperationScriptPlugin implements ScriptPlugin {
 
-    private ScriptPlugin decorated;
-    private BuildOperationExecutor buildOperationExecutor;
+    private final ScriptPlugin decorated;
+    private final BuildOperationRunner buildOperationRunner;
+    private final UserCodeApplicationContext userCodeApplicationContext;
 
-    public BuildOperationScriptPlugin(ScriptPlugin decorated, BuildOperationExecutor buildOperationExecutor) {
+    public BuildOperationScriptPlugin(ScriptPlugin decorated, BuildOperationRunner buildOperationRunner, UserCodeApplicationContext userCodeApplicationContext) {
         this.decorated = decorated;
-        this.buildOperationExecutor = buildOperationExecutor;
+        this.buildOperationRunner = buildOperationRunner;
+        this.userCodeApplicationContext = userCodeApplicationContext;
     }
 
     @Override
@@ -55,7 +62,10 @@ public class BuildOperationScriptPlugin implements ScriptPlugin {
             //no operation, if there is no script code provided
             decorated.apply(target);
         } else {
-            buildOperationExecutor.run(new RunnableBuildOperation() {
+            URI uri = resource.getFile() != null ? resource.getFile().toURI() : resource.getLocation().getURI();
+            UserCodeSource source = new UserCodeSource.Script(getSource().getShortDisplayName(), uri);
+            UserCodeApplicationContext.Target appTarget = getApplicationTargetFor(target);
+            userCodeApplicationContext.apply(source, appTarget, userCodeApplicationId -> buildOperationRunner.run(new RunnableBuildOperation() {
                 @Override
                 public void run(BuildOperationContext context) {
                     decorated.apply(target);
@@ -67,15 +77,23 @@ public class BuildOperationScriptPlugin implements ScriptPlugin {
                     final ScriptSource source = getSource();
                     final ResourceLocation resourceLocation = source.getResource().getLocation();
                     final File file = resourceLocation.getFile();
-                    String name = "Apply script " + (file != null ? file.getName() : source.getDisplayName());
+                    String name = "Apply " + source.getShortDisplayName();
                     final String displayName = name + " to " + target;
 
                     return BuildOperationDescriptor.displayName(displayName)
                         .name(name)
-                        .details(new OperationDetails(file, resourceLocation, ConfigurationTargetIdentifier.of(target)));
+                        .details(new OperationDetails(file, resourceLocation, ConfigurationTargetIdentifier.of(target), userCodeApplicationId));
                 }
-            });
+            }));
         }
+    }
+
+    private static UserCodeApplicationContext.Target getApplicationTargetFor(Object target) {
+        if (target instanceof ProjectInternal) {
+            Path projectIdentityPath = ((ProjectInternal) target).getProjectIdentity().getBuildTreePath();
+            return new UserCodeApplicationContext.Target.Project(projectIdentityPath);
+        }
+        return UserCodeApplicationContext.Target.Other.INSTANCE;
     }
 
     private static class OperationDetails implements ApplyScriptPluginBuildOperationType.Details {
@@ -83,13 +101,16 @@ public class BuildOperationScriptPlugin implements ScriptPlugin {
         private final File file;
         private final ResourceLocation resourceLocation;
         private final ConfigurationTargetIdentifier identifier;
+        private final UserCodeApplicationId applicationId;
 
-        private OperationDetails(File file, ResourceLocation resourceLocation, @Nullable ConfigurationTargetIdentifier identifier) {
+        private OperationDetails(File file, ResourceLocation resourceLocation, @Nullable ConfigurationTargetIdentifier identifier, UserCodeApplicationId applicationId) {
             this.file = file;
             this.resourceLocation = resourceLocation;
             this.identifier = identifier;
+            this.applicationId = applicationId;
         }
 
+        @Override
         @Nullable
         public String getFile() {
             return file == null ? null : file.getAbsolutePath();
@@ -120,6 +141,11 @@ public class BuildOperationScriptPlugin implements ScriptPlugin {
         @Override
         public String getBuildPath() {
             return identifier == null ? null : identifier.getBuildPath();
+        }
+
+        @Override
+        public long getApplicationId() {
+            return applicationId.longValue();
         }
     }
 

@@ -16,78 +16,81 @@
 
 package org.gradle.api.file;
 
-import org.gradle.api.Incubating;
+import org.gradle.api.Project;
 import org.gradle.api.provider.Provider;
+import org.gradle.declarative.dsl.model.annotations.HiddenInDefinition;
+import org.gradle.declarative.dsl.model.annotations.ValueFactories;
+import org.gradle.internal.service.scopes.Scope;
+import org.gradle.internal.service.scopes.ServiceScope;
+import org.jspecify.annotations.Nullable;
 
 import java.io.File;
 
 /**
  * Provides access to several important locations for a project.
  *
- * An instance of the factory can be injected into a task or plugin by annotating a public constructor or method with {@code javax.inject.Inject}. It is also available via {@link org.gradle.api.Project#getLayout()}.
+ * <p>An instance of this type can be injected into a task, plugin or other object by annotating a public constructor or method with {@code javax.inject.Inject}. It is also available via {@link org.gradle.api.Project#getLayout()}.
  *
+ * <p><b>Note:</b> This interface is not intended for implementation by build script or plugin authors.
  * @since 4.1
  */
-@Incubating
+@ServiceScope(Scope.Project.class)
 public interface ProjectLayout {
     /**
      * Returns the project directory.
+     * @since 4.1
      */
+    @ValueFactories
     Directory getProjectDirectory();
 
     /**
      * Returns the build directory for the project.
+     * @since 4.1
      */
+    @HiddenInDefinition
     DirectoryProperty getBuildDirectory();
 
     /**
-     * Creates a new {@link DirectoryVar} that uses the project directory to resolve paths, if required. The var has no initial value.
+     * Returns the settings directory.
+     * <p>
+     * The settings directory is the directory containing the settings file.
+     * It is shared by all projects in the build.
      *
-     * @deprecated Use {@link #directoryProperty()} instead.
+     * @since 8.13
      */
-    @Deprecated
-    DirectoryVar newDirectoryVar();
-
-    /**
-     * Creates a new {@link DirectoryProperty} that uses the project directory to resolve paths, if required. The property has no initial value.
-     *
-     * @since 4.3
-     */
-    DirectoryProperty directoryProperty();
-
-    /**
-     * Creates a new {@link DirectoryProperty} that uses the project directory to resolve paths, if required. The property has the initial provider specified.
-     *
-     * @param initialProvider initial provider for the property
-     * @since 4.4
-     */
-    DirectoryProperty directoryProperty(Provider<? extends Directory> initialProvider);
-
-    /**
-     * Creates a new {@link RegularFileVar} that uses the project directory to resolve paths, if required. The var has no initial value.
-     *
-     * @deprecated Use {@link #fileProperty()} instead.
-     */
-    @Deprecated
-    RegularFileVar newFileVar();
-
-    /**
-     * Creates a new {@link RegularFileProperty} that uses the project directory to resolve paths, if required. The property has no initial value.
-     *
-     * @since 4.3
-     */
-    RegularFileProperty fileProperty();
-
-    /**
-     * Creates a new {@link RegularFileProperty} that uses the project directory to resolve paths, if required. The property has the initial provider specified.
-     *
-     * @param initialProvider initial provider for the property
-     * @since 4.4
-     */
-    RegularFileProperty fileProperty(Provider<? extends RegularFile> initialProvider);
+    @ValueFactories
+    Directory getSettingsDirectory();
 
     /**
      * Creates a {@link RegularFile} provider whose location is calculated from the given {@link Provider}.
+     * <p>
+     * File system locations based on relative paths will be
+     * resolved against this layout's reference location, as defined by {@link #getProjectDirectory()}.
+     * @since 4.1
      */
+    @HiddenInDefinition
     Provider<RegularFile> file(Provider<File> file);
+
+    /**
+     * Creates a {@link Directory} provider whose location is calculated from the given {@link Provider}.
+     * <p>
+     * File system locations based on relative paths will be
+     * resolved against this layout's reference location, as defined by {@link #getProjectDirectory()}.
+     *
+     * @since 6.0
+     */
+    @HiddenInDefinition
+    Provider<Directory> dir(Provider<File> file);
+
+    /**
+     * <p>Creates a read-only {@link FileCollection} containing the given files, as defined by {@link Project#files(Object...)}.
+     *
+     * <p>This method can also be used to create an empty collection, but the collection may not be mutated later.</p>
+     *
+     * @param paths The paths to the files. May be empty.
+     * @return The file collection. Never returns null.
+     * @since 4.8
+     */
+    @HiddenInDefinition
+    FileCollection files(@Nullable Object... paths);
 }

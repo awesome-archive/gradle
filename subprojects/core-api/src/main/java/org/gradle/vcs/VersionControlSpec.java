@@ -17,39 +17,45 @@ package org.gradle.vcs;
 
 import org.gradle.api.Action;
 import org.gradle.api.Describable;
-import org.gradle.api.Incubating;
 import org.gradle.api.initialization.definition.InjectedPluginDependencies;
+import org.gradle.internal.instrumentation.api.annotations.ToBeReplacedByLazyProperty;
 
 /**
- * Captures user-provided information about a version control system.
+ * Captures user-provided information about a version control repository.
  *
- * @since 4.4
+ * @since 4.3
  */
-@Incubating
 public interface VersionControlSpec extends Describable {
     /**
      * Returns a {@link String} identifier which will be unique to this version
      * control specification among other version control specifications.
+     * @since 4.3
      */
+    @ToBeReplacedByLazyProperty
     String getUniqueId();
 
     /**
      * Returns the name of the repository.
+     * @since 4.3
      */
+    @ToBeReplacedByLazyProperty
     String getRepoName();
 
     /**
      * Returns the relative path to the root of the build within the repository.
-     * <p>
-     * Defaults to an empty relative path, meaning the root of the repository.
      *
+     * <p>Defaults to an empty relative path, meaning the root of the repository.
+     *
+     * @return the root directory of the build, relative to the root of this repository.
      * @since 4.5
      */
+    @ToBeReplacedByLazyProperty
     String getRootDir();
 
     /**
-     * Sets the relative path to the root of the build within the repository.
+     * Sets the relative path to the root of the build within the repository. Use an empty string to refer to the root of the repository.
      *
+     * @param rootDir The root directory of the build, relative to the root of this repository.
      * @since 4.5
      */
     void setRootDir(String rootDir);

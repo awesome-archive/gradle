@@ -19,6 +19,7 @@ package org.gradle.integtests.composite
 import org.gradle.integtests.fixtures.build.BuildTestFile
 import org.gradle.test.fixtures.file.LeaksFileHandles
 import spock.lang.Issue
+
 /**
  * Tests for classloading related bugs with a composite build.
  */

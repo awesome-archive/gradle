@@ -16,12 +16,7 @@
 
 package org.gradle.api.tasks;
 
-import org.gradle.api.Incubating;
-import org.gradle.api.file.FileCollection;
 import org.gradle.internal.HasInternalProtocol;
-
-import javax.annotation.Nullable;
-import java.util.Map;
 
 /**
  * Describes an input property of a task that contains zero or more files.
@@ -29,7 +24,7 @@ import java.util.Map;
  * @since 3.0
  */
 @HasInternalProtocol
-public interface TaskInputFilePropertyBuilder extends TaskFilePropertyBuilder, TaskInputs {
+public interface TaskInputFilePropertyBuilder extends TaskFilePropertyBuilder {
     /**
      * {@inheritDoc}
      */
@@ -39,29 +34,33 @@ public interface TaskInputFilePropertyBuilder extends TaskFilePropertyBuilder, T
     /**
      * Skip executing the task if the property contains no files.
      * If there are multiple properties with {code skipWhenEmpty = true}, then they all need to be empty for the task to be skipped.
+     * @since 3.0
      */
     TaskInputFilePropertyBuilder skipWhenEmpty();
 
     /**
      * Sets whether executing the task should be skipped if the property contains no files.
      * If there are multiple properties with {code skipWhenEmpty = true}, then they all need to be empty for the task to be skipped.
+     * @since 3.0
      */
     TaskInputFilePropertyBuilder skipWhenEmpty(boolean skipWhenEmpty);
 
     /**
      * Marks a task property as optional. This means that a value does not have to be specified for the property, but any
      * value specified must meet the validation constraints for the property.
+     * @since 3.0
      */
     TaskInputFilePropertyBuilder optional();
 
     /**
      * Sets whether the task property is optional. If the task property is optional, it means that a value does not have to be
      * specified for the property, but any value specified must meet the validation constraints for the property.
+     * @since 3.0
      */
     TaskInputFilePropertyBuilder optional(boolean optional);
 
     /**
-     * Sets which part of the path of files should be considered during up-to-date checks.
+     * Sets which part of the path of files should be considered during up-to-date checks and build cache key calculations.
      *
      * @since 3.1
      */
@@ -71,97 +70,49 @@ public interface TaskInputFilePropertyBuilder extends TaskFilePropertyBuilder, T
      * Sets the normalizer to use for this property.
      *
      * @since 4.3
+
+     * @implNote Only two normalizers are supported: {@link CompileClasspathNormalizer} and {@link ClasspathNormalizer}.
      */
-    @Incubating
     TaskInputFilePropertyBuilder withNormalizer(Class<? extends FileNormalizer> normalizer);
 
     /**
-     * Throws {@link UnsupportedOperationException}.
+     * Ignore directories during up-to-date checks and build cache key calculations.  When this is set, only the contents of directories
+     * will be considered, but not the directories themselves.  Changes to empty directories, and directories that
+     * contain only empty directories, will be ignored.
      *
-     * @deprecated Use {@link TaskInputs#getHasInputs()} directly instead.
+     * @since 6.8
      */
-    @Deprecated
-    @Override
-    boolean getHasInputs();
+    TaskInputFilePropertyBuilder ignoreEmptyDirectories();
 
     /**
-     * Throws {@link UnsupportedOperationException}.
+     * Sets whether directories should be considered during up-to-date checks and build cache key calculations.  Defaults to false.
      *
-     * @deprecated Use {@link TaskInputs#getFiles()} directly instead.
+     * See {@link #ignoreEmptyDirectories()}.
+     *
+     * @since 6.8
      */
-    @Deprecated
-    @Override
-    FileCollection getFiles();
+    TaskInputFilePropertyBuilder ignoreEmptyDirectories(boolean ignoreEmptyDirectories);
 
     /**
-     * Throws {@link UnsupportedOperationException}.
+     * Normalize line endings in text files during up-to-date checks and build cache key calculations. This setting will have no effect on binary files.
      *
-     * @deprecated Use {@link TaskInputs#files(Object...)} directly instead.
+     * <p>
+     * Line ending normalization is only supported with ASCII encoding and its supersets (i.e.
+     * UTF-8, ISO-8859-1, etc). Other encodings (e.g. UTF-16) will be treated as binary files
+     * and will not be subject to line ending normalization.
+     * </p>
+     *
+     * @since 7.2
      */
-    @Deprecated
-    @Override
-    TaskInputFilePropertyBuilder files(Object... paths);
+    TaskInputFilePropertyBuilder normalizeLineEndings();
 
     /**
-     * Throws {@link UnsupportedOperationException}.
+     * Sets whether line endings should be normalized during up-to-date checks and build cache key calculations. Defaults to false.
      *
-     * @deprecated Use {@link TaskInputs#file(Object)} directly instead.
-     */
-    @Deprecated
-    @Override
-    TaskInputFilePropertyBuilder file(Object path);
-
-    /**
-     * Throws {@link UnsupportedOperationException}.
+     * See {@link #normalizeLineEndings()}.
      *
-     * @deprecated Use {@link TaskInputs#dir(Object)} directly instead.
+     * @param normalizeLineEndings whether line endings should be normalized
+     * @since 7.2
      */
-    @Deprecated
-    @Override
-    TaskInputFilePropertyBuilder dir(Object dirPath);
-
-    /**
-     * Throws {@link UnsupportedOperationException}.
-     *
-     * @deprecated Use {@link TaskInputs#getProperties()} directly instead.
-     */
-    @Deprecated
-    @Override
-    Map<String, Object> getProperties();
-
-    /**
-     * Throws {@link UnsupportedOperationException}.
-     *
-     * @deprecated Use {@link TaskInputs#property(String, Object)} directly instead.
-     */
-    @Deprecated
-    @Override
-    TaskInputPropertyBuilder property(String name, @Nullable Object value);
-
-    /**
-     * Throws {@link UnsupportedOperationException}.
-     *
-     * @deprecated Use {@link TaskInputs#properties(Map)} directly instead.
-     */
-    @Deprecated
-    @Override
-    TaskInputs properties(Map<String, ?> properties);
-
-    /**
-     * Throws {@link UnsupportedOperationException}.
-     *
-     * @deprecated Use {@link TaskInputs#getHasSourceFiles()} directly instead.
-     */
-    @Deprecated
-    @Override
-    boolean getHasSourceFiles();
-
-    /**
-     * Throws {@link UnsupportedOperationException}.
-     *
-     * @deprecated Use {@link TaskInputs#getSourceFiles()} directly instead.
-     */
-    @Deprecated
-    @Override
-    FileCollection getSourceFiles();
+    TaskInputFilePropertyBuilder normalizeLineEndings(boolean normalizeLineEndings);
 }

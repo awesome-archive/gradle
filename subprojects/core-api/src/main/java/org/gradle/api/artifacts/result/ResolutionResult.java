@@ -17,8 +17,12 @@
 package org.gradle.api.artifacts.result;
 
 import groovy.lang.Closure;
+import groovy.lang.DelegatesTo;
 import org.gradle.api.Action;
 import org.gradle.api.Incubating;
+import org.gradle.api.attributes.AttributeContainer;
+import org.gradle.api.provider.Provider;
+import org.gradle.internal.HasInternalProtocol;
 import org.gradle.internal.scan.UsedByScanPlugin;
 
 import java.util.Set;
@@ -26,9 +30,10 @@ import java.util.Set;
 /**
  * Contains the information about the result of dependency resolution. You can use this type to determine all the component instances that are included
  * in the resolved dependency graph, and the dependencies between them.
+ * @since 1.2
  */
 @UsedByScanPlugin
-@Incubating
+@HasInternalProtocol
 public interface ResolutionResult {
 
     /**
@@ -37,8 +42,33 @@ public interface ResolutionResult {
      * For example, Gradle's built-in 'dependencies' task uses this to render the dependency tree.
      *
      * @return the root node of the resolved dependency graph
+     * @since 1.2
      */
     ResolvedComponentResult getRoot();
+
+    /**
+     * Returns the root of resolved dependency graph as a {@link Provider} of {@link ResolvedComponentResult}.
+     * The returned {@link Provider} is live, and tracks the producer tasks of this resolution result.
+     * The provider will resolve the component metadata as required.
+     *
+     * You can walk the graph recursively from the root to obtain information about resolved dependencies.
+     * For example, Gradle's built-in 'dependencies' task uses this to render the dependency tree.
+     *
+     * @return a provider for the root component of the resolved dependency graph
+     * @since 7.4
+     */
+    Provider<ResolvedComponentResult> getRootComponent();
+
+    /**
+     * The root variant of the dependency graph. This is a synthetic variant that represents the thing being resolved.
+     * All outgoing dependencies of this variant represent first-level declared dependencies of the resolution.
+     *
+     * @return a provider for the root variant of the dependency graph.
+     *
+     * @since 8.11
+     */
+    @Incubating
+    Provider<ResolvedVariantResult> getRootVariant();
 
     /**
      * Retrieves all dependencies, including unresolved dependencies.
@@ -48,6 +78,7 @@ public interface ResolutionResult {
      * In dependency graph terminology, this method returns the edges of the graph.
      *
      * @return all dependencies, including unresolved dependencies.
+     * @since 1.3
      */
     Set<? extends DependencyResult> getAllDependencies();
 
@@ -56,6 +87,7 @@ public interface ResolutionResult {
      * An instance of {@link DependencyResult} is passed as parameter to the action.
      *
      * @param action - action that is applied for each dependency
+     * @since 1.3
      */
     void allDependencies(Action<? super DependencyResult> action);
 
@@ -64,14 +96,16 @@ public interface ResolutionResult {
      * An instance of {@link DependencyResult} is passed as parameter to the closure.
      *
      * @param closure - closure that is applied for each dependency
+     * @since 1.3
      */
-    void allDependencies(Closure closure);
+    void allDependencies(@DelegatesTo(DependencyResult.class) Closure closure);
 
     /**
      * Retrieves all instances of {@link ResolvedComponentResult} from the graph,
      * e.g. all nodes of the dependency graph.
      *
      * @return all nodes of the dependency graph.
+     * @since 1.10
      */
     Set<ResolvedComponentResult> getAllComponents();
 
@@ -80,6 +114,7 @@ public interface ResolutionResult {
      * An instance of {@link ResolvedComponentResult} is passed as parameter to the action.
      *
      * @param action - action that is applied for each component
+     * @since 1.10
      */
     void allComponents(Action<? super ResolvedComponentResult> action);
 
@@ -88,6 +123,17 @@ public interface ResolutionResult {
      * An instance of {@link ResolvedComponentResult} is passed as parameter to the closure.
      *
      * @param closure - closure that is applied for each component
+     * @since 1.10
      */
-    void allComponents(Closure closure);
+    void allComponents(@DelegatesTo(ResolvedComponentResult.class) Closure closure);
+
+    /**
+     * The attributes that were requested. Those are the attributes which
+     * are used during variant aware resolution, to select the variants.
+     * Attributes returned by this method are <i>desugared</i>, meaning that
+     * they have lost their rich types and can only be of type Boolean or String.
+     *
+     * @since 5.6
+     */
+    AttributeContainer getRequestedAttributes();
 }

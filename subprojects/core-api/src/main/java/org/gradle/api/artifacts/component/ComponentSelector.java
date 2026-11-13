@@ -16,7 +16,13 @@
 package org.gradle.api.artifacts.component;
 
 import org.gradle.api.Incubating;
+import org.gradle.api.artifacts.capability.CapabilitySelector;
+import org.gradle.api.attributes.AttributeContainer;
+import org.gradle.api.capabilities.Capability;
 import org.gradle.internal.scan.UsedByScanPlugin;
+
+import java.util.List;
+import java.util.Set;
 
 /**
  * Represents some opaque criteria used to select a component instance during dependency resolution. Various sub-interfaces
@@ -24,7 +30,6 @@ import org.gradle.internal.scan.UsedByScanPlugin;
  *
  * @since 1.10
  */
-@Incubating
 @UsedByScanPlugin
 public interface ComponentSelector {
     /**
@@ -43,4 +48,35 @@ public interface ComponentSelector {
      * @since 1.10
      */
     boolean matchesStrictly(ComponentIdentifier identifier);
+
+    /**
+     * The attributes of the module to select the component from. The attributes only include
+     * selector specific attributes. This means it typically doesn't include any consumer specific attribute.
+     *
+     * @return the attributes
+     *
+     * @since 4.9
+     */
+    AttributeContainer getAttributes();
+
+    /**
+     * The explicitly requested capabilities for this component.
+     * <p>
+     * Prefer {@link #getCapabilitySelectors()}.
+     *
+     * @return the explicitly requested capabilities.
+     *
+     * @since 5.3
+     */
+    List<Capability> getRequestedCapabilities();
+
+    /**
+     * Returns the set of capabilities that are requested for this component.
+     *
+     * @return All capability selectors. If empty, the default capability will be selected.
+     *
+     * @since 8.11
+     */
+    @Incubating
+    Set<CapabilitySelector> getCapabilitySelectors();
 }

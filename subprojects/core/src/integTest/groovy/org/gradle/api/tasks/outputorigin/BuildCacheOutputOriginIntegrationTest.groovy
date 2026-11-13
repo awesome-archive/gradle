@@ -16,11 +16,12 @@
 
 package org.gradle.api.tasks.outputorigin
 
+import org.gradle.caching.internal.origin.OriginMetadata
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.BuildCacheKeyFixture
 import org.gradle.integtests.fixtures.DirectoryBuildCacheFixture
+import org.gradle.integtests.fixtures.OriginFixture
 import org.gradle.integtests.fixtures.ScopeIdsFixture
-import org.gradle.integtests.fixtures.TaskOutputOriginFixture
-import org.gradle.internal.id.UniqueId
 import org.junit.Rule
 
 class BuildCacheOutputOriginIntegrationTest extends AbstractIntegrationSpec implements DirectoryBuildCacheFixture {
@@ -29,14 +30,22 @@ class BuildCacheOutputOriginIntegrationTest extends AbstractIntegrationSpec impl
     public final ScopeIdsFixture scopeIds = new ScopeIdsFixture(executer, temporaryFolder)
 
     @Rule
-    public final TaskOutputOriginFixture outputOrigin = new TaskOutputOriginFixture(executer, temporaryFolder)
+    public final OriginFixture outputOrigin = new OriginFixture(executer, temporaryFolder)
 
-    UniqueId getBuildInvocationId() {
-        scopeIds.buildInvocationId
+    @Delegate
+    @Rule
+    public final BuildCacheKeyFixture buildCacheKeyFixture = new BuildCacheKeyFixture(executer, temporaryFolder)
+
+    String getBuildInvocationId() {
+        scopeIds.buildInvocationId.asString()
     }
 
-    UniqueId originBuildInvocationId(String taskPath) {
+    String originBuildInvocationId(String taskPath) {
         outputOrigin.originId(taskPath)
+    }
+
+    OriginMetadata origin(String taskPath) {
+        outputOrigin.origin(taskPath)
     }
 
     def setup() {
@@ -47,10 +56,10 @@ class BuildCacheOutputOriginIntegrationTest extends AbstractIntegrationSpec impl
 
     def "exposes origin build id when reusing cached outputs"() {
         given:
-        buildScript """
+        buildFile """
             apply plugin: "base"
             def write = tasks.create("write", WriteProperties) {
-                outputFile = "build/out.properties"
+                destinationFile = file("build/out.properties")
                 properties = [v: 1]
             }
         """
@@ -61,6 +70,7 @@ class BuildCacheOutputOriginIntegrationTest extends AbstractIntegrationSpec impl
         then:
         executedAndNotSkipped ":write"
         def firstBuildId = buildInvocationId
+        def firstBuildCacheKey = buildCacheKey(":write")
         originBuildInvocationId(":write") == null
 
         when:
@@ -70,7 +80,10 @@ class BuildCacheOutputOriginIntegrationTest extends AbstractIntegrationSpec impl
         skipped ":write"
         def secondBuildId = buildInvocationId
         firstBuildId != secondBuildId
-        originBuildInvocationId(":write") == firstBuildId
+        with(origin(":write")) {
+            buildInvocationId == firstBuildId
+            buildCacheKey == firstBuildCacheKey
+        }
 
         when:
         buildFile << """
@@ -81,8 +94,10 @@ class BuildCacheOutputOriginIntegrationTest extends AbstractIntegrationSpec impl
         then:
         executedAndNotSkipped ":write"
         def thirdBuildId = buildInvocationId
+        def thirdBuildCacheKey = buildCacheKey(":write")
         firstBuildId != thirdBuildId
         secondBuildId != thirdBuildId
+        thirdBuildCacheKey != firstBuildCacheKey
         originBuildInvocationId(":write") == null
 
         when:
@@ -90,7 +105,10 @@ class BuildCacheOutputOriginIntegrationTest extends AbstractIntegrationSpec impl
 
         then:
         skipped ":write"
-        originBuildInvocationId(":write") == thirdBuildId
+        with(origin(":write")) {
+            buildInvocationId == thirdBuildId
+            buildCacheKey == thirdBuildCacheKey
+        }
 
         when:
         succeeds  "write"

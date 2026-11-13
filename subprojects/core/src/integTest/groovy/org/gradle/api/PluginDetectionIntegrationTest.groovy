@@ -19,7 +19,6 @@ import org.gradle.api.plugins.AppliedPlugin
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.test.fixtures.plugin.PluginBuilder
 import spock.lang.Issue
-import spock.lang.Unroll
 
 /**
  * Tests various aspects of detecting the existence of plugins by their ID.
@@ -28,7 +27,6 @@ class PluginDetectionIntegrationTest extends AbstractIntegrationSpec {
 
     public static final List<String> JAVA_PLUGIN_IDS = ["java", "org.gradle.java"]
 
-    @Unroll
     def "core plugins are detectable - applied by #appliedBy, detected by #detectedBy"() {
         buildFile << """
             def operations = []
@@ -49,7 +47,14 @@ class PluginDetectionIntegrationTest extends AbstractIntegrationSpec {
             assert pluginManager.hasPlugin("$detectedBy")
             assert pluginManager.findPlugin("$detectedBy").id == "$detectedBy"
 
-            task verify { doLast { assert operations == ['applying', 'withId for JavaPlugin', 'withPlugin', 'applied'] } }
+            task verify {
+                doLast {
+                    assert operations[0] == 'applying'
+                    assert operations[1] =~ /withId for JavaPlugin_Decorated[\\d]*/
+                    assert operations[2] == 'withPlugin'
+                    assert operations[3] == 'applied'
+                }
+            }
         """
 
         expect:
@@ -63,15 +68,39 @@ class PluginDetectionIntegrationTest extends AbstractIntegrationSpec {
     def "unqualified ids from classpath are detectable"() {
         def pluginBuilder = new PluginBuilder(testDirectory)
         pluginBuilder.addPlugin("")
-        pluginBuilder.addRuleSource("test-rule-source")
         pluginBuilder.publishTo(executer, file("plugin.jar"))
 
         buildFile << """
+            import org.gradle.api.services.BuildServiceParameters
+
+            // wrapping loader into a service to ensure it is closed after the build and it's CC-compatible
+            public abstract class LoaderService implements BuildService<LoaderService.Params>, AutoCloseable {
+                interface Params extends BuildServiceParameters {
+                    RegularFileProperty getPluginJar()
+                }
+
+                private final URLClassLoader loader;
+
+                public LoaderService() throws URISyntaxException {
+                    loader = new URLClassLoader([getParameters().getPluginJar().get().asFile.toURL()] as URL[], getClass().getClassLoader());
+                }
+
+                public URLClassLoader getLoader() {
+                    return loader;
+                }
+
+                @Override
+                public void close() {
+                    loader.close();
+                }
+            }
+
             def operations = []
 
-            def loader = new URLClassLoader([file("plugin.jar").toURL()] as URL[], getClass().classLoader)
-            def pluginClass = loader.loadClass("${pluginBuilder.packageName}.TestPlugin")
-            def ruleSourceClass = loader.loadClass("${pluginBuilder.packageName}.TestRuleSource")
+            def loaderService = gradle.sharedServices.registerIfAbsent("loader", LoaderService){
+                getParameters().pluginJar.set(file("plugin.jar"))
+            }.get()
+            def pluginClass = loaderService.getLoader().loadClass("${pluginBuilder.packageName}.TestPlugin")
 
             plugins.withType(pluginClass) {
                 operations << 'withType'
@@ -81,20 +110,11 @@ class PluginDetectionIntegrationTest extends AbstractIntegrationSpec {
                 operations << 'withId'
             }
 
-            pluginManager.withPlugin("test-rule-source") {
-                // assert we are using our closure decoration and not closure coercion
-                assert delegate instanceof $AppliedPlugin.name
-                operations << 'withPlugin'
-            }
-
             operations << "applying"
             apply plugin: pluginClass
-            apply type: ruleSourceClass
             operations << "applied"
 
-            task verify { doLast { assert operations == ['applying', 'withType', 'withId', 'withPlugin', 'applied'] } }
-
-            gradle.buildFinished { loader.close() }
+            task verify { doLast { assert operations == ['applying', 'withType', 'withId', 'applied'] } }
         """
 
         expect:
@@ -103,7 +123,7 @@ class PluginDetectionIntegrationTest extends AbstractIntegrationSpec {
 
     def "plugin manager with id is fired after the plugin is applied for imperative plugins"() {
         when:
-        buildFile << """
+        buildFile """
             pluginManager.withPlugin("java") {
               assert tasks.jar
             }
@@ -112,74 +132,7 @@ class PluginDetectionIntegrationTest extends AbstractIntegrationSpec {
         """
 
         then:
-        succeeds "tasks"
-    }
-
-    def "plugin manager with id is fired after the plugin is applied for hybrid plugins"() {
-        when:
-        file("buildSrc/src/main/groovy/MyPlugin.groovy") << """
-            import org.gradle.api.Plugin
-            import org.gradle.api.Task
-            import org.gradle.model.*
-
-            class MyPlugin implements Plugin {
-                void apply(project) {
-                  project.tasks.create("imperative-sentinel")
-                }
-
-                static class Rules extends RuleSource {
-                    @Model String thing() {
-                        "foo"
-                    }
-                }
-            }
-        """
-
-        file("buildSrc/src/main/resources/META-INF/gradle-plugins/my.properties") << "implementation-class=MyPlugin"
-
-        buildFile << """
-            import org.gradle.model.internal.core.ModelPath
-
-            pluginManager.withPlugin("my") {
-              assert tasks."imperative-sentinel"
-              // note: modelRegistry property is internal on project
-              assert modelRegistry.node(ModelPath.path("thing")) != null
-            }
-
-            pluginManager.apply(MyPlugin)
-        """
-
-        then:
-        succeeds "tasks"
-    }
-
-    def "plugin manager with id is fired after the plugin is applied for rule plugins"() {
-        when:
-        file("buildSrc/src/main/groovy/MyPlugin.groovy") << """
-            import org.gradle.model.*
-
-            class Rules extends RuleSource {
-                @Model String thing() {
-                    "foo"
-                }
-            }
-        """
-
-        file("buildSrc/src/main/resources/META-INF/gradle-plugins/my.properties") << "implementation-class=Rules"
-
-        buildFile << """
-            import org.gradle.model.internal.core.ModelPath
-
-            pluginManager.withPlugin("my") {
-              // note: modelRegistry property is internal on project
-              assert modelRegistry.node(ModelPath.path("thing")) != null
-            }
-
-            pluginManager.apply("my")
-        """
-
-        then:
-        succeeds "tasks"
+        succeeds "help"
     }
 
     @Issue("http://discuss.gradle.org/t/concurrentmodification-exception-on-java-8-for-plugins-withid-with-gradle-2-4/8928")
@@ -207,7 +160,7 @@ class PluginDetectionIntegrationTest extends AbstractIntegrationSpec {
         """
         file("buildSrc/src/main/resources/META-INF/gradle-plugins/c.properties") << "implementation-class=PluginC"
 
-        buildScript """
+        buildFile """
             class ExamplePlugin implements Plugin<Project> {
                 void apply(final Project project) {
                     project.plugins.withId('a') {
@@ -225,6 +178,86 @@ class PluginDetectionIntegrationTest extends AbstractIntegrationSpec {
 
         then:
         succeeds "help"
+    }
+
+    @Issue("https://github.com/gradle/gradle/issues/38884")
+    def "plugin being applied is detectable by plugin manager from plugin it applies - #scenario"() {
+        given:
+        def pluginBuilder = new PluginBuilder(file("buildSrc"))
+        pluginBuilder.addPlugin("""
+            project.pluginManager.apply("y")
+        """, "x", "PluginX")
+        pluginBuilder.addPlugin("""
+            println("y sees x applied: " + project.pluginManager.hasPlugin("x"))
+            println("y sees x in container: " + project.plugins.hasPlugin("x"))
+        """, "y", "PluginY")
+        pluginBuilder.addPlugin("""
+            $registration
+        """, "z", "PluginZ")
+        pluginBuilder.generateForBuildSrc()
+
+        buildFile """
+            plugins {
+                id 'z'
+                id 'x'
+            }
+        """
+
+        when:
+        succeeds "help"
+
+        then:
+        outputContains("y sees x applied: true")
+        outputContains("y sees x in container: false")
+
+        where:
+        scenario                        | registration
+        "nothing waiting for x"         | ""
+        "withPlugin registered first"   | 'project.pluginManager.withPlugin("x") {}'
+        "withId registered first"       | 'project.plugins.withId("x") {}'
+    }
+
+    @Issue("https://github.com/gradle/gradle/issues/38884")
+    def "#callback registered during application fires after the plugin is applied - #scenario"() {
+        given:
+        def pluginBuilder = new PluginBuilder(file("buildSrc"))
+        pluginBuilder.addPlugin("""
+            project.pluginManager.apply("y")
+            println("x applied")
+        """, "x", "PluginX")
+        pluginBuilder.addPlugin("""
+            project.${callback}("x") {
+                println("callback fired")
+            }
+        """, "y", "PluginY")
+        pluginBuilder.addPlugin("""
+            $registration
+        """, "z", "PluginZ")
+        pluginBuilder.generateForBuildSrc()
+
+        buildFile """
+            plugins {
+                id 'z'
+                id 'x'
+            }
+        """
+
+        when:
+        succeeds "help"
+
+        then:
+        outputContains("x applied")
+        outputContains("callback fired")
+        output.indexOf("callback fired") > output.indexOf("x applied")
+
+        where:
+        scenario                        | registration                                  | callback
+        "nothing waiting for x"         | ""                                            | "pluginManager.withPlugin"
+        "withPlugin registered first"   | 'project.pluginManager.withPlugin("x") {}'    | "pluginManager.withPlugin"
+        "withId registered first"       | 'project.plugins.withId("x") {}'              | "pluginManager.withPlugin"
+        "nothing waiting for x"         | ""                                            | "plugins.withId"
+        "withPlugin registered first"   | 'project.pluginManager.withPlugin("x") {}'    | "plugins.withId"
+        "withId registered first"       | 'project.plugins.withId("x") {}'              | "plugins.withId"
     }
 
 }

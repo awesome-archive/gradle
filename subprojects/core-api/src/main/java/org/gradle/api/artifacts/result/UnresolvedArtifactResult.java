@@ -15,17 +15,15 @@
  */
 package org.gradle.api.artifacts.result;
 
-import org.gradle.api.Incubating;
-
 /**
  * An artifact that could not be resolved.
  *
  * @since 2.0
  */
-@Incubating
 public interface UnresolvedArtifactResult extends ArtifactResult {
     /**
      * The failure that occurred when the artifact was resolved.
+     * @since 2.0
      */
     Throwable getFailure();
 }

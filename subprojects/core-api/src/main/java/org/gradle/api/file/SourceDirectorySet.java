@@ -16,27 +16,45 @@
 package org.gradle.api.file;
 
 import org.gradle.api.Describable;
-import org.gradle.api.Incubating;
 import org.gradle.api.Named;
+import org.gradle.api.Task;
 import org.gradle.api.provider.Provider;
+import org.gradle.api.specs.Spec;
+import org.gradle.api.tasks.TaskProvider;
 import org.gradle.api.tasks.util.PatternFilterable;
+import org.gradle.declarative.dsl.model.annotations.HiddenInDefinition;
+import org.gradle.internal.instrumentation.api.annotations.NotToBeMigratedToLazy;
 import org.gradle.model.internal.core.UnmanagedStruct;
+import org.jspecify.annotations.Nullable;
 
 import java.io.File;
 import java.util.Set;
+import java.util.function.Function;
 
 /**
- * <p>A {@code SourceDirectorySet} represents a set of source files composed from a set of source directories, along
- * with associated include and exclude patterns.</p>
- *
- * <p>{@code SourceDirectorySet} extends {@link FileTree}. The contents of the file tree represent the source files of this set, arranged in a hierarchy. The file tree is live and reflects changes to the source directories and their contents.</p>
+ * A {@code SourceDirectorySet} represents a set of source files composed from a set of source directories, along
+ * with associated include and exclude patterns.
+ * <p>
+ * {@code SourceDirectorySet} extends {@link FileTree}. The contents of the file tree represent the source files of this set,
+ * arranged in a hierarchy. The file tree is live and reflects changes to the source directories and their contents.
+ * <p>
+ * You can create an instance of {@code SourceDirectorySet} using the {@link org.gradle.api.model.ObjectFactory#sourceDirectorySet(String, String)}
+ * method.
+ * <p>
+ * You can filter the <strong>files</strong> that are obtainable in this set using patterns via {@link #include(Spec)}
+ * and {@link #include(Spec)} (or any overload of these methods).  The set of included source directories themselves are
+ * <strong>not filtered</strong>.
+ * @since 0.8
  */
 @UnmanagedStruct
+@NotToBeMigratedToLazy
+@HiddenInDefinition
 public interface SourceDirectorySet extends FileTree, PatternFilterable, Named, Describable {
 
     /**
      * A concise name for the source directory set (typically used to identify it in a collection).
      */
+    @Override
     String getName();
 
     /**
@@ -44,21 +62,30 @@ public interface SourceDirectorySet extends FileTree, PatternFilterable, Named, 
      *
      * @param srcPath The source directory. This is evaluated as per {@link org.gradle.api.Project#files(Object...)}
      * @return this
+     * @since 0.8
      */
-    SourceDirectorySet srcDir(Object srcPath);
+    SourceDirectorySet srcDir(@Nullable Object srcPath);
 
     /**
-     * Adds the given source directories to this set. The given directories to not need to exist. Directories that do no exist are ignored.
+     * Adds the given source directories to this set. The given directories do not need to exist. Directories that do not exist are ignored.
      *
      * @param srcPaths The source directories. These are evaluated as per {@link org.gradle.api.Project#files(Object...)}
      * @return this
+     * @since 0.8
      */
-    SourceDirectorySet srcDirs(Object... srcPaths);
+    SourceDirectorySet srcDirs(@Nullable Object... srcPaths);
 
     /**
-     * Returns the source directories that make up this set. Does not filter source directories that do not exist.
+     * Returns the source directories that make up this set.
+     * <p>
+     * Note that filtering via patterns using {@link #exclude(Spec)} and {@link #include(Spec)} (or any overload of these methods) only
+     * filters <strong>files</strong> within the {@link DirectoryTree}s returned by this method and <strong>does not filter</strong>
+     * the set of source directory trees themselves.  This result should agree with {@link #getSrcDirTrees()}.
+     * <p>
+     * Does not filter source directories that do not exist.
      *
      * @return The source directories. Returns an empty set when this set contains no source directories.
+     * @since 0.8
      */
     Set<File> getSrcDirs();
 
@@ -67,6 +94,7 @@ public interface SourceDirectorySet extends FileTree, PatternFilterable, Named, 
      *
      * @param srcPaths The source directories. These are evaluated as per {@link org.gradle.api.Project#files(Object...)}
      * @return this
+     * @since 0.8
      */
     SourceDirectorySet setSrcDirs(Iterable<?> srcPaths);
 
@@ -75,6 +103,7 @@ public interface SourceDirectorySet extends FileTree, PatternFilterable, Named, 
      *
      * @param source The source to add.
      * @return this
+     * @since 1.0
      */
     SourceDirectorySet source(SourceDirectorySet source);
 
@@ -83,13 +112,25 @@ public interface SourceDirectorySet extends FileTree, PatternFilterable, Named, 
      * Generally, it is preferable to use this method instead of {@link #getSrcDirs()}, as this method does not require the source directories to be calculated when it is called. Instead, the source directories are calculated when queried. The return value of this method also maintains dependency information.
      *
      * <p>The returned collection is live and reflects changes to this source directory set.
+     * @since 3.2
      */
     FileCollection getSourceDirectories();
 
     /**
-     * Returns the source directory trees that make up this set. Does not filter source directories that do not exist.
+     * Returns the source directory trees that make up this set.
+     * <p>
+     * Note that filtering via patterns using {@link #exclude(Spec)} and {@link #include(Spec)} (or any overload of these methods) only
+     * filters <strong>files</strong> within the {@link DirectoryTree}s returned by this method and <strong>does not filter</strong>
+     * the set of source directory trees themselves.  This result should agree with {@link #getSrcDirs()}.
+     * <p>
+     * Does not filter source directories that do not exist.
+     * <p>
+     * Note that if there are multiple source directories added to this set that include the same dir,
+     * we use the patterns from the first one we find (in the order they were added) to filter files in the returned
+     * {@link DirectoryTree}s.  It is discouraged to add multiple source directories that include the same dir to the same set.
      *
      * @return The source directory trees. Returns an empty set when this set contains no source directories.
+     * @since 1.0
      */
     Set<DirectoryTree> getSrcDirTrees();
 
@@ -99,33 +140,35 @@ public interface SourceDirectorySet extends FileTree, PatternFilterable, Named, 
      * restrict the contents to certain types of files, eg {@code *.java}.
      *
      * @return The filter patterns.
+     * @since 0.8
      */
     PatternFilterable getFilter();
 
     /**
-     * Returns the directory to put the output for these sources.
+     * Configure the directory to assemble the compiled classes into.
      *
-     * @return The output directory for this set of sources.
-     * @since 4.0
+     * @return The destination directory property for this set of sources.
+     * @since 6.1
      */
-    @Incubating
-    File getOutputDir();
+    DirectoryProperty getDestinationDirectory();
 
     /**
-     * Sets the provider that gives the directory to assemble the compiled classes into.
-
-     * @param provider provides output directory for this source directory set
-     * @since 4.0
+     * Returns the directory property that is bound to the task that produces the output via {@link #compiledBy(TaskProvider, Function)}.
+     * Use this as part of a classpath or input to another task to ensure that the output is created before it is used.
+     *
+     * Note: To define the path of the output folder use {@link #getDestinationDirectory()}
+     *
+     * @return The classes directory property for this set of sources.
+     * @since 6.1
      */
-    @Incubating
-    void setOutputDir(Provider<File> provider);
+    Provider<Directory> getClassesDirectory();
 
     /**
-     * Sets the directory to assemble the compiled classes into.
+     * Define the task responsible for processing the source.
      *
-     * @param outputDir output directory for this source directory set
-     * @since 4.0
+     * @param taskProvider the task responsible for compiling the sources (.e.g. compileJava)
+     * @param mapping a mapping from the task to the task's output directory (e.g. AbstractCompile::getDestinationDirectory)
+     * @since 6.1
      */
-    @Incubating
-    void setOutputDir(File outputDir);
+    <T extends Task> void compiledBy(TaskProvider<T> taskProvider, Function<T, DirectoryProperty> mapping);
 }

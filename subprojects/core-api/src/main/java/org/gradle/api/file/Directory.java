@@ -16,8 +16,9 @@
 
 package org.gradle.api.file;
 
-import org.gradle.api.Incubating;
 import org.gradle.api.provider.Provider;
+import org.gradle.declarative.dsl.model.annotations.HiddenInDefinition;
+import org.jspecify.annotations.Nullable;
 
 import java.io.File;
 
@@ -29,18 +30,21 @@ import java.io.File;
  *
  * @since 4.1
  */
-@Incubating
 public interface Directory extends FileSystemLocation {
     /**
      * Returns the location of this directory, as an absolute {@link File}.
      *
      * @since 4.2
      */
+    @Override
+    @HiddenInDefinition
     File getAsFile();
 
     /**
      * Returns a {@link FileTree} that allows the files and directories contained in this directory to be queried.
+     * @since 4.1
      */
+    @HiddenInDefinition
     FileTree getAsFileTree();
 
     /**
@@ -48,6 +52,7 @@ public interface Directory extends FileSystemLocation {
      *
      * @param path The path. Can be absolute.
      * @return The directory.
+     * @since 4.1
      */
     Directory dir(String path);
 
@@ -58,7 +63,9 @@ public interface Directory extends FileSystemLocation {
      *
      * @param path The path provider. Can have value that is an absolute path.
      * @return The provider.
+     * @since 4.1
      */
+    @HiddenInDefinition
     Provider<Directory> dir(Provider<? extends CharSequence> path);
 
     /**
@@ -66,6 +73,7 @@ public interface Directory extends FileSystemLocation {
      *
      * @param path The path. Can be absolute.
      * @return The file.
+     * @since 4.1
      */
     RegularFile file(String path);
 
@@ -76,6 +84,22 @@ public interface Directory extends FileSystemLocation {
      *
      * @param path The path provider. Can have value that is an absolute path.
      * @return The file.
+     * @since 4.1
      */
+    @HiddenInDefinition
     Provider<RegularFile> file(Provider<? extends CharSequence> path);
+
+    /**
+     * Returns a {@link FileCollection} containing the given files,
+     * whose locations are the given paths resolved relative to this directory,
+     * as defined by {@link org.gradle.api.Project#files(Object...)}.
+     *
+     * This method can also be used to create an empty collection, but the collection may not be mutated later.
+     *
+     * @param paths The paths to the files. May be empty.
+     * @return The file collection.
+     * @since 6.0
+     */
+    @HiddenInDefinition
+    FileCollection files(@Nullable Object... paths);
 }

@@ -16,15 +16,17 @@
 
 package org.gradle.api.artifacts.component;
 
-import org.gradle.api.Incubating;
-
 /**
- * Identifies a Gradle build.
+ * Identifies a Gradle build. The identifier is unique within a Gradle invocation, so for example, each included build will have a different identifier.
+ * @since 3.1
  */
-@Incubating
 public interface BuildIdentifier {
+
     /**
-     * The name of the build.
+     * Absolute build path of the build within the Gradle invocation.
+     *
+     * @since 8.2
      */
-    String getName();
+    String getBuildPath();
+
 }

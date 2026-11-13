@@ -17,10 +17,12 @@
 package org.gradle.vcs.internal;
 
 import org.gradle.api.artifacts.component.ModuleComponentSelector;
+import org.gradle.internal.service.scopes.Scope;
+import org.gradle.internal.service.scopes.ServiceScope;
 import org.gradle.vcs.VersionControlSpec;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
-
+@ServiceScope(Scope.BuildTree.class)
 public interface VcsResolver {
     /**
      * Returns the VCS to use to search for matches to the given selector, or null if no such VCS.

@@ -16,12 +16,13 @@
 package org.gradle.api.artifacts.repositories;
 
 import org.gradle.api.Action;
-import org.gradle.api.Incubating;
 import org.gradle.api.credentials.Credentials;
+import org.gradle.declarative.dsl.model.annotations.HiddenInDefinition;
 import org.gradle.internal.HasInternalProtocol;
 
 /**
  * An artifact repository which supports username/password authentication.
+ * @since 1.0
  */
 @HasInternalProtocol
 public interface AuthenticationSupported {
@@ -35,7 +36,9 @@ public interface AuthenticationSupported {
      *
      * @return the credentials
      * @throws IllegalStateException if the credential type was previously set with {@link #credentials(Class, Action)} where the type was not {@link PasswordCredentials}
+     * @since 1.0
      */
+    @HiddenInDefinition
     PasswordCredentials getCredentials();
 
     /**
@@ -46,8 +49,9 @@ public interface AuthenticationSupported {
      * @param credentialsType type of the credential
      * @return The credentials
      * @throws IllegalArgumentException when the credentials assigned to this repository are not assignable to the specified type
+     * @since 2.4
      */
-    @Incubating
+    @HiddenInDefinition
     <T extends Credentials> T getCredentials(Class<T> credentialsType);
 
     /**
@@ -57,7 +61,7 @@ public interface AuthenticationSupported {
      * <pre class='autoTested'>
      * repositories {
      *     maven {
-     *         url "${url}"
+     *         url = "https://example.com/m2"
      *         credentials {
      *             username = 'joe'
      *             password = 'secret'
@@ -67,7 +71,9 @@ public interface AuthenticationSupported {
      * </pre>
      *
      * @throws IllegalStateException when the credentials assigned to this repository are not of type {@link PasswordCredentials}
+     * @since 2.2
      */
+    @HiddenInDefinition
     void credentials(Action<? super PasswordCredentials> action);
 
     /**
@@ -78,10 +84,10 @@ public interface AuthenticationSupported {
      * <pre class='autoTested'>
      * repositories {
      *     maven {
-     *         url "${url}"
+     *         url = "https://example.com/aws/proxy"
      *         credentials(AwsCredentials) {
-     *             accessKey "myAccessKey"
-     *             secretKey "mySecret"
+     *             accessKey = "myAccessKey"
+     *             secretKey = "mySecret"
      *         }
      *     }
      * }
@@ -95,9 +101,38 @@ public interface AuthenticationSupported {
      *
      * @throws IllegalArgumentException if {@code credentialsType} is not of a supported type
      * @throws IllegalArgumentException if {@code credentialsType} is of a different type to the credentials previously specified for this repository
+     * @since 2.4
      */
-    @Incubating
+    @HiddenInDefinition
     <T extends Credentials> void credentials(Class<T> credentialsType, Action<? super T> action);
+
+    /**
+     * Configures the credentials for this repository that will be provided by the build.
+     * <p>
+     * Credentials will be provided from Gradle properties based on the repository name.
+     * If credentials for this repository can not be resolved and the repository will be used in the current build, then the build will fail to start and point to the missing configuration.
+     * <pre class='autoTested'>
+     * repositories {
+     *     maven {
+     *         url = "https://example.com/m2"
+     *         credentials(PasswordCredentials)
+     *     }
+     * }
+     * </pre>
+     * <p>
+     * The following credential types are currently supported for the {@code credentialsType} argument:
+     * <ul>
+     * <li>{@link org.gradle.api.credentials.PasswordCredentials}</li>
+     * <li>{@link org.gradle.api.credentials.AwsCredentials}</li>
+     * <li>{@link org.gradle.api.credentials.HttpHeaderCredentials}</li>
+     * </ul>
+     *
+     * @throws IllegalArgumentException if {@code credentialsType} is not of a supported type
+     *
+     * @since 6.6
+     */
+    @HiddenInDefinition
+    void credentials(Class<? extends Credentials> credentialsType);
 
     /**
      * <p>Configures the authentication schemes for this repository.
@@ -110,7 +145,7 @@ public interface AuthenticationSupported {
      * <pre class='autoTested'>
      * repositories {
      *     maven {
-     *         url "${url}"
+     *         url = "https://example.com/m2"
      *         authentication {
      *             basic(BasicAuthentication)
      *         }
@@ -121,15 +156,17 @@ public interface AuthenticationSupported {
      * Supported authentication scheme types extend {@link org.gradle.authentication.Authentication}.
      *
      * @param action the action to use to configure the authentication schemes.
+     * @since 2.7
      */
-    @Incubating
+    @HiddenInDefinition
     void authentication(Action<? super AuthenticationContainer> action);
 
     /**
      * Returns the authentication schemes for this repository.
      *
      * @return the authentication schemes for this repository
+     * @since 2.7
      */
-    @Incubating
+    @HiddenInDefinition
     AuthenticationContainer getAuthentication();
 }

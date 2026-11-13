@@ -18,7 +18,7 @@ package org.gradle.integtests.composite
 
 import org.gradle.initialization.StartParameterBuildOptions.ContinueOption
 import org.gradle.integtests.fixtures.build.BuildTestFile
-import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 
 /**
  * Tests for composite build delegating to tasks in an included build that produce more than one failure.
@@ -55,6 +55,7 @@ class CompositeBuildContinueOnMultipleFailuresIntegrationTest extends AbstractCo
         }
     }
 
+    @ToBeFixedForIsolatedProjects(because = "cross-build configuration in composite build")
     def "can collect build failures from multiple included builds"() {
         when:
         includedBuilds << buildB << buildC << buildD
@@ -69,19 +70,20 @@ class CompositeBuildContinueOnMultipleFailuresIntegrationTest extends AbstractCo
         fails(buildA, 'testAll', [CONTINUE_COMMAND_LINE_OPTION])
 
         then:
-        !errorOutput.contains('Multiple build failures')
         assertTaskExecuted(':buildB', ':test')
         assertTaskExecuted(':buildC', ':sub1:test')
         assertTaskExecuted(':buildC', ':sub2:test')
         assertTaskExecuted(':buildC', ':sub3:test')
         assertTaskExecuted(':buildD', ':test')
-        assertTaskExecutionFailureMessage(errorOutput, 1, ':buildB:test')
-        assertTaskExecutionFailureMessage(errorOutput, 2, ':buildC:sub1:test')
-        assertTaskExecutionFailureMessage(errorOutput, 3, ':buildC:sub2:test')
-        assertTaskExecutionFailureMessage(errorOutput, 4, ':buildC:sub3:test')
-        assertTaskExecutionFailureMessage(errorOutput, 5, ':buildD:test')
+        failure.assertHasFailures(5)
+        failure.assertHasDescription("Execution failed for task ':buildB:test'.")
+        failure.assertHasDescription("Execution failed for task ':buildC:sub1:test'.")
+        failure.assertHasDescription("Execution failed for task ':buildC:sub2:test'.")
+        failure.assertHasDescription("Execution failed for task ':buildC:sub3:test'.")
+        failure.assertHasDescription("Execution failed for task ':buildD:test'.")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "cross-build configuration in composite build")
     def "can collect build failure in root and included build"() {
         when:
         includedBuilds << buildC
@@ -101,15 +103,15 @@ class CompositeBuildContinueOnMultipleFailuresIntegrationTest extends AbstractCo
         fails(buildA, 'testAll', [CONTINUE_COMMAND_LINE_OPTION])
 
         then:
-        !errorOutput.contains('Multiple build failures')
         assertTaskExecuted(':', ':test')
         assertTaskExecuted(':buildC', ':sub1:test')
         assertTaskExecuted(':buildC', ':sub2:test')
         assertTaskExecuted(':buildC', ':sub3:test')
-        assertTaskExecutionFailureMessage(errorOutput, 1, ':test')
-        assertTaskExecutionFailureMessage(errorOutput, 2, ':buildC:sub1:test')
-        assertTaskExecutionFailureMessage(errorOutput, 3, ':buildC:sub2:test')
-        assertTaskExecutionFailureMessage(errorOutput, 4, ':buildC:sub3:test')
+        failure.assertHasFailures(4)
+        failure.assertHasDescription("Execution failed for task ':test'.")
+        failure.assertHasDescription("Execution failed for task ':buildC:sub1:test'.")
+        failure.assertHasDescription("Execution failed for task ':buildC:sub2:test'.")
+        failure.assertHasDescription("Execution failed for task ':buildC:sub3:test'.")
     }
 
     private String javaProject() {
@@ -124,7 +126,7 @@ class CompositeBuildContinueOnMultipleFailuresIntegrationTest extends AbstractCo
     static String junitDependency() {
         """
             dependencies {
-                testCompile 'junit:junit:4.12'
+                testImplementation 'junit:junit:4.13'
             }
         """
     }
@@ -133,13 +135,13 @@ class CompositeBuildContinueOnMultipleFailuresIntegrationTest extends AbstractCo
         """
             import org.junit.Test;
             import static org.junit.Assert.assertTrue;
-            
+
             public class $className {
                 @Test
                 public void testSuccess() {
                     assertTrue(true);
                 }
-            
+
                 @Test
                 public void testFailure() {
                     throw new RuntimeException("Failure!");
@@ -148,12 +150,4 @@ class CompositeBuildContinueOnMultipleFailuresIntegrationTest extends AbstractCo
         """
     }
 
-    static void assertTaskExecutionFailureMessage(String errorOutput, int errorNumber, String taskPath) {
-        //do not assert order in parallel execution
-        String errorNumberString = GradleContextualExecuter.parallel? '' : errorNumber
-        assert errorOutput.contains("""$errorNumberString: Task failed with an exception.
------------
-* What went wrong:
-Execution failed for task '$taskPath'.""")
-    }
 }

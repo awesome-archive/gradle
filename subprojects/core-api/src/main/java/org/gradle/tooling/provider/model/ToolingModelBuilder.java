@@ -16,8 +16,8 @@
 
 package org.gradle.tooling.provider.model;
 
-import org.gradle.api.Incubating;
 import org.gradle.api.Project;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Responsible for building tooling models to return to the tooling API client.
@@ -34,14 +34,17 @@ import org.gradle.api.Project;
  *
  * <p>Although it is not enforced, the model object should be immutable, as the tooling API will do some caching and other performance optimizations on the
  * assumption that the model is effectively immutable. The tooling API does not make any guarantees about how the client application will use the model object.</p>
+ *
+ * <p>Plugins can register their own tooling model builder implementations using {@link ToolingModelBuilderRegistry}.</p>
+ * @since 1.6
  */
-@Incubating
 public interface ToolingModelBuilder {
     /**
      * Indicates whether this builder can construct the given model.
      *
      * @param modelName The model name, usually the same as the name of the Java interface used by the client.
      * @return true if this builder can construct the model, false if not.
+     * @since 1.6
      */
     boolean canBuild(String modelName);
 
@@ -50,7 +53,9 @@ public interface ToolingModelBuilder {
      *
      * @param modelName The model name, usually the same as the name of the Java interface used by the client.
      * @param project The project to create the model for.
-     * @return The model.
+     * @return The model, or null if not available.
+     * @since 1.6
      */
+    @Nullable
     Object buildAll(String modelName, Project project);
 }

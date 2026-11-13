@@ -17,23 +17,28 @@
 package org.gradle.internal.scopeids;
 
 import org.gradle.cache.FileLockManager;
-import org.gradle.cache.internal.CacheScopeMapping;
-import org.gradle.initialization.layout.ProjectCacheDir;
+import org.gradle.cache.scopes.BuildTreeScopedCacheBuilderFactory;
+import org.gradle.cache.scopes.GlobalScopedCacheBuilderFactory;
+import org.gradle.internal.file.Chmod;
 import org.gradle.internal.id.UniqueId;
-import org.gradle.internal.nativeintegration.filesystem.Chmod;
+import org.gradle.internal.service.PrivateService;
+import org.gradle.internal.service.Provides;
+import org.gradle.internal.service.ServiceRegistrationProvider;
 
-@SuppressWarnings("unused")
-public class ScopeIdsServices {
+public class ScopeIdsServices implements ServiceRegistrationProvider {
 
-    protected PersistentScopeIdLoader createPersistentScopeIdLoader(
-        ProjectCacheDir projectCacheDir,
-        CacheScopeMapping cacheScopeMapping,
+    @Provides
+    PersistentScopeIdLoader createPersistentScopeIdLoader(
+        GlobalScopedCacheBuilderFactory globalScopedCacheBuilderFactory,
+        BuildTreeScopedCacheBuilderFactory buildTreeScopedCacheBuilderFactory,
         PersistentScopeIdStoreFactory persistentScopeIdStoreFactory
     ) {
-        return new DefaultPersistentScopeIdLoader(projectCacheDir, cacheScopeMapping, persistentScopeIdStoreFactory, UniqueId.factory());
+        return new DefaultPersistentScopeIdLoader(globalScopedCacheBuilderFactory, buildTreeScopedCacheBuilderFactory, persistentScopeIdStoreFactory, UniqueId.factory());
     }
 
-    protected PersistentScopeIdStoreFactory createPersistentScopeIdStoreFactory(
+    @Provides
+    @PrivateService
+    PersistentScopeIdStoreFactory createPersistentScopeIdStoreFactory(
         FileLockManager fileLockManager,
         Chmod chmod
     ) {

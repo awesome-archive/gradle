@@ -16,62 +16,16 @@
 
 package org.gradle.initialization
 
-import org.gradle.StartParameter
+import org.gradle.api.InvalidUserDataException
 import org.gradle.api.Project
 import org.gradle.api.UnknownProjectException
-import org.gradle.api.initialization.dsl.ScriptHandler
-import org.gradle.api.internal.AsmBackedClassGenerator
-import org.gradle.api.internal.FeaturePreviews
-import org.gradle.api.internal.GradleInternal
-import org.gradle.api.internal.file.FileResolver
-import org.gradle.api.internal.initialization.ClassLoaderScope
-import org.gradle.api.internal.initialization.ScriptHandlerFactory
-import org.gradle.api.internal.plugins.DefaultPluginManager
-import org.gradle.configuration.ScriptPluginFactory
-import org.gradle.groovy.scripts.ScriptSource
-import org.gradle.internal.service.ServiceRegistry
-import org.gradle.internal.service.scopes.ServiceRegistryFactory
-import spock.lang.Specification
+import org.gradle.api.initialization.Settings
+import org.gradle.api.internal.FeaturePreviewsActivationFixture
 
-import static org.gradle.api.internal.FeaturePreviews.Feature.GRADLE_METADATA
-
-class DefaultSettingsTest extends Specification {
-
-    AsmBackedClassGenerator classGenerator = new AsmBackedClassGenerator()
-    File settingsDir = new File('/somepath/root').absoluteFile
-    StartParameter startParameter = new StartParameter(currentDir: new File(settingsDir, 'current'), gradleUserHomeDir: new File('gradleUserHomeDir'))
-    ClassLoaderScope rootClassLoaderScope = Mock(ClassLoaderScope)
-    ClassLoaderScope classLoaderScope = Mock(ClassLoaderScope)
-    ScriptSource scriptSourceMock = Mock(ScriptSource)
-    GradleInternal gradleMock = Mock(GradleInternal)
-    ProjectDescriptorRegistry projectDescriptorRegistry = new DefaultProjectDescriptorRegistry()
-    ServiceRegistryFactory serviceRegistryFactory
-    FileResolver fileResolver = Mock(FileResolver)
-    ScriptPluginFactory scriptPluginFactory = Mock(ScriptPluginFactory)
-    ScriptHandlerFactory scriptHandlerFactory = Mock(ScriptHandlerFactory)
-    ScriptHandler settingsScriptHandler = Mock(ScriptHandler)
-    DefaultPluginManager pluginManager = Mock(DefaultPluginManager)
-    FeaturePreviews previews = new FeaturePreviews()
-    DefaultSettings settings
+class DefaultSettingsTest extends DefaultSettingsCommonTest {
 
     def setup() {
-        fileResolver.resolve(_) >> { args -> args[0].canonicalFile }
-
-        def settingsServices = Mock(ServiceRegistry)
-        settingsServices.get(FileResolver) >> fileResolver
-        settingsServices.get(ScriptPluginFactory) >> scriptPluginFactory
-        settingsServices.get(ScriptHandlerFactory) >> scriptHandlerFactory
-        settingsServices.get(ProjectDescriptorRegistry) >> projectDescriptorRegistry
-        settingsServices.get(FeaturePreviews) >> previews
-        settingsServices.get(DefaultPluginManager) >>> [pluginManager, null]
-
-        serviceRegistryFactory = Mock(ServiceRegistryFactory) {
-           1 * createFor(_) >> settingsServices
-        }
-
-        settings = classGenerator.newInstance(DefaultSettings.class, serviceRegistryFactory,
-                gradleMock, classLoaderScope, rootClassLoaderScope, settingsScriptHandler,
-                settingsDir, scriptSourceMock, startParameter)
+        createSettings()
     }
 
     def 'is wired properly'() {
@@ -113,15 +67,18 @@ class DefaultSettingsTest extends Specification {
         String projectB = "b"
 
         when:
-        settings.includeFlat([projectA, projectB] as String[])
+        includeFlat(settings, projectA, projectB)
 
         then:
         settings.rootProject.children.size() == 2
         testDescriptor(settings.project(":" + projectA), projectA, new File(settingsDir.parentFile, projectA))
         testDescriptor(settings.project(":" + projectB), projectB, new File(settingsDir.parentFile, projectB))
+
+        where:
+        includeFlat << [{ Settings settings, String p1, String p2 -> settings.includeFlat([p1, p2] as String[]) }, { Settings settings, String p1, String p2 -> settings.includeFlat([p1, p2]) }]
     }
 
-    void testDescriptor(DefaultProjectDescriptor descriptor, String name, File projectDir) {
+    void testDescriptor(ProjectDescriptorInternal descriptor, String name, File projectDir) {
         assert name == descriptor.getName()
         assert projectDir == descriptor.getProjectDir()
     }
@@ -131,7 +88,7 @@ class DefaultSettingsTest extends Specification {
         File testDir = new File("testDir")
 
         when:
-        DefaultProjectDescriptor projectDescriptor = settings.createProjectDescriptor(settings.getRootProject(), testName, testDir)
+        ProjectDescriptorInternal projectDescriptor = settings.createProjectDescriptor(settings.getRootProject(), testName, testDir)
 
         then:
         settings.rootProject.is(projectDescriptor.parent)
@@ -141,20 +98,20 @@ class DefaultSettingsTest extends Specification {
     }
 
     def 'can find project by path'() {
-        DefaultProjectDescriptor projectDescriptor = createTestDescriptor()
+        ProjectDescriptorInternal projectDescriptor = createTestDescriptor()
 
         when:
-        DefaultProjectDescriptor foundProjectDescriptor = settings.project(projectDescriptor.path)
+        ProjectDescriptorInternal foundProjectDescriptor = settings.project(projectDescriptor.path)
 
         then:
         foundProjectDescriptor.is(projectDescriptor)
     }
 
     def 'can find project by directory'() {
-        DefaultProjectDescriptor projectDescriptor = createTestDescriptor()
+        ProjectDescriptorInternal projectDescriptor = createTestDescriptor()
 
         when:
-        DefaultProjectDescriptor foundProjectDescriptor = settings.project(projectDescriptor.projectDir)
+        ProjectDescriptorInternal foundProjectDescriptor = settings.project(projectDescriptor.projectDir)
 
         then:
         foundProjectDescriptor.is(projectDescriptor)
@@ -177,7 +134,7 @@ class DefaultSettingsTest extends Specification {
         thrown(UnknownProjectException)
     }
 
-    private DefaultProjectDescriptor createTestDescriptor() {
+    private ProjectDescriptorInternal createTestDescriptor() {
         String testName = "testname"
         File testDir = new File("testDir")
         return settings.createProjectDescriptor(settings.rootProject, testName, testDir)
@@ -189,6 +146,14 @@ class DefaultSettingsTest extends Specification {
 
         then:
         settings.dynamicProp == 'value'
+    }
+
+    def 'can get and set dynamic properties on extension'() {
+        when:
+        settings.extensions.dynamicProperty = 'valued'
+
+        then:
+        settings.dynamicProperty == 'valued'
     }
 
     def 'fails on missing property'() {
@@ -204,11 +169,34 @@ class DefaultSettingsTest extends Specification {
         settings.toString() == 'settings \'root\''
     }
 
-    def 'can enable feature preview'() {
+    def "can enable feature preview for #feature"() {
         when:
-        settings.enableFeaturePreview("GRADLE_METADATA")
+        settings.enableFeaturePreview(feature.name())
+        then:
+        1 * previews.enable(feature)
+        where:
+        feature << FeaturePreviewsActivationFixture.activeFeatures()
+    }
+
+    def 'fails when enabling an unknown feature'() {
+        when:
+        settings.enableFeaturePreview('UNKNOWN_FEATURE')
+        then:
+        IllegalArgumentException exception = thrown()
+        exception.getMessage() == 'There is no feature named UNKNOWN_FEATURE'
+    }
+
+    def cannotLocateProjectsWithAmbiguousProjectDir() {
+        settings.include(":foo")
+        settings.include(":bar")
+        settings.project(":bar").projectDir = settings.project(":foo").projectDir
+
+        when:
+        settings.project(settings.project(":foo").projectDir)
 
         then:
-        previews.isFeatureEnabled(GRADLE_METADATA)
+        def e = thrown(InvalidUserDataException)
+        e.message.startsWith("Found multiple projects with project directory ")
     }
+
 }

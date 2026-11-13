@@ -28,12 +28,11 @@ import static org.gradle.internal.FileUtils.canonicalize
 class BuildLayoutParametersTest extends Specification {
 
     @Rule SetSystemProperties props = new SetSystemProperties()
-    @Rule TestNameTestDirectoryProvider temp = new TestNameTestDirectoryProvider()
+    @Rule TestNameTestDirectoryProvider temp = new TestNameTestDirectoryProvider(getClass())
 
     def "has reasonable defaults"() {
         expect:
         def params = new BuildLayoutParameters()
-        params.searchUpwards
         params.gradleUserHomeDir == canonicalize(BuildLayoutParameters.DEFAULT_GRADLE_USER_HOME)
         params.currentDir == canonicalize(SystemProperties.instance.getCurrentDir())
         params.projectDir == null

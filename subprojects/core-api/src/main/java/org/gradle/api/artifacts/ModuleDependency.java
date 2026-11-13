@@ -19,20 +19,33 @@ import groovy.lang.Closure;
 import groovy.lang.DelegatesTo;
 import org.gradle.api.Action;
 import org.gradle.api.Incubating;
+import org.gradle.api.artifacts.capability.CapabilitySelector;
+import org.gradle.api.attributes.AttributeContainer;
+import org.gradle.api.attributes.HasConfigurableAttributes;
+import org.gradle.api.capabilities.Capability;
+import org.gradle.declarative.dsl.model.annotations.Adding;
+import org.gradle.declarative.dsl.model.annotations.HiddenInDefinition;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 import static groovy.lang.Closure.DELEGATE_FIRST;
 
 /**
- * A {@code ModuleDependency} is a {@link org.gradle.api.artifacts.Dependency} on a module outside the current project.
- *
+ * A {@code ModuleDependency} is a {@link org.gradle.api.artifacts.Dependency} on a component that exists
+ * outside of the current project.
  * <p>
- * For examples on configuring the exclude rules please refer to {@link #exclude(java.util.Map)}.
+ * Modules can supply {@link ModuleDependency#getArtifacts() multiple artifacts} in addition to the
+ * {@link #addArtifact(DependencyArtifact) implicit default artifact}.  Non-default artifacts
+ * available in a module can be selected by a consumer by specifying a classifier or extension
+ * when declaring a dependency on that module.
+ * <p>
+ * For examples on configuring exclude rules for modules please refer to {@link #exclude(java.util.Map)}.
+ * @since 0.7
  */
-public interface ModuleDependency extends Dependency {
+public interface ModuleDependency extends Dependency, HasConfigurableAttributes<ModuleDependency> {
     /**
      * Adds an exclude rule to exclude transitive dependencies of this dependency.
      * <p>
@@ -42,7 +55,7 @@ public interface ModuleDependency extends Dependency {
      * might pull in exactly the same transitive dependency.
      * To guarantee that the transitive dependency is excluded from the entire configuration
      * please use per-configuration exclude rules: {@link Configuration#getExcludeRules()}.
-     * In fact, in majority of cases the actual intention of configuring per-dependency exclusions
+     * In fact, in a majority of cases the actual intention of configuring per-dependency exclusions
      * is really excluding a dependency from the entire configuration (or classpath).
      * <p>
      * If your intention is to exclude a particular transitive dependency
@@ -50,10 +63,12 @@ public interface ModuleDependency extends Dependency {
      * then consider using forced versions' feature: {@link ResolutionStrategy#force(Object...)}.
      *
      * <pre class='autoTested'>
-     * apply plugin: 'java' //so that I can declare 'compile' dependencies
+     * plugins {
+     *     id 'java' // so that I can declare 'implementation' dependencies
+     * }
      *
      * dependencies {
-     *   compile('org.hibernate:hibernate:3.1') {
+     *   implementation('org.hibernate:hibernate:3.1') {
      *     //excluding a particular transitive dependency:
      *     exclude module: 'cglib' //by artifact name
      *     exclude group: 'org.jmock' //by group
@@ -64,20 +79,35 @@ public interface ModuleDependency extends Dependency {
      *
      * @param excludeProperties the properties to define the exclude rule.
      * @return this
+     * @since 0.7
      */
+    @Adding // Workaround for configuring excludes in DCL. Should be removed once we have a better model.
     ModuleDependency exclude(Map<String, String> excludeProperties);
 
     /**
      * Returns the exclude rules for this dependency.
      *
      * @see #exclude(java.util.Map)
+     * @since 0.7
      */
+    @HiddenInDefinition
     Set<ExcludeRule> getExcludeRules();
 
     /**
      * Returns the artifacts belonging to this dependency.
+     * <p>
+     * Initially, a dependency has no artifacts, so this can return an empty set.  Typically, however, a producer
+     * project will add a single artifact to a module, which will be represented in this collection via a
+     * single element.  But this is <strong>NOT</strong> always true.  Modules can use
+     * custom classifiers or extensions to distinguish multiple artifacts that they contain.
+     * <p>
+     * In general, projects publishing using Gradle should favor supplying multiple artifacts by supplying
+     * multiple variants, each containing a different artifact, that are selectable through variant-aware
+     * dependency resolution.  This mechanism where a module contains multiple artifacts is primarily
+     * intended to support dependencies on non-Gradle-published components.
      *
      * @see #addArtifact(DependencyArtifact)
+     * @since 0.7
      */
     Set<DependencyArtifact> getArtifacts();
 
@@ -85,11 +115,13 @@ public interface ModuleDependency extends Dependency {
      * <p>Adds an artifact to this dependency.</p>
      *
      * <p>If no artifact is added to a dependency, an implicit default artifact is used. This default artifact has the
-     * same name as the module and its type and extension is <em>jar</em>. If at least one artifact is explicitly added,
+     * same name as the module and its type and extension is {@code jar}. If at least one artifact is explicitly added,
      * the implicit default artifact won't be used any longer.</p>
      *
      * @return this
+     * @since 0.7
      */
+    @HiddenInDefinition
     ModuleDependency addArtifact(DependencyArtifact artifact);
 
     /**
@@ -97,11 +129,15 @@ public interface ModuleDependency extends Dependency {
      * org.gradle.api.artifacts.DependencyArtifact} instance, which it can configure.</p>
      *
      * <p>If no artifact is added to a dependency, an implicit default artifact is used. This default artifact has the
-     * same name as the module and its type and extension is <em>jar</em>. If at least one artifact is explicitly added,
+     * same name as the module and its type and extension is {@code jar}. If at least one artifact is explicitly added,
      * the implicit default artifact won't be used any longer.</p>
      *
-     * @return this
+     * @return the added artifact
+     *
+     * @see DependencyArtifact
+     * @since 0.9
      */
+    @HiddenInDefinition
     DependencyArtifact artifact(@DelegatesTo(value = DependencyArtifact.class, strategy = DELEGATE_FIRST) Closure configureClosure);
 
     /**
@@ -109,19 +145,23 @@ public interface ModuleDependency extends Dependency {
      * org.gradle.api.artifacts.DependencyArtifact} instance, which it can configure.</p>
      *
      * <p>If no artifact is added to a dependency, an implicit default artifact is used. This default artifact has the
-     * same name as the module and its type and extension is <em>jar</em>. If at least one artifact is explicitly added,
+     * same name as the module and its type and extension is {@code jar}. If at least one artifact is explicitly added,
      * the implicit default artifact won't be used any longer.</p>
      *
-     * @return this
+     * @return the added artifact
+     *
+     * @see DependencyArtifact
      *
      * @since 3.1
      */
+    @HiddenInDefinition
     DependencyArtifact artifact(Action<? super DependencyArtifact> configureAction);
 
     /**
      * Returns whether this dependency should be resolved including or excluding its transitive dependencies.
      *
      * @see #setTransitive(boolean)
+     * @since 0.7
      */
     boolean isTransitive();
 
@@ -132,28 +172,124 @@ public interface ModuleDependency extends Dependency {
      *
      * @param transitive Whether transitive dependencies should be resolved.
      * @return this
+     * @since 0.7
      */
     ModuleDependency setTransitive(boolean transitive);
 
     /**
-     * Returns the requested target configuration of this dependency. This is the name of the configuration in the target module that should be used when
-     * selecting the matching configuration. If {@code null}, a default configuration should be used.
+     * Returns the requested target configuration of this dependency.
+     * <p>
+     * If non-null, this overrides variant-aware dependency resolution and selects the
+     * variant in the target component matching the requested configuration name.
+     * @since 3.2
      */
+    @HiddenInDefinition
     @Nullable
     String getTargetConfiguration();
 
     /**
-     * Sets the requested target configuration of this dependency. This is the name of the configuration in the target module that should be used when
-     * selecting the matching configuration. If {@code null}, a default configuration will be used.
+     * Sets the requested target configuration of this dependency.
+     * <p>
+     * This overrides variant-aware dependency resolution and selects the variant in the
+     * target component matching the requested configuration name.
+     * <p>
+     * Using this method is <strong>discouraged</strong> except for selecting
+     * configurations from Ivy components.
      *
      * @since 4.0
      */
-    @Incubating
     void setTargetConfiguration(@Nullable String name);
 
     /**
      * {@inheritDoc}
      */
+    @HiddenInDefinition
+    @Override
     ModuleDependency copy();
 
+    /**
+     * Returns the attributes for this dependency. Mutation of the attributes of a dependency must be done through
+     * the {@link #attributes(Action)} method.
+     *
+     * @return the attributes container for this dependency
+     *
+     * @since 4.8
+     */
+    @HiddenInDefinition
+    @Override
+    AttributeContainer getAttributes();
+
+    /**
+     * Mutates the attributes of this dependency. Attributes are used during dependency resolution to select the appropriate
+     * target variant, in particular when a single component provides different variants.
+     *
+     * @param configureAction the attributes mutation action
+     * @return this
+     *
+     * @since 4.8
+     */
+    @HiddenInDefinition
+    @Override
+    ModuleDependency attributes(Action<? super AttributeContainer> configureAction);
+
+    /**
+     * Configures the requested capabilities of this dependency.
+     *
+     * @param configureAction the configuration action
+     * @return this
+     *
+     * @since 5.3
+     */
+    @HiddenInDefinition
+    ModuleDependency capabilities(Action<? super ModuleDependencyCapabilitiesHandler> configureAction);
+
+    /**
+     * Returns the explicitly requested capabilities for this dependency.
+     * <p>
+     * Prefer {@link #getCapabilitySelectors()}. This method is not Isolated Projects compatible.
+     *
+     * @return An immutable view of all explicitly requested capabilities. Updates must be done calling {@link #capabilities(Action)}.
+     *
+     * @since 5.3
+     */
+    @HiddenInDefinition
+    List<Capability> getRequestedCapabilities();
+
+    /**
+     * Returns the set of capabilities that are requested for this dependency
+     *
+     * @return A view of all requested capabilities. Updates must be done calling {@link #capabilities(Action)}.
+     *
+     * @since 8.11
+     */
+    @HiddenInDefinition
+    @Incubating
+    Set<CapabilitySelector> getCapabilitySelectors();
+
+    /**
+     * Endorse version constraints with {@link VersionConstraint#getStrictVersion()} strict versions} from the target module.
+     *
+     * Endorsing strict versions of another module/platform means that all strict versions will be interpreted during dependency
+     * resolution as if they were defined by the endorsing module itself.
+     *
+     * @since 6.0
+     */
+    @HiddenInDefinition
+    void endorseStrictVersions();
+
+    /**
+     * Resets the {@link #isEndorsingStrictVersions()} state of this dependency.
+     *
+     * @since 6.0
+     */
+    @HiddenInDefinition
+    void doNotEndorseStrictVersions();
+
+    /**
+     * Are the {@link VersionConstraint#getStrictVersion()} strict version} dependency constraints of the target module endorsed?
+     *
+     * @since 6.0
+     */
+    @HiddenInDefinition
+    boolean isEndorsingStrictVersions();
 }

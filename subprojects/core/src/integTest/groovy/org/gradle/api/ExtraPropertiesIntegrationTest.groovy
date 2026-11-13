@@ -18,19 +18,26 @@ package org.gradle.api
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.build.BuildTestFile
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 import spock.lang.Issue
 
 class ExtraPropertiesIntegrationTest extends AbstractIntegrationSpec {
 
+    @ToBeFixedForIsolatedProjects(because = "Cross-project configuration")
     def 'extra properties are inherited to child and grandchild projects'() {
         given:
         extraPropertiesMultiBuild()
+        expectParentPropertyAccessDeprecation('testProp', ':a', "root project 'extra-properties'")
+        expectParentPropertyAccessDeprecation('testProp', ':b', "root project 'extra-properties'")
+        // The property is declared on the root project only, so the grandchild's lookup is attributed to the root
+        expectParentPropertyAccessDeprecation('testProp', ':a:a1', "root project 'extra-properties'")
 
         expect:
         succeeds checkTestPropTasks()
     }
 
     @Issue('GRADLE-3530')
+    @ToBeFixedForIsolatedProjects(because = "Cross-project configuration")
     def 'extra properties can be overridden on child projects'() {
         given:
         extraPropertiesMultiBuild('a': 'aValue', 'a:a1': 'aValue') {
@@ -40,36 +47,49 @@ class ExtraPropertiesIntegrationTest extends AbstractIntegrationSpec {
                 }
             """.stripIndent()
         }
+        expectParentPropertyAccessDeprecation('testProp', ':b', "root project 'extra-properties'")
+        expectParentPropertyAccessDeprecation('testProp', ':a:a1', "project ':a'")
 
         expect:
         succeeds checkTestPropTasks()
     }
 
+    private void expectParentPropertyAccessDeprecation(String propertyName, String childPath, String parentDisplayName) {
+        executer.expectDocumentedDeprecationWarning("Implicit lookup of properties in parent projects has been deprecated. " +
+            "This will fail with an error in Gradle 10. " +
+            "Property '${propertyName}' was not declared in project '${childPath}' and was resolved from ${parentDisplayName}. " +
+            "Consult the upgrading guide for further information: " +
+            "https://docs.gradle.org/current/userguide/upgrading_version_9.html#deprecated_implicit_lookup_in_parent_projects")
+    }
+
     BuildTestFile extraPropertiesMultiBuild(Map expectedPropPerProject = [:], @DelegatesTo(BuildTestFile) Closure configuration = {}) {
         expectedPropPerProject = [a: 'rootValue', b: 'rootValue', 'a:a1': 'rootValue'] + expectedPropPerProject
         def root = multiProjectBuild('extra-properties', ['a', 'b']) {
+            createDirs("a", "a/a1")
             settingsFile << "include ':a:a1'"
 
-            buildFile << """
+            buildFile """
                 ext.testProp = 'rootValue'
 
                 task checkTestProp {
+                    def testPropValue = provider { testProp }
                     doLast {
-                        assert testProp == 'rootValue'
+                        assert testPropValue.get() == 'rootValue'
                     }
                 }
-            """.stripIndent()
+            """
 
             ['a', 'b', 'a:a1'].each {
-                buildFile << """
-                project(':${it}') {
-                    task checkTestProp {
-                        doLast {
-                            assert testProp == '${expectedPropPerProject[it]}'
+                buildFile """
+                    project(':${it}') {
+                        task checkTestProp {
+                            def testPropValue = provider { testProp }
+                            doLast {
+                                assert testPropValue.get() == '${expectedPropPerProject[it]}'
+                            }
                         }
                     }
-                }
-            """.stripIndent()
+            """
             }
         }
         root.with(configuration)

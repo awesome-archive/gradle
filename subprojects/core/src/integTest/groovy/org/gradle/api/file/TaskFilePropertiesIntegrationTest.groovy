@@ -16,16 +16,19 @@
 
 package org.gradle.api.file
 
+import org.gradle.api.problems.Severity
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import spock.lang.Issue
 
 import static org.gradle.integtests.fixtures.executer.TaskOrderSpecs.any
 
 class TaskFilePropertiesIntegrationTest extends AbstractIntegrationSpec {
+
     def "task can use Path to represent input and output locations on annotated properties"() {
-        buildFile << """
+        buildFile """
             import java.nio.file.Path
             import java.nio.file.Files
-            
+
             class TransformTask extends DefaultTask {
                 @InputFile
                 Path inputFile
@@ -35,14 +38,14 @@ class TaskFilePropertiesIntegrationTest extends AbstractIntegrationSpec {
                 Path outputFile
                 @OutputDirectory
                 Path outputDir
-                
+
                 @TaskAction
                 def go() {
-                    outputFile.text = inputFile.text
-                    inputDir.toFile().listFiles().each { f -> outputDir.resolve(f.name).text = f.text }
+                    outputFile.toFile().text = inputFile.toFile().text
+                    inputDir.toFile().listFiles().each { f -> outputDir.resolve(f.name).toFile().text = f.text }
                 }
             }
-            
+
             task transform(type: TransformTask) {
                 inputFile = file("file1.txt").toPath()
                 inputDir = file("dir1").toPath()
@@ -71,7 +74,7 @@ class TaskFilePropertiesIntegrationTest extends AbstractIntegrationSpec {
         run("transform")
 
         then:
-        result.assertTasksNotSkipped(":transform")
+        result.assertTasksExecuted(":transform")
 
         when:
         run("transform")
@@ -84,14 +87,14 @@ class TaskFilePropertiesIntegrationTest extends AbstractIntegrationSpec {
         run("transform")
 
         then:
-        result.assertTasksNotSkipped(":transform")
+        result.assertTasksExecuted(":transform")
     }
 
     def "task can use Path to represent input and output locations on ad hoc properties"() {
-        buildFile << """
+        buildFile """
             import java.nio.file.Path
             import java.nio.file.Files
-            
+
             task transform {
                 def inputFile = file("file1.txt").toPath()
                 def inputDir = file("dir1").toPath()
@@ -99,13 +102,14 @@ class TaskFilePropertiesIntegrationTest extends AbstractIntegrationSpec {
                 def outputDir = file("build/dir1").toPath()
                 inputs.file(inputFile)
                 inputs.dir(inputDir)
+                inputs.files(Path.of("file1.txt")).withPropertyName("inputFiles")
                 outputs.file(outputFile)
                 outputs.dir(outputDir)
                 doLast {
                     Files.createDirectories(outputFile.parent)
                     Files.createDirectories(outputDir)
-                    outputFile.text = inputFile.text
-                    inputDir.toFile().listFiles().each { f -> outputDir.resolve(f.name).text = f.text }
+                    outputFile.toFile().text = inputFile.toFile().text
+                    inputDir.toFile().listFiles().each { f -> outputDir.resolve(f.name).toFile().text = f.text }
                 }
             }
 """
@@ -130,7 +134,7 @@ class TaskFilePropertiesIntegrationTest extends AbstractIntegrationSpec {
         run("transform")
 
         then:
-        result.assertTasksNotSkipped(":transform")
+        result.assertTasksExecuted(":transform")
 
         when:
         run("transform")
@@ -143,47 +147,172 @@ class TaskFilePropertiesIntegrationTest extends AbstractIntegrationSpec {
         run("transform")
 
         then:
-        result.assertTasksNotSkipped(":transform")
+        result.assertTasksExecuted(":transform")
     }
 
     def "task dependencies are inferred from contents of input FileCollection"() {
         // Include a configuration with transitive dep on a Jar and an unmanaged Jar.
-        file('settings.gradle') << 'include "a", "b"'
-        file('a/build.gradle') << '''
-configurations { compile }
-dependencies { compile project(path: ':b', configuration: 'archives') }
+        settingsFile 'include "a", "b"'
 
-task doStuff(type: InputTask) {
-    src = configurations.compile + fileTree('src/java')
-}
+        buildFile('a/build.gradle', '''
+            configurations.create("compile")
+            dependencies { compile project(path: ':b', configuration: 'producer') }
 
-class InputTask extends DefaultTask {
-    @InputFiles
-    def FileCollection src
-}
-'''
-        file('b/build.gradle') << '''
-apply plugin: 'base'
-task jar {
-    doLast {
-        file('b.jar').text = 'some jar'
-    }
-}
+            task doStuff(type: InputTask) {
+                src = configurations.compile + fileTree('src/java')
+            }
 
-task otherJar(type: Jar) {
-    destinationDir = buildDir
-}
+            class InputTask extends DefaultTask {
+                @InputFiles
+                def FileCollection src
+            }
+        ''')
+        buildFile('b/build.gradle', '''
+            apply plugin: 'base'
+            task jar {
+                def jarFile = file('b.jar')
+                doLast {
+                    jarFile.text = 'some jar'
+                }
+            }
 
-configurations { archives }
-dependencies { archives files('b.jar') { builtBy jar } }
-artifacts { archives otherJar }
-'''
+            task otherJar(type: Jar) {
+                destinationDirectory = buildDir
+            }
+
+            configurations {
+                create("deps")
+                consumable("producer") {
+                    extendsFrom deps
+                    outgoing.artifact(otherJar)
+                }
+            }
+            dependencies { deps files('b.jar') { builtBy jar } }
+        ''')
 
         when:
         run("doStuff")
 
         then:
-        result.assertTasksExecutedInOrder(any(':b:jar', ':b:otherJar'), ':a:doStuff')
+        result.assertTasksScheduledInOrder(any(':b:jar', ':b:otherJar'), ':a:doStuff')
     }
 
+    @Issue(["https://github.com/gradle/gradle/issues/38330", "https://github.com/gradle/gradle/issues/38410"])
+    def "optional runtime input declared via #description with an absent provider source is ignored"() {
+        buildFile """
+            task myTask {
+                $declaration
+
+                doLast {
+                    println("inputs = \${inputs.files.files}")
+                }
+            }
+        """
+
+        when:
+        run "myTask"
+
+        then:
+        executedAndNotSkipped(":myTask")
+        outputContains("inputs = []")
+
+        where:
+        description                    | declaration
+        "inputs.files(fileProperty)"   | 'inputs.files(objects.fileProperty()).optional().withPropertyName("inputProp")'
+        "inputs.files([fileProperty])" | 'inputs.files([objects.fileProperty()]).optional().withPropertyName("inputProp")'
+        "inputs.file(fileProperty)"    | 'inputs.file(objects.fileProperty()).optional().withPropertyName("inputProp")'
+        "inputs.property(property)"    | 'inputs.property("inputProp", objects.property(String)).optional(true)'
+    }
+
+    @Issue(["https://github.com/gradle/gradle/issues/38330", "https://github.com/gradle/gradle/issues/38410"])
+    def "required runtime input declared via #description with an absent provider source fails"() {
+        buildFile """
+            task myTask {
+                $declaration
+
+                doLast {
+                    println("inputs = \${inputs.files.files}")
+                }
+            }
+        """
+
+        enableProblemsApiCheck()
+
+        when:
+        fails "myTask"
+
+        then:
+        failure.assertHasDescription("A problem was found with the configuration of task ':myTask' (type 'DefaultTask').")
+        verifyAll(receivedProblem) {
+            severity == Severity.ERROR
+            fqid == 'Gradle:Build Definition:Value not set'
+            definition.id.displayName == 'Value not set'
+            contextualLabel == "Property 'inputProp' doesn't have a configured value"
+            solutions == [
+                configurable
+                    ? "Assign a value to 'inputProp'"
+                    : "The value of 'inputProp' is calculated, make sure a valid value can be calculated",
+                "Mark property 'inputProp' as optional"
+            ]
+        }
+
+        where:
+        description                                | declaration                                                                                  | configurable
+        "inputs.files(fileProperty)"               | 'inputs.files(objects.fileProperty()).withPropertyName("inputProp")'                         | true
+        "inputs.files([fileProperty])"             | 'inputs.files([objects.fileProperty()]).withPropertyName("inputProp")'                       | true
+        "inputs.files(fileProperty, fileProperty)" | 'inputs.files(objects.fileProperty(), objects.fileProperty()).withPropertyName("inputProp")' | true
+        "inputs.files(file, fileProperty)"         | 'inputs.files(file("input.txt"), objects.fileProperty()).withPropertyName("inputProp")'      | true
+        "inputs.files(provider)"                   | 'inputs.files(providers.provider { null }).withPropertyName("inputProp")'                    | false
+        "inputs.files([provider])"                 | 'inputs.files([providers.provider { null }]).withPropertyName("inputProp")'                  | false
+        "inputs.file(fileProperty)"                | 'inputs.file(objects.fileProperty()).withPropertyName("inputProp")'                          | true
+        "inputs.property(property)"                | 'inputs.property("inputProp", objects.property(String))'                                     | true
+    }
+
+    @Issue("https://github.com/gradle/gradle/issues/38410")
+    def "required annotated InputFiles with an absent provider in a list fails"() {
+        buildFile """
+            import org.gradle.api.model.ObjectFactory
+
+            class AnnotatedInputFilesTask extends DefaultTask {
+                private final RegularFileProperty absentProvider
+
+                @javax.inject.Inject
+                AnnotatedInputFilesTask(ObjectFactory objects) {
+                    absentProvider = objects.fileProperty()
+                }
+
+                @InputFiles
+                @PathSensitive(PathSensitivity.ABSOLUTE)
+                List<Object> getInputProp() {
+                    [absentProvider]
+                }
+
+                @TaskAction
+                void executeTask() {
+                    println("input action executed")
+                }
+            }
+
+            tasks.register("myTask", AnnotatedInputFilesTask)
+        """
+
+        enableProblemsApiCheck()
+
+        when:
+        fails "myTask"
+
+        then:
+        failure.assertHasDescription("A problem was found with the configuration of task ':myTask' (type 'AnnotatedInputFilesTask').")
+        outputDoesNotContain("input action executed")
+        verifyAll(receivedProblem) {
+            severity == Severity.ERROR
+            fqid == 'Gradle:Build Definition:Value not set'
+            definition.id.displayName == 'Value not set'
+            contextualLabel.endsWith("'inputProp' doesn't have a configured value")
+            solutions == [
+                "Assign a value to 'inputProp'",
+                "Mark property 'inputProp' as optional"
+            ]
+        }
+    }
 }

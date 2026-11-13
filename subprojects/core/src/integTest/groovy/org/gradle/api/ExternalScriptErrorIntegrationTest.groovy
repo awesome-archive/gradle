@@ -14,9 +14,11 @@
  * limitations under the License.
  */
 package org.gradle.api
+import org.gradle.api.problems.LineInFileLocation
+import org.gradle.api.problems.Severity
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 
-import static org.hamcrest.Matchers.containsString
+import static org.hamcrest.CoreMatchers.containsString
 
 class ExternalScriptErrorIntegrationTest extends AbstractIntegrationSpec {
     def externalScript
@@ -45,16 +47,29 @@ doStuff()
     }
 
     def "produces reasonable error message when external script fails on compilation"() {
+        given:
+        enableProblemsApiCheck()
         externalScript << 'import org.gradle()'
 
         when:
         fails()
 
         then:
-        failure.assertHasDescription("Could not compile script '$externalScript'.")
-                .assertThatCause(containsString("script '${externalScript}': 1: unexpected token: ("))
+        failureDescriptionContains("Could not compile script '$externalScript'.")
+        failure.assertThatCause(containsString("script '${externalScript}': 1: Unexpected input: '(' @ line 1, column 18."))
                 .assertHasFileName("Script '$externalScript'")
                 .assertHasLineNumber(1)
+        verifyAll(receivedProblem(0)) {
+            severity == Severity.ERROR
+            fqid == 'Gradle:DSL Evaluation:Script compilation failed'
+            definition.id.displayName == 'Script compilation failed'
+            contextualLabel == "Could not compile script '$externalScript'."
+            details == null
+            definition.documentationLink == null
+            solutions == []
+            oneLocation(LineInFileLocation).path == externalScript.absolutePath
+            additionalData.asMap == [:]
+        }
     }
 
     def "reports missing script"() {
@@ -80,10 +95,9 @@ task doStuff {
         fails 'doStuff'
 
         then:
-        failure.assertHasDescription('Execution failed for task \':doStuff\'.')
+        failure.assertHasDescription('Execution failed for task \':doStuff\' (registered in script \'other.gradle\').')
                 .assertHasCause('fail')
                 .assertHasFileName("Script '${externalScript}'")
                 .assertHasLineNumber(4)
     }
 }
-

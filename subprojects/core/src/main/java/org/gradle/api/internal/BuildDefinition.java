@@ -17,29 +17,76 @@
 package org.gradle.api.internal;
 
 import org.gradle.StartParameter;
-import org.gradle.plugin.management.internal.DefaultPluginRequests;
+import org.gradle.api.Action;
+import org.gradle.api.artifacts.DependencySubstitutions;
+import org.gradle.internal.Actions;
+import org.gradle.internal.build.PublicBuildPath;
+import org.gradle.internal.service.scopes.Scope;
+import org.gradle.internal.service.scopes.ServiceScope;
 import org.gradle.plugin.management.internal.PluginRequests;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.io.File;
 
+@ServiceScope(Scope.Build.class)
 public class BuildDefinition {
+    @Nullable
+    private final String name;
+    @Nullable
     private final File buildRootDir;
-    private final StartParameter startParameter;
+    private final StartParameterInternal startParameter;
     private final PluginRequests injectedSettingsPlugins;
+    private final Action<? super DependencySubstitutions> dependencySubstitutions;
+    private final PublicBuildPath fromBuild;
+    private final boolean pluginBuild;
 
-    public BuildDefinition(@Nullable File buildRootDir, StartParameter startParameter, PluginRequests injectedSettingsPlugins) {
+    private BuildDefinition(
+        @Nullable String name,
+        @Nullable File buildRootDir,
+        StartParameterInternal startParameter,
+        PluginRequests injectedSettingsPlugins,
+        Action<? super DependencySubstitutions> dependencySubstitutions,
+        @Nullable
+        PublicBuildPath fromBuild,
+        boolean pluginBuild) {
+        this.name = name;
         this.buildRootDir = buildRootDir;
         this.startParameter = startParameter;
         this.injectedSettingsPlugins = injectedSettingsPlugins;
+        this.dependencySubstitutions = dependencySubstitutions;
+        this.fromBuild = fromBuild;
+        this.pluginBuild = pluginBuild;
     }
 
+    /**
+     * Returns a name to use for this build. Use {@code null} to have a name assigned.
+     */
+    @Nullable
+    public String getName() {
+        return name;
+    }
+
+    /**
+     * Returns the root directory for this build, when known.
+     */
     @Nullable
     public File getBuildRootDir() {
         return buildRootDir;
     }
 
-    public StartParameter getStartParameter() {
+    /**
+     * The identity of the build that caused this build to be included.
+     *
+     * This is not guaranteed to be the parent build WRT the build path, or Gradle instance.
+     *
+     * Null if the build is the root build.
+     */
+    @Nullable
+    public PublicBuildPath getFromBuild() {
+        return fromBuild;
+    }
+
+    public StartParameterInternal getStartParameter() {
         return startParameter;
     }
 
@@ -47,23 +94,57 @@ public class BuildDefinition {
         return injectedSettingsPlugins;
     }
 
-    public static BuildDefinition fromStartParameterForBuild(StartParameter startParameter, File buildRootDir, PluginRequests pluginRequests) {
-        StartParameter includedBuildStartParam = startParameter.newBuild();
-        includedBuildStartParam.setCurrentDir(buildRootDir);
-        includedBuildStartParam.setSearchUpwards(false);
-        includedBuildStartParam.setConfigureOnDemand(false);
-        includedBuildStartParam.setInitScripts(startParameter.getInitScripts());
-        return new BuildDefinition(buildRootDir, includedBuildStartParam, pluginRequests);
+    public Action<? super DependencySubstitutions> getDependencySubstitutions() {
+        return dependencySubstitutions;
     }
 
-    public static BuildDefinition fromStartParameter(StartParameter startParameter) {
-        return new BuildDefinition(null, startParameter, DefaultPluginRequests.EMPTY);
+    public boolean isPluginBuild() {
+        return pluginBuild;
+    }
+
+    public static BuildDefinition fromStartParameterForBuild(
+        StartParameterInternal startParameter,
+        @Nullable
+        String name,
+        @Nullable
+        File buildRootDir,
+        PluginRequests pluginRequests,
+        Action<? super DependencySubstitutions> dependencySubstitutions,
+        @Nullable
+        PublicBuildPath fromBuild,
+        boolean pluginBuild
+    ) {
+        return new BuildDefinition(
+            name,
+            buildRootDir,
+            startParameterForIncludedBuildFrom(startParameter, buildRootDir),
+            pluginRequests,
+            dependencySubstitutions,
+            fromBuild,
+            pluginBuild);
+    }
+
+    public static BuildDefinition fromStartParameter(StartParameterInternal startParameter, @Nullable PublicBuildPath fromBuild) {
+        return fromStartParameter(startParameter, null, fromBuild);
+    }
+
+    public static BuildDefinition fromStartParameter(StartParameterInternal startParameter, @Nullable File rootBuildDir, @Nullable PublicBuildPath fromBuild) {
+        return new BuildDefinition(null, rootBuildDir, startParameter, PluginRequests.EMPTY, Actions.doNothing(), fromBuild, false);
+    }
+
+    private static StartParameterInternal startParameterForIncludedBuildFrom(StartParameterInternal startParameter, @Nullable File buildRootDir) {
+        StartParameterInternal includedBuildStartParam = startParameter.newBuildInternal();
+        includedBuildStartParam.setCurrentDir(buildRootDir);
+        includedBuildStartParam.doNotSearchUpwards();
+        includedBuildStartParam.setInitScripts(startParameter.getInitScripts());
+        includedBuildStartParam.setExcludedTaskNames(startParameter.getExcludedTaskNames());
+        return includedBuildStartParam;
     }
 
     /**
      * Creates a defensive copy of this build definition, to isolate this instance from mutations made to the {@link StartParameter} during execution of the build.
      */
     public BuildDefinition newInstance() {
-        return new BuildDefinition(buildRootDir, startParameter.newInstance(), injectedSettingsPlugins);
+        return new BuildDefinition(name, buildRootDir, startParameter.newInstanceInternal(), injectedSettingsPlugins, dependencySubstitutions, fromBuild, pluginBuild);
     }
 }

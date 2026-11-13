@@ -17,13 +17,15 @@
 package org.gradle.api
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.test.precondition.Requires
+import org.gradle.test.preconditions.TestExecutionPreconditions
 import spock.lang.Issue
 
 class DynamicMethodLookupIntegrationTest extends AbstractIntegrationSpec {
     @Issue("GRADLE-3460")
     def "extension configuration method is preferred over property with closure value"() {
         given:
-        buildFile << """
+        buildFile """
 class ContactExtension {
     String prop
 }
@@ -55,7 +57,7 @@ assert contacts("a", "b", "c") == [ "a", "b", "c" ]
 
     def "extension configuration method is preferred over property with untyped closure value"() {
         given:
-        buildFile << """
+        buildFile """
 class ContactExtension {
     String prop
 }
@@ -79,31 +81,15 @@ assert contacts("a") == "a"
         succeeds()
     }
 
-    // Documents actual behaviour for backwards compatibility, not necessarily desired behaviour
-    def "inherited convention method is preferred over property with closure value"() {
-        given:
-        settingsFile << "include 'child'"
-        buildFile << """
-class ContactConvention {
-    def contacts(String arg) { arg }
-}
-
-convention.plugins.contacts = new ContactConvention()
-
-subprojects {
-    ext.contacts = { throw new RuntimeException() }
-    assert contacts("a") == "a"
-}
-"""
-
-        expect:
-        succeeds()
-    }
-
+    @Requires(
+        value = TestExecutionPreconditions.NotIsolatedProjects,
+        reason = "Exercises IP incompatible behavior: Groovy method inheritance"
+    )
     def "property with closure value is preferred over inherited property with closure value"() {
         given:
+        createDirs("child")
         settingsFile << "include 'child'"
-        buildFile << """
+        buildFile """
 ext.contacts = { throw new RuntimeException() }
 
 subprojects {

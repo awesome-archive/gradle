@@ -15,17 +15,26 @@
  */
 package org.gradle.api.tasks;
 
-import java.lang.annotation.*;
+import java.lang.annotation.Documented;
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
 
 /**
  * <p>Marks a property as specifying an input file for a task.</p>
  *
  * <p>This annotation should be attached to the getter method in Java or the property in Groovy.
+ * In Kotlin, use the {@code get:} use-site target to attach it to the property getter, for example {@code @get:InputFile}.
+ * This also works on abstract properties, where the annotation without a use-site target does not compile.
  * Annotations on setters or just the field in Java are ignored.</p>
  *
  * <p>This will cause the task to be considered out-of-date when the file path or contents
- * have changed. To make the up-to-date check only dependent on the path and not the contents
- * of the file or directory, annotate it instead with {@link org.gradle.api.tasks.Input}.
+ * have changed.</p>
+ *
+ * <p><strong>Note:</strong> To make the task dependent on the file's location but not its
+ * contents, expose the path of the file as an {@link org.gradle.api.tasks.Input} property instead.</p>
+ * @since 0.8
  */
 @Documented
 @Retention(RetentionPolicy.RUNTIME)

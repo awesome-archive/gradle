@@ -16,24 +16,25 @@
 
 package org.gradle.initialization
 
-import org.gradle.StartParameter
+import org.gradle.api.internal.StartParameterInternal
 import org.gradle.api.internal.GradleInternal
 import org.gradle.api.internal.SettingsInternal
 import org.gradle.api.internal.initialization.ClassLoaderScope
-import org.gradle.groovy.scripts.ScriptSource
-import org.gradle.internal.operations.TestBuildOperationExecutor
-import org.gradle.internal.operations.BuildOperationCategory
+import org.gradle.internal.build.BuildState
+import org.gradle.internal.operations.BuildOperationMetadata
+import org.gradle.internal.operations.TestBuildOperationRunner
 import spock.lang.Specification
 
 class BuildOperationSettingsProcessorTest extends Specification {
 
-    def buildOperationExecutor = new TestBuildOperationExecutor()
+    def buildOperationRunner = new TestBuildOperationRunner()
     def settingsProcessor = Mock(SettingsProcessor)
     def gradleInternal = Mock(GradleInternal)
     def settingsLocation = Mock(SettingsLocation)
-    def buildOperationScriptPlugin = new BuildOperationSettingsProcessor(settingsProcessor, buildOperationExecutor)
+    def buildOperationScriptPlugin = new BuildOperationSettingsProcessor(settingsProcessor, buildOperationRunner)
     def classLoaderScope = Mock(ClassLoaderScope)
-    def startParameter = Mock(StartParameter)
+    def startParameter = Mock(StartParameterInternal)
+    def state = Mock(SettingsState)
     def settingsInternal = Mock(SettingsInternal)
     def rootDir = new File("root")
 
@@ -45,34 +46,36 @@ class BuildOperationSettingsProcessorTest extends Specification {
         buildOperationScriptPlugin.process(gradleInternal, settingsLocation, classLoaderScope, startParameter)
 
         then:
-        1 * settingsProcessor.process(gradleInternal, settingsLocation, classLoaderScope, startParameter) >> settingsInternal
+        1 * settingsProcessor.process(gradleInternal, settingsLocation, classLoaderScope, startParameter) >> state
     }
 
     def "exposes build operation with settings configuration result"() {
         given:
         settings()
+        _ * gradleInternal.owner >> Stub(BuildState) {
+            getOwnerToShow() >> ":lib"
+        }
 
         when:
         buildOperationScriptPlugin.process(gradleInternal, settingsLocation, classLoaderScope, startParameter)
 
         then:
-        1 * settingsProcessor.process(gradleInternal, settingsLocation, classLoaderScope, startParameter) >> settingsInternal
+        1 * settingsProcessor.process(gradleInternal, settingsLocation, classLoaderScope, startParameter) >> state
 
         and:
-        buildOperationExecutor.operations.size() == 1
-        buildOperationExecutor.operations.get(0).displayName == "Evaluate settings"
-        buildOperationExecutor.operations.get(0).name == "Evaluate settings"
+        buildOperationRunner.operations.size() == 1
+        buildOperationRunner.operations.get(0).displayName == "Evaluate settings (:lib)"
+        buildOperationRunner.operations.get(0).name == "Evaluate settings (:lib)"
 
-        buildOperationExecutor.operations.get(0).operationType == BuildOperationCategory.UNCATEGORIZED
-        buildOperationExecutor.operations.get(0).details.settingsDir == rootDir.absolutePath
-        buildOperationExecutor.operations.get(0).details.settingsFile == "settings.gradle"
+        buildOperationRunner.operations.get(0).metadata == BuildOperationMetadata.NONE
+        buildOperationRunner.operations.get(0).details.settingsDir == rootDir.absolutePath
+        buildOperationRunner.operations.get(0).details.settingsFile == "settings.gradle"
     }
 
     private void settings() {
+        _ * state.settings >> settingsInternal
         _ * settingsInternal.gradle >> gradleInternal
         _ * settingsLocation.settingsDir >> rootDir
-        def scriptSource = Mock(ScriptSource)
-        _ * scriptSource.getFileName() >> "settings.gradle"
-        _ * settingsLocation.settingsScriptSource >> scriptSource
+        _ * settingsLocation.settingsFile >> new File("settings.gradle")
     }
 }

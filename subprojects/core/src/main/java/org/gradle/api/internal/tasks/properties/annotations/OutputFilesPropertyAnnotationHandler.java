@@ -15,22 +15,11 @@
  */
 package org.gradle.api.internal.tasks.properties.annotations;
 
-import org.gradle.api.internal.tasks.DeclaredTaskOutputFileProperty;
-import org.gradle.api.internal.tasks.PropertySpecFactory;
-import org.gradle.api.internal.tasks.properties.PropertyValue;
 import org.gradle.api.tasks.OutputFiles;
-
-import java.lang.annotation.Annotation;
+import org.gradle.internal.properties.OutputFilePropertyType;
 
 public class OutputFilesPropertyAnnotationHandler extends AbstractOutputPropertyAnnotationHandler {
-
-    @Override
-    public Class<? extends Annotation> getAnnotationType() {
-        return OutputFiles.class;
-    }
-
-    @Override
-    protected DeclaredTaskOutputFileProperty createFileSpec(PropertyValue propertyValue, PropertySpecFactory specFactory) {
-        return specFactory.createOutputFilesSpec(propertyValue);
+    public OutputFilesPropertyAnnotationHandler() {
+        super(OutputFiles.class, OutputFilePropertyType.FILES);
     }
 }

@@ -16,13 +16,12 @@
 
 package org.gradle.api.artifacts.repositories;
 
-import org.gradle.api.Incubating;
 import org.gradle.api.PolymorphicDomainObjectContainer;
 import org.gradle.authentication.Authentication;
 
 /**
  * Container for configuring repository authentication schemes of type {@link org.gradle.authentication.Authentication}.
+ * @since 2.7
  */
-@Incubating
 public interface AuthenticationContainer extends PolymorphicDomainObjectContainer<Authentication> {
 }

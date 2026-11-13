@@ -17,37 +17,72 @@ package org.gradle.process;
 
 import org.gradle.api.Incubating;
 import org.gradle.api.file.FileCollection;
+import org.gradle.api.jvm.ModularitySpec;
+import org.gradle.api.provider.ListProperty;
+import org.gradle.api.provider.Property;
 import org.gradle.api.tasks.Classpath;
 import org.gradle.api.tasks.Input;
+import org.gradle.api.tasks.Internal;
 import org.gradle.api.tasks.Nested;
 import org.gradle.api.tasks.Optional;
+import org.gradle.internal.instrumentation.api.annotations.ReplacedAccessor;
+import org.gradle.internal.instrumentation.api.annotations.ReplacedAccessor.AccessorType;
+import org.gradle.internal.instrumentation.api.annotations.ReplacedDeprecation;
+import org.gradle.internal.instrumentation.api.annotations.ReplacedDeprecation.RemovedIn;
+import org.gradle.internal.instrumentation.api.annotations.ReplacesEagerProperty;
+import org.gradle.internal.instrumentation.api.annotations.ToBeReplacedByLazyProperty;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.util.List;
 
 /**
  * Specifies the options for executing a Java application.
+ * @since 0.9
  */
 public interface JavaExecSpec extends JavaForkOptions, BaseExecSpec {
-    /**
-     * Returns the fully qualified name of the Main class to be executed.
-     */
-    @Nullable @Optional @Input
-    String getMain();
 
     /**
-     * Sets the fully qualified name of the main class to be executed.
+     * Extra JVM arguments to be to use to launch the JVM for the process.
      *
-     * @param main the fully qualified name of the main class to be executed.
+     * Must be used to set a convention for JVM arguments.
      *
-     * @return this
+     * @since 8.1
      */
-    JavaExecSpec setMain(@Nullable String main);
+    @Incubating
+    @Optional
+    @Internal
+    ListProperty<String> getJvmArguments();
+
+    /**
+     * The name of the main module to be executed if the application should run as a Java module.
+     *
+     * @since 6.4
+     */
+    @Optional
+    @Input
+    Property<String> getMainModule();
+
+    /**
+     * The fully qualified name of the Main class to be executed.
+     * <p>
+     * This does not need to be set if using an <a href="https://docs.oracle.com/javase/tutorial/deployment/jar/appman.html">Executable Jar</a> with a {@code Main-Class} attribute.
+     *
+     * @since 6.4
+     */
+    @Optional
+    @Input
+    @ReplacesEagerProperty(
+        replacedAccessors = @ReplacedAccessor(value = AccessorType.SETTER, name = "setMain", fluentSetter = true),
+        deprecation = @ReplacedDeprecation(removedIn = RemovedIn.GRADLE9)
+    )
+    Property<String> getMainClass();
 
     /**
      * Returns the arguments passed to the main class to be executed.
+     * @since 0.9
      */
-    @Nullable @Optional @Input
+    @ToBeReplacedByLazyProperty
+    @Optional @Input
     List<String> getArgs();
 
     /**
@@ -56,6 +91,7 @@ public interface JavaExecSpec extends JavaForkOptions, BaseExecSpec {
      * @param args Args for the main class.
      *
      * @return this
+     * @since 0.9
      */
     JavaExecSpec args(Object... args);
 
@@ -65,6 +101,7 @@ public interface JavaExecSpec extends JavaForkOptions, BaseExecSpec {
      * @param args Args for the main class.
      *
      * @return this
+     * @since 0.9
      */
     JavaExecSpec args(Iterable<?> args);
 
@@ -76,7 +113,7 @@ public interface JavaExecSpec extends JavaForkOptions, BaseExecSpec {
      * @return this
      * @since 4.0
      */
-    JavaExecSpec setArgs(@Nullable List<String> args);
+    JavaExecSpec setArgs(List<String> args);
 
     /**
      * Sets the args for the main class to be executed.
@@ -84,16 +121,17 @@ public interface JavaExecSpec extends JavaForkOptions, BaseExecSpec {
      * @param args Args for the main class.
      *
      * @return this
+     * @since 0.9
      */
-    JavaExecSpec setArgs(@Nullable Iterable<?> args);
+    JavaExecSpec setArgs(Iterable<?> args);
 
     /**
      * Argument providers for the application.
      *
      * @since 4.6
      */
-    @Incubating
     @Nested
+    @ToBeReplacedByLazyProperty
     List<CommandLineArgumentProvider> getArgumentProviders();
 
     /**
@@ -102,13 +140,16 @@ public interface JavaExecSpec extends JavaForkOptions, BaseExecSpec {
      * @param paths classpath elements
      *
      * @return this
+     * @since 0.9
      */
-    JavaExecSpec classpath(Object... paths);
+    JavaExecSpec classpath(@Nullable Object... paths);
 
     /**
      * Returns the classpath for executing the main class.
+     * @since 0.9
      */
     @Classpath
+    @ToBeReplacedByLazyProperty
     FileCollection getClasspath();
 
     /**
@@ -117,6 +158,15 @@ public interface JavaExecSpec extends JavaForkOptions, BaseExecSpec {
      * @param classpath the classpath
      *
      * @return this
+     * @since 0.9
      */
     JavaExecSpec setClasspath(FileCollection classpath);
+
+    /**
+     * Returns the module path handling for executing the main class.
+     *
+     * @since 6.4
+     */
+    @Nested
+    ModularitySpec getModularity();
 }

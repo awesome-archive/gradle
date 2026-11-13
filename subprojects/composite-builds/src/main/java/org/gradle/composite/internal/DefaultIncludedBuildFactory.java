@@ -18,22 +18,27 @@ package org.gradle.composite.internal;
 
 import org.gradle.api.InvalidUserDataException;
 import org.gradle.api.internal.BuildDefinition;
-import org.gradle.initialization.NestedBuildFactory;
-import org.gradle.internal.reflect.Instantiator;
-import org.gradle.internal.work.WorkerLeaseService;
+import org.gradle.internal.build.BuildState;
+import org.gradle.internal.build.IncludedBuildFactory;
+import org.gradle.internal.build.IncludedBuildState;
+import org.gradle.internal.buildtree.BuildTreeServices;
+import org.gradle.util.Path;
 
+import javax.inject.Inject;
 import java.io.File;
 
 public class DefaultIncludedBuildFactory implements IncludedBuildFactory {
-    private final Instantiator instantiator;
-    private final WorkerLeaseService workerLeaseService;
 
-    public DefaultIncludedBuildFactory(Instantiator instantiator, WorkerLeaseService workerLeaseService) {
-        this.instantiator = instantiator;
-        this.workerLeaseService = workerLeaseService;
+    private final BuildTreeServices buildTreeServices;
+
+    @Inject
+    public DefaultIncludedBuildFactory(
+        BuildTreeServices buildTreeServices
+    ) {
+        this.buildTreeServices = buildTreeServices;
     }
 
-    private void validateBuildDirectory(File dir) {
+    private static void validateBuildDirectory(File dir) {
         if (!dir.exists()) {
             throw new InvalidUserDataException(String.format("Included build '%s' does not exist.", dir));
         }
@@ -43,8 +48,15 @@ public class DefaultIncludedBuildFactory implements IncludedBuildFactory {
     }
 
     @Override
-    public IncludedBuildInternal createBuild(BuildDefinition buildDefinition, NestedBuildFactory nestedBuildFactory) {
+    public IncludedBuildState createBuild(Path identityPath, BuildDefinition buildDefinition, boolean isImplicit, BuildState owner) {
         validateBuildDirectory(buildDefinition.getBuildRootDir());
-        return instantiator.newInstance(DefaultIncludedBuild.class, buildDefinition, nestedBuildFactory, workerLeaseService.getCurrentWorkerLease());
+        return new DefaultIncludedBuild(
+            identityPath,
+            buildDefinition,
+            isImplicit,
+            owner,
+            buildTreeServices
+        );
     }
+
 }

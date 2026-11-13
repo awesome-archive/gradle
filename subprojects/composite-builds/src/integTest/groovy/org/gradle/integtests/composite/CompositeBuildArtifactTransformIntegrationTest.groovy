@@ -16,7 +16,10 @@
 
 package org.gradle.integtests.composite
 
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
+
 class CompositeBuildArtifactTransformIntegrationTest extends AbstractCompositeBuildIntegrationTest {
+
     def "can apply a transform to the outputs of included builds"() {
         def buildB = singleProjectBuild("buildB") {
             buildFile << """
@@ -32,26 +35,106 @@ class CompositeBuildArtifactTransformIntegrationTest extends AbstractCompositeBu
         includedBuilds << buildC
 
         buildA.buildFile << """
-            class XForm extends ArtifactTransform {
-                List<File> transform(File file) {
-                    return [file]
+            import org.gradle.api.artifacts.transform.TransformParameters
+
+            abstract class XForm implements TransformAction<TransformParameters.None> {
+                @InputArtifact
+                abstract Provider<FileSystemLocation> getInputArtifact()
+
+                void transform(TransformOutputs outputs) {
+                    def input = inputArtifact.get().asFile
+                    File outputFile = outputs.file(input.name + ".xform")
+                    def outputDirectory = outputFile.parentFile
+                    println("Transforming \$input in output directory \$outputDirectory")
+                    java.nio.file.Files.copy(input.toPath(), outputFile.toPath())
                 }
             }
-            
+
             dependencies {
-                compile 'org.test:buildB:1.2'
-                compile 'org.test:buildC:1.2'
-                
-                registerTransform {
+                implementation 'org.test:buildB:1.2'
+                implementation 'org.test:buildC:1.2'
+
+                registerTransform(XForm) {
                     from.attribute(Attribute.of("artifactType", String), "jar")
                     to.attribute(Attribute.of("artifactType", String), "xform")
-                    artifactTransform(XForm)
+                }
+            }
+
+            task resolve {
+                def artifacts = configurations.compileClasspath.incoming.artifactView {
+                    attributes.attribute(Attribute.of("artifactType", String), "xform")
+                }.artifacts
+                inputs.files artifacts.artifactFiles
+                doLast {
+                    artifacts.each {
+                        println "Transformed artifact: \${it.file.name} (\${it.id.componentIdentifier}), location: \${it.file.absolutePath}"
+                    }
                 }
             }
         """
         expect:
-        execute(buildA, "assemble")
+        execute(buildA, "resolve")
         assertTaskExecuted(":buildB", ":jar")
         assertTaskExecuted(":buildC", ":jar")
+
+        outputContains("Transformed artifact: buildB-1.0.jar.xform (project ':buildB')")
+        outputContains("Transformed artifact: buildC-1.0.jar.xform (project ':buildC')")
+        output.count("Transforming") == 2
+    }
+
+    @ToBeFixedForIsolatedProjects(because = "cross-build configuration in composite build")
+    def "cross-build dependency with transform in another build"() {
+        given:
+        def buildB = multiProjectBuild('buildB', ['app', 'lib'])
+        buildB.buildFile << """
+            import org.gradle.api.artifacts.transform.TransformParameters
+
+            subprojects {
+                apply plugin: "java-library"
+            }
+            abstract class FileSizer implements TransformAction<TransformParameters.None> {
+                @InputArtifact
+                abstract Provider<FileSystemLocation> getInputArtifact()
+
+                void transform(TransformOutputs outputs) {
+                    def input = inputArtifact.get().asFile
+                    File outputFile = outputs.file(input.name + ".txt")
+                    outputFile.text = String.valueOf(input.length())
+                }
+            }
+            def artifactType = Attribute.of('artifactType', String)
+            project(':app') {
+                dependencies {
+                    implementation(project(':lib'))
+                    registerTransform(FileSizer) {
+                        from.attribute(artifactType, 'jar')
+                        to.attribute(artifactType, 'size')
+                    }
+                }
+                task resolve(type: Copy) {
+                    from configurations.runtimeClasspath.incoming.artifactView {
+                        attributes { it.attribute(artifactType, 'size') }
+                    }.artifacts.artifactFiles
+                    into "\$buildDir/libs"
+                }
+            }
+        """
+        includedBuilds << buildB
+
+        buildA.buildFile << """
+            task run {
+                dependsOn gradle.includedBuild('buildB').task(':app:resolve')
+            }
+        """
+
+        when:
+        execute(buildA, 'run')
+
+        then:
+        assertTaskExecuted(':buildB', ':lib:compileJava')
+        assertTaskExecuted(':buildB', ':lib:classes')
+        assertTaskExecuted(':buildB', ':lib:jar')
+        assertTaskExecuted(':buildB', ':app:resolve')
+        assertTaskExecuted(':', ':run')
     }
 }

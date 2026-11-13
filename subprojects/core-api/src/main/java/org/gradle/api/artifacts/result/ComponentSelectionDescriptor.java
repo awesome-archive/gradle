@@ -15,15 +15,15 @@
  */
 package org.gradle.api.artifacts.result;
 
-import org.gradle.api.Incubating;
 import org.gradle.internal.HasInternalProtocol;
+import org.gradle.internal.scan.UsedByScanPlugin;
 
 /**
  * A component selection description, which wraps a cause with an optional custom description.
  *
  * @since 4.6
  */
-@Incubating
+@UsedByScanPlugin
 @HasInternalProtocol
 public interface ComponentSelectionDescriptor {
 
@@ -31,6 +31,7 @@ public interface ComponentSelectionDescriptor {
      * Returns the cause associated with this descriptor
      *
      * @return a component selection cause
+     * @since 4.6
      */
     ComponentSelectionCause getCause();
 
@@ -39,6 +40,7 @@ public interface ComponentSelectionDescriptor {
      * or a custom description provided typically through a rule.
      *
      * @return the description of this component selection
+     * @since 4.6
      */
     String getDescription();
 

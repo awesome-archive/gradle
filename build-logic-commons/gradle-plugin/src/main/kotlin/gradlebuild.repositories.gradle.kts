@@ -1,0 +1,74 @@
+/*
+ * Copyright 2020 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+import gradlebuild.basics.googleApisJs
+
+val kotlinVersion = versionCatalogs.find("libs").flatMap { it.findVersion("kotlin") }.map { it.requiredVersion }.orElse("")
+
+// A Kotlin dev build has a build number at the end, for example 2.5.20-dev-2076 or 2.4.20-RC-197
+val kotlinDevVersionRegExp = Regex(".+-\\d+")
+
+repositories {
+    // Serves the jquery and flot JavaScript artifacts bundled into generated reports.
+    // The helper applies its own content filter, so this repository is only ever
+    // consulted for those two groups.
+    googleApisJs()
+    maven {
+        name = "Gradle public repository"
+        url = uri("https://repo.gradle.org/gradle/public")
+        content {
+            includeGroup("net.rubygrapefruit")
+            includeGroup("org.gradle.fileevents")
+            includeModule("flot", "flot")
+            includeModule("org.gradle", "gradle-tooling-api")
+            // The root multiplatform module plus the -jvm module its GMM redirects to, and the
+            // fixtures library the integration test fixtures read reports with.
+            includeModuleByRegex("org\\.gradle\\.buildtool\\.internal", "configuration-cache-report(-jvm|-fixtures)?")
+            includeModule("org.gradle.buildtool.internal", "gradle-ide-starter")
+            includeModule("org.gradle.buildtool.internal", "gradle-ide-starter-scenarios")
+        }
+    }
+    google {
+        content {
+            includeGroup("com.android.databinding")
+            includeGroupByRegex("com\\.android\\.tools(\\.[a-z.\\-]*)?")
+        }
+    }
+    maven {
+        name = "CHAMP libs"
+        url = uri("https://releases.usethesource.io/maven/")
+        mavenContent {
+            includeGroup("io.usethesource")
+        }
+    }
+    mavenCentral {
+        content {
+            // The japicmp baseline is served by the Gradle distributions ivy repository declared in
+            // gradlebuild.binary-compatibility. Asking Maven Central for it can only ever 404, and
+            // when the mirror answers 503 under load instead, Gradle disables the whole repository.
+            excludeModule("gradle", "gradle")
+        }
+    }
+    if (kotlinVersion.matches(kotlinDevVersionRegExp)) {
+        maven {
+            name = "Kotlin dev repository"
+            url = uri("https://packages.jetbrains.team/maven/p/kt/dev")
+            content {
+                includeVersionByRegex("org\\.jetbrains\\.kotlin(\\..+)?", ".*", kotlinDevVersionRegExp.pattern)
+            }
+        }
+    }
+}

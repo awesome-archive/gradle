@@ -16,9 +16,7 @@
 
 package org.gradle.api.initialization;
 
-import org.gradle.api.Incubating;
 import org.gradle.api.tasks.TaskReference;
-import org.gradle.internal.HasInternalProtocol;
 
 import java.io.File;
 
@@ -27,21 +25,22 @@ import java.io.File;
  *
  * @since 3.1
  */
-@Incubating
-@HasInternalProtocol
 public interface IncludedBuild {
     /**
      * The name of the included build.
+     * @since 3.1
      */
     String getName();
 
     /**
      * The root directory of the included build.
+     * @since 3.1
      */
     File getProjectDir();
 
     /**
      * Produces a reference to a task in the included build.
+     * @since 3.1
      */
     TaskReference task(String path);
 }

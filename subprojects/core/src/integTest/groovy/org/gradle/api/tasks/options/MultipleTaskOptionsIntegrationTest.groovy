@@ -17,13 +17,16 @@
 package org.gradle.api.tasks.options
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 
 import static org.gradle.api.tasks.options.TaskOptionFixture.taskWithMultipleOptions
 
 class MultipleTaskOptionsIntegrationTest extends AbstractIntegrationSpec {
 
+    @ToBeFixedForIsolatedProjects(because = "allprojects")
     def "can configure tasks from command line in multiple projects"() {
         given:
+        createDirs("project2")
         settingsFile << "include 'project2'"
         buildFile << """
             allprojects {
@@ -46,11 +49,13 @@ class MultipleTaskOptionsIntegrationTest extends AbstractIntegrationSpec {
 
         then:
         output.count('first=true,second=hey buddy') == 2
-        result.assertTasksExecuted(":task1", ":someTask", ":project2:someTask", ":task2")
+        result.assertTasksScheduled(":task1", ":someTask", ":project2:someTask", ":task2")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "allprojects")
     def "tasks can be configured with different options"() {
         given:
+        createDirs("project2")
         settingsFile << "include 'project2'"
         buildFile << """
             allprojects {
@@ -64,13 +69,15 @@ class MultipleTaskOptionsIntegrationTest extends AbstractIntegrationSpec {
         run ':someTask', '--second', 'one', ':project2:someTask', '--second', 'two'
 
         then:
-        result.assertTasksExecuted(":someTask", ":project2:someTask")
+        result.assertTasksScheduled(":someTask", ":project2:someTask")
         output.count('second=one') == 1
         output.count('second=two') == 1
     }
 
+    @ToBeFixedForIsolatedProjects(because = "allprojects")
     def "tasks are configured exclusively with their options"() {
         given:
+        createDirs("project2")
         settingsFile << "include 'project2'"
         buildFile << """
             allprojects {
@@ -84,7 +91,7 @@ class MultipleTaskOptionsIntegrationTest extends AbstractIntegrationSpec {
         run ':someTask', '--second', 'one', ':project2:someTask', '--first'
 
         then:
-        result.assertTasksExecuted(":someTask", ":project2:someTask")
+        result.assertTasksScheduled(":someTask", ":project2:someTask")
         output.count('first=false,second=one') == 1 //--first flag was set only on the :project2:someTask
         output.count('first=true,second=null') == 1 //--second option was set only on the :someTask
     }
@@ -99,11 +106,11 @@ class MultipleTaskOptionsIntegrationTest extends AbstractIntegrationSpec {
         """
 
         when:
-        run 'someTask', '--second', 'foo', 'tasks', '--all'
+        run 'someTask', '--second', 'foo', 'help'
 
         then:
         output.contains 'second=foo'
-        result.assertTasksExecuted(":someTask", ":tasks")
+        result.assertTasksScheduled(":someTask", ":help")
     }
 
     def "task name that matches command value is not included in execution"() {
@@ -120,6 +127,6 @@ class MultipleTaskOptionsIntegrationTest extends AbstractIntegrationSpec {
 
         then:
         output.contains 'second=foo'
-        result.assertTasksExecuted(":someTask") //no 'foo' task
+        result.assertTasksScheduled(":someTask") //no 'foo' task
     }
 }

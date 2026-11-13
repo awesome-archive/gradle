@@ -15,27 +15,35 @@
  */
 package org.gradle.initialization
 
-import org.gradle.StartParameter
+
 import org.gradle.api.internal.GradleInternal
+import org.gradle.api.internal.StartParameterInternal
 import org.gradle.configuration.InitScriptProcessor
 import org.gradle.groovy.scripts.TextResourceScriptSource
-import org.gradle.internal.operations.TestBuildOperationExecutor
+import org.gradle.internal.build.BuildState
+import org.gradle.internal.operations.ProgressDisplayName
+import org.gradle.internal.operations.TestBuildOperationRunner
+import org.gradle.internal.resource.TextFileResourceLoader
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
 import org.junit.Rule
+import spock.lang.Issue
 import spock.lang.Specification
 
 class InitScriptHandlerTest extends Specification {
 
-    @Rule TestNameTestDirectoryProvider testDirectoryProvider
+    @Rule TestNameTestDirectoryProvider testDirectoryProvider = new TestNameTestDirectoryProvider(getClass())
 
     def processor = Mock(InitScriptProcessor)
-    def executor = new TestBuildOperationExecutor()
+    def executor = new TestBuildOperationRunner()
     def gradle = Mock(GradleInternal)
-    def startParameter = Stub(StartParameter)
-    def handler = new InitScriptHandler(processor, executor)
+    def startParameter = Stub(StartParameterInternal)
+    def resourceLoader = Stub(TextFileResourceLoader)
+    def handler = new InitScriptHandler(processor, executor, resourceLoader)
+    BuildState gradleOwner = null
 
     def setup() {
         _ * gradle.startParameter >> startParameter
+        _ * gradle.owner >> { gradleOwner }
     }
 
     def "does nothing when there are no init scripts"() {
@@ -65,5 +73,26 @@ class InitScriptHandlerTest extends Specification {
         1 * processor.process({ TextResourceScriptSource source -> source.resource.file == script2 }, gradle)
         0 * executor._
         0 * processor._
+    }
+
+    @Issue("https://github.com/gradle/gradle/issues/39634")
+    def "shows the init scripts of the #build on a worker line"() {
+        given:
+        startParameter.allInitScripts >> [testDirectoryProvider.createFile("init.gradle")]
+        gradleOwner = Stub(BuildState) {
+            getOwnerToShow() >> ownerToShow
+        }
+
+        when:
+        handler.executeScripts(gradle)
+
+        then:
+        executor.operations.get(0).displayName == displayName
+        executor.operations.get(0).progressDisplayName == ProgressDisplayName.of(ownerToShow, "Running init scripts")
+
+        where:
+        build            | ownerToShow | displayName
+        "root build"     | null        | "Run init scripts"
+        "included build" | ":lib"      | "Run init scripts (:lib)"
     }
 }

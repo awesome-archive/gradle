@@ -16,6 +16,7 @@
 
 package org.gradle.integtests.composite
 
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 import org.gradle.integtests.fixtures.build.BuildTestFile
 import spock.lang.Ignore
 
@@ -71,38 +72,22 @@ class IncludedBuildValidationIntegrationTest extends AbstractCompositeBuildInteg
         failure.assertHasDescription("Included build 'b1' must have a settings file.")
     }
 
-    def "reports failure when included build is itself a composite"() {
-        when:
-        def buildC = singleProjectBuild("buildC")
-        buildB.settingsFile << """
-            includeBuild('${buildC.toURI()}')
-"""
-
-        includedBuilds << buildB
-
-        then:
-        fails(buildA, "help")
-
-        and:
-        failure.assertHasCause("Included build 'buildB' cannot have included builds.")
-    }
-
-
     def "reports failure for duplicate included build name"() {
         given:
         def buildC = singleProjectBuild("buildC")
-        buildC.settingsFile.text = "rootProject.name = 'buildB'"
-        includedBuilds << buildB << buildC
+        includeBuild(buildB)
+        includeBuildAs(buildC, 'buildB')
 
         when:
         fails(buildA, "help")
 
         then:
-        failure.assertHasDescription("Included build 'buildB' is not unique in composite.")
+        failure.assertHasDescription("Included build $buildC has build path :buildB which is the same as included build $buildB")
     }
 
     def "reports failure for included build name that conflicts with subproject name"() {
         given:
+        createDirs("buildA", "buildA/buildB")
         buildA.settingsFile << """
             include 'buildB'
 """
@@ -112,18 +97,33 @@ class IncludedBuildValidationIntegrationTest extends AbstractCompositeBuildInteg
         fails(buildA, "help")
 
         then:
-        failure.assertHasDescription("Included build 'buildB' collides with subproject of the same name.")
+        failure.assertHasDescription("Included build in ${buildB} has name 'buildB' which is the same as a project of the main build.")
     }
 
-    def "reports failure for included build name that conflicts with root project name"() {
-        def buildC = singleProjectBuild("buildC")
-        buildC.settingsFile.text = "rootProject.name = 'buildA'"
-        includedBuilds << buildC
+    def "included build name can be the same as root project name"() {
+        given:
+        buildB.settingsFile.text = "rootProject.name = 'buildA'"
 
         when:
-        fails(buildA, "help")
+        includedBuilds << buildB
 
         then:
-        failure.assertHasDescription("Included build 'buildA' collides with root project name.")
+        execute(buildA, "help")
     }
+
+    @ToBeFixedForIsolatedProjects(because = "cross-project / cross-build configuration")
+    def "allows to rename included build that conflicts with subproject name"() {
+        given:
+        createDirs("buildA", "buildA/buildB")
+        buildA.settingsFile << """
+            include 'buildB'
+        """
+
+        when:
+        includeBuildAs(buildB, "buildB-build")
+
+        then:
+        execute(buildA, "help")
+    }
+
 }

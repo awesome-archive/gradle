@@ -1,201 +1,371 @@
-/*
- * Copyright 2010 the original author or authors.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+import gradlebuild.module
+import gradlebuild.packaging
+import gradlebuild.platform
+import gradlebuild.testing
+import gradlebuild.unassigned
+import org.gradle.api.internal.FeaturePreviews
 
-apply {
-    from("gradle/shared-with-buildSrc/build-cache-configuration.settings.gradle.kts")
-}
-
-try {
-    settings.withGroovyBuilder {
-        "enableFeaturePreview"("IMPROVED_POM_SUPPORT")
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
     }
-} catch (e: Exception ){
-    // Ignore - indicates this is run with Gradle < 4.6
+    includeBuild("build-logic-settings")
 }
 
-include("distributionsDependencies")
-include("distributions")
-include("baseServices")
-include("baseServicesGroovy")
-include("logging")
-include("processServices")
-include("jvmServices")
-include("core")
-include("dependencyManagement")
-include("wrapper")
-include("cli")
-include("launcher")
-include("messaging")
-include("resources")
-include("resourcesHttp")
-include("resourcesGcs")
-include("resourcesS3")
-include("resourcesSftp")
-include("plugins")
-include("scala")
-include("ide")
-include("ideNative")
-include("idePlay")
-include("osgi")
-include("maven")
-include("announce")
-include("codeQuality")
-include("antlr")
-include("toolingApi")
-include("toolingApiBuilders")
-include("docs")
-include("integTest")
-include("signing")
-include("ear")
-include("native")
-include("internalTesting")
-include("internalIntegTesting")
-include("internalPerformanceTesting")
-include("internalAndroidPerformanceTesting")
-include("performance")
-include("buildScanPerformance")
-include("javascript")
-include("buildComparison")
-include("reporting")
-include("diagnostics")
-include("publish")
-include("ivy")
-include("jacoco")
-include("buildInit")
-include("buildOption")
-include("platformBase")
-include("platformNative")
-include("platformJvm")
-include("languageJvm")
-include("languageJava")
-include("languageGroovy")
-include("languageNative")
-include("languageScala")
-include("pluginUse")
-include("pluginDevelopment")
-include("modelCore")
-include("modelGroovy")
-include("buildCacheHttp")
-include("testingBase")
-include("testingNative")
-include("testingJvm")
-include("testingJunitPlatform")
-include("platformPlay")
-include("testKit")
-include("installationBeacon")
-include("soak")
-include("smokeTest")
-include("compositeBuilds")
-include("workers")
-include("runtimeApiInfo")
-include("persistentCache")
-include("buildCache")
-include("coreApi")
-include("versionControl")
+plugins {
+    id("gradlebuild.build-environment")
+    id("gradlebuild.configuration-cache-compatibility")
+    id("gradlebuild.version-catalogs")
+    id("gradlebuild.default-settings-plugins")
+    id("gradlebuild.architecture-docs")
+}
 
-val upperCaseLetters = "\\p{Upper}".toRegex()
+includeBuild("build-logic-commons")
+includeBuild("build-logic")
 
-fun String.toKebabCase() =
-    replace(upperCaseLetters) { "-${it.value.toLowerCase()}" }
+apply(from = "gradle/shared-with-buildSrc/mirrors.settings.gradle.kts")
+
+// If you include a new subproject here, consult internal documentation "Adding a new Build Tool subproject" page
+
+// Gradle implementation projects
+unassigned {
+    subproject("core")
+    subproject("composite-builds")
+    subproject("core-api")
+}
+
+// Core platform
+val core = platform("core") {
+
+    // Core Runtime Module
+    module("core-runtime") {
+        subproject("base-asm")
+        subproject("base-services")
+        subproject("build-configuration")
+        subproject("build-discovery")
+        subproject("build-discovery-impl")
+        subproject("build-discovery-reporting")
+        subproject("build-option")
+        subproject("build-process-services")
+        subproject("build-profile")
+        subproject("build-state")
+        subproject("classpath")
+        subproject("classloaders")
+        subproject("cli")
+        subproject("client-services")
+        subproject("collections")
+        subproject("concurrent")
+        subproject("daemon-main")
+        subproject("daemon-messaging")
+        subproject("daemon-protocol")
+        subproject("daemon-services")
+        subproject("daemon-server")
+        subproject("daemon-logging")
+        subproject("file-temp")
+        subproject("files")
+        subproject("functional")
+        subproject("gradle-cli-main")
+        subproject("gradle-cli")
+        subproject("groovy-loader")
+        subproject("installation-beacon")
+        subproject("instrumentation-agent")
+        subproject("instrumentation-agent-services")
+        subproject("instrumentation-declarations")
+        subproject("instrumentation-reporting")
+        subproject("internal-instrumentation-api")
+        subproject("internal-instrumentation-processor")
+        subproject("io")
+        subproject("stdlib-java-extensions")
+        subproject("launcher")
+        subproject("messaging")
+        subproject("native")
+        subproject("process-memory-services")
+        subproject("process-services")
+        subproject("process-services-base")
+        subproject("process-services-api")
+        subproject("reflection-services")
+        subproject("serialization")
+        subproject("service-lookup")
+        subproject("service-provider")
+        subproject("service-registry-builder")
+        subproject("service-registry-impl")
+        subproject("start-parameter")
+        subproject("time")
+        subproject("tooling-api-provider")
+        subproject("versioned-cache")
+        subproject("wrapper-main")
+        subproject("wrapper-shared")
+    }
+
+    // Core Configuration Module
+    module("core-configuration") {
+        subproject("api-metadata")
+        subproject("base-diagnostics")
+        subproject("base-services-groovy")
+        subproject("bean-serialization-services")
+        subproject("configuration-cache")
+        subproject("configuration-cache-base")
+        subproject("configuration-problems-base")
+        subproject("core-flow-services-api")
+        subproject("core-kotlin-extensions")
+        subproject("core-serialization-codecs")
+        subproject("declarative-dsl-api")
+        subproject("declarative-dsl-core")
+        subproject("declarative-dsl-evaluator")
+        subproject("declarative-dsl-provider")
+        subproject("declarative-dsl-tooling-models")
+        subproject("declarative-dsl-tooling-builders")
+        subproject("dependency-management-serialization-codecs")
+        subproject("domain-object-collections")
+        subproject("encryption-services")
+        subproject("file-collections")
+        subproject("file-operations")
+        subproject("flow-services")
+        subproject("graph-isolation")
+        subproject("graph-serialization")
+        subproject("guava-serialization-codecs")
+        subproject("input-tracking")
+        subproject("isolated-action-services")
+        subproject("java-api-extractor")
+        subproject("stdlib-kotlin-extensions")
+        subproject("stdlib-serialization-codecs")
+        subproject("model-core")
+        subproject("model-reflect")
+        subproject("model-groovy")
+        subproject("plugin-use")
+        subproject("project-features")
+        subproject("project-features-api")
+        subproject("project-features-demos")
+    }
+
+    // Core Execution Module
+    module("core-execution") {
+        subproject("build-cache")
+        subproject("build-cache-base")
+        subproject("build-cache-core")
+        subproject("build-cache-example-client")
+        subproject("build-cache-http")
+        subproject("build-cache-local")
+        subproject("build-cache-packaging")
+        subproject("build-cache-spi")
+        subproject("daemon-server-worker")
+        subproject("execution")
+        subproject("execution-e2e-tests")
+        subproject("file-watching")
+        subproject("hashing")
+        subproject("hashing-services")
+        subproject("normalization")
+        subproject("normalization-api")
+        subproject("normalization-java")
+        subproject("persistent-cache")
+        subproject("request-handler-worker")
+        subproject("scoped-persistent-cache")
+        subproject("snapshots")
+        subproject("worker-main")
+        subproject("worker-process-services")
+        subproject("worker-shared")
+        subproject("workers")
+    }
+}
+
+// Documentation Module
+module("documentation") {
+    subproject("docs")
+    subproject("docs-asciidoctor-extensions-base")
+    subproject("docs-asciidoctor-extensions")
+    subproject("samples")
+}
+
+// IDE Module
+module("ide") {
+    subproject("base-ide-plugins")
+    subproject("ide")
+    subproject("ide-model-impls")
+    subproject("ide-native")
+    subproject("ide-plugins")
+    subproject("tooling-api")
+    subproject("tooling-api-builders")
+}
+
+// Observability Module
+module("observability") {
+    subproject("build-operations")
+    subproject("build-operations-trace")
+    subproject("logging")
+    subproject("logging-api")
+    subproject("problems")
+    subproject("problems-api")
+    subproject("problems-impl")
+    subproject("problems-rendering")
+    subproject("problems-reporting")
+    subproject("report-rendering")
+}
+
+// Reporting Plugins Platform
+val reportingPlugins = platform("reporting-plugins") {
+    uses(core)
+    subproject("reporting")
+}
+
+// Software Platform
+val software = platform("software") {
+    uses(core)
+    uses(reportingPlugins)
+    subproject("ant-api")
+    subproject("ant")
+    subproject("ant-impl")
+    subproject("ant-worker")
+    subproject("base-compiler-worker")
+    subproject("build-init")
+    subproject("build-init-specs")
+    subproject("build-init-specs-api")
+    subproject("credentials-api")
+    subproject("credentials")
+    subproject("credentials-impl")
+    subproject("dependency-management")
+    subproject("dependency-management-resources")
+    subproject("plugins-distribution")
+    subproject("distributions-publishing")
+    subproject("isolated-ant-builder")
+    subproject("ivy")
+    subproject("maven")
+    subproject("platform-base")
+    subproject("plugins-version-catalog")
+    subproject("publish")
+    subproject("resources")
+    subproject("resources-http")
+    subproject("resources-gcs")
+    subproject("resources-s3")
+    subproject("resources-sftp")
+    subproject("security")
+    subproject("signing")
+    subproject("software-diagnostics")
+    subproject("testing-base")
+    subproject("testing-base-infrastructure")
+    subproject("test-suites-base")
+    subproject("version-control")
+}
+
+// JVM Platform
+val jvm = platform("jvm") {
+    uses(core)
+    uses(reportingPlugins)
+    uses(software)
+    subproject("antlr")
+    subproject("code-quality")
+    subproject("code-quality-workers")
+    subproject("distributions-jvm")
+    subproject("ear")
+    subproject("groovy-compiler-worker")
+    subproject("groovydoc-worker")
+    subproject("jacoco")
+    subproject("jacoco-workers")
+    subproject("java-compiler-plugin")
+    subproject("java-compiler-worker")
+    subproject("java-platform")
+    subproject("javadoc")
+    subproject("jvm-compiler-worker")
+    subproject("jvm-services")
+    subproject("language-groovy")
+    subproject("language-java")
+    subproject("language-jvm")
+    subproject("platform-jvm")
+    subproject("plugins-application")
+    subproject("plugins-groovy")
+    subproject("plugins-java")
+    subproject("plugins-java-base")
+    subproject("plugins-java-library")
+    subproject("plugins-jvm-test-fixtures")
+    subproject("plugins-jvm-test-suite")
+    subproject("plugins-test-report-aggregation")
+    subproject("scala")
+    subproject("scaladoc-worker")
+    subproject("scala-compiler-worker")
+    subproject("testing-jvm")
+    subproject("testing-jvm-infrastructure")
+    subproject("toolchains-jvm")
+    subproject("toolchains-jvm-shared")
+    subproject("war")
+}
+
+// Plugin Development Platform
+val pluginDev = platform("plugin-dev") {
+    uses(core)
+    uses(jvm)
+    subproject("plugin-development")
+    subproject("unit-test-fixtures")
+    subproject("test-kit")
+}
+
+// DSL Platform
+platform("dsl") {
+    uses(core)
+    uses(software)
+    uses(jvm)
+    uses(pluginDev)
+    subproject("groovy-dsl")
+    subproject("kotlin-dsl")
+    subproject("kotlin-dsl-integ-tests")
+    subproject("kotlin-dsl-plugins")
+    subproject("kotlin-dsl-provider-plugins")
+    subproject("kotlin-dsl-tooling-builders")
+    subproject("kotlin-dsl-tooling-model-impls")
+    subproject("kotlin-dsl-tooling-models")
+}
+
+// Native Platform
+platform("native") {
+    uses(core)
+    uses(software)
+    subproject("distributions-native")
+    subproject("platform-native")
+    subproject("language-native")
+    subproject("tooling-native")
+    subproject("tooling-native-model-impls")
+    subproject("testing-native")
+    subproject("plugins-model-native")
+}
+
+
+// Develocity Module
+module("enterprise") {
+    subproject("enterprise")
+    subproject("enterprise-logging")
+    subproject("enterprise-operations")
+    subproject("enterprise-plugin-performance")
+    subproject("enterprise-workers")
+}
+
+packaging {
+    subproject("distributions-dependencies") // platform for dependency versions
+    subproject("core-platform")              // platform for Gradle distribution core
+    subproject("distributions-full")
+    subproject("public-api")                 // Public API publishing
+    subproject("internal-build-reports")     // Internal utility and verification projects
+}
+
+testing {
+    subproject("architecture-test")
+    subproject("distributions-basics")
+    subproject("distributions-core")
+    subproject("distributions-integ-tests")
+    subproject("integ-test")
+    subproject("internal-distribution-testing")
+    subproject("internal-integ-testing")
+    subproject("internal-performance-testing")
+    subproject("internal-testing")
+    subproject("performance")
+    subproject("precondition-tester")
+    subproject("public-api-tests")
+    subproject("soak")
+    subproject("smoke-ide-test") // eventually should be owned by IDEX team
+    subproject("smoke-test")
+}
 
 rootProject.name = "gradle"
 
-// List of subprojects that have a Groovy DSL build script.
-// The intent is for this list to diminish until it disappears.
-val groovyBuildScriptProjects = listOf(
-    "distributions",
-    "logging",
-    "process-services",
-    "jvm-services",
-    "core",
-    "dependency-management",
-    "wrapper",
-    "cli",
-    "launcher",
-    "messaging",
-    "resources",
-    "resources-http",
-    "resources-gcs",
-    "resources-s3",
-    "resources-sftp",
-    "plugins",
-    "scala",
-    "ide",
-    "ide-native",
-    "ide-play",
-    "osgi",
-    "maven",
-    "code-quality",
-    "tooling-api",
-    "tooling-api-builders",
-    "docs",
-    "integ-test",
-    "signing",
-    "ear",
-    "native",
-    "internal-testing",
-    "internal-integ-testing",
-    "internal-performance-testing",
-    "internal-android-performance-testing",
-    "performance",
-    "build-scan-performance",
-    "javascript",
-    "reporting",
-    "diagnostics",
-    "publish",
-    "ivy",
-    "jacoco",
-    "build-init",
-    "build-option",
-    "platform-base",
-    "platform-native",
-    "platform-jvm",
-    "language-jvm",
-    "language-java",
-    "language-groovy",
-    "language-native",
-    "language-scala",
-    "plugin-use",
-    "model-core",
-    "model-groovy",
-    "build-cache-http",
-    "testing-base",
-    "testing-native",
-    "testing-jvm",
-    "testing-junit-platform",
-    "platform-play",
-    "test-kit",
-    "soak",
-    "smoke-test",
-    "composite-builds",
-    "workers",
-    "persistent-cache",
-    "core-api",
-    "version-control")
-
-fun buildFileNameFor(projectDirName: String) =
-    "$projectDirName${buildFileExtensionFor(projectDirName)}"
-
-fun buildFileExtensionFor(projectDirName: String) =
-    if (projectDirName in groovyBuildScriptProjects) ".gradle" else ".gradle.kts"
-
-for (project in rootProject.children) {
-    val projectDirName = project.name.toKebabCase()
-    project.projectDir = file("subprojects/$projectDirName")
-    project.buildFileName = buildFileNameFor(projectDirName)
-    assert(project.projectDir.isDirectory)
-    assert(project.buildFile.isFile)
+FeaturePreviews.Feature.entries.forEach { feature ->
+    if (feature.isActive) {
+        enableFeaturePreview(feature.name)
+    }
 }

@@ -18,10 +18,10 @@
 package org.gradle.internal.scopeids
 
 import org.gradle.api.Action
-import org.gradle.api.internal.ClosureBackedAction
 import org.gradle.integtests.fixtures.AbstractContinuousIntegrationTest
 import org.gradle.integtests.fixtures.ScopeIdsFixture
 import org.gradle.integtests.fixtures.executer.GradleExecuter
+import org.gradle.util.internal.ClosureBackedAction
 import org.junit.Rule
 
 class ContinuousScopeIdsIntegrationTest extends AbstractContinuousIntegrationTest {
@@ -87,14 +87,14 @@ class ContinuousScopeIdsIntegrationTest extends AbstractContinuousIntegrationTes
         update(i1, "2")
 
         then:
-        succeeds()
+        buildTriggeredAndSucceeded()
         afterBuild()
 
         when:
         update(i2, "2")
 
         then:
-        succeeds()
+        buildTriggeredAndSucceeded()
         afterBuild()
 
         and:

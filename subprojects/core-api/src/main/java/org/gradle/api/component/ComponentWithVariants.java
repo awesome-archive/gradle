@@ -16,8 +16,6 @@
 
 package org.gradle.api.component;
 
-import org.gradle.api.Incubating;
-
 import java.util.Set;
 
 /**
@@ -25,7 +23,11 @@ import java.util.Set;
  *
  * @since 4.3
  */
-@Incubating
 public interface ComponentWithVariants extends SoftwareComponent {
+    /**
+     * Returns the variants.
+     *
+     * @since 4.3
+     */
     Set<? extends SoftwareComponent> getVariants();
 }

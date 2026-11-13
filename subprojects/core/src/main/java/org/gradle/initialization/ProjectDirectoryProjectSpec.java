@@ -16,38 +16,50 @@
 package org.gradle.initialization;
 
 import org.gradle.api.InvalidUserDataException;
-import org.gradle.api.internal.project.ProjectIdentifier;
-import org.gradle.api.internal.project.ProjectRegistry;
 
 import java.io.File;
 import java.util.List;
 
 public class ProjectDirectoryProjectSpec extends AbstractProjectSpec {
     private final File dir;
+    private final boolean fallBackToRootProject;
 
-    public ProjectDirectoryProjectSpec(File dir) {
+    /**
+     * @param fallBackToRootProject selects the root project when no project has {@code dir} as its project directory.
+     * Used when {@code dir} is the build's root directory, which belongs to the build regardless of whether a project lives there.
+     */
+    public ProjectDirectoryProjectSpec(File dir, boolean fallBackToRootProject) {
         this.dir = dir;
+        this.fallBackToRootProject = fallBackToRootProject;
     }
 
-    protected String formatNoMatchesMessage() {
-        return String.format("No projects in this build have project directory '%s'.", dir);
+    @Override
+    protected String formatNoMatchesMessage(String settings) {
+        return String.format("Project directory '%s' is not part of the build defined by %s.", dir, settings);
     }
 
-    protected String formatMultipleMatchesMessage(Iterable<? extends ProjectIdentifier> matches) {
+    @Override
+    protected String formatMultipleMatchesMessage(Iterable<ProjectDescriptorInternal> matches) {
         return String.format("Multiple projects in this build have project directory '%s': %s", dir, matches);
     }
 
     @Override
-    protected <T extends ProjectIdentifier> void select(ProjectRegistry<? extends T> candidates, List<? super T> matches) {
-        for (T candidate : candidates.getAllProjects()) {
+    protected void select(ProjectDescriptorRegistry candidates, List<ProjectDescriptorInternal> matches) {
+        for (ProjectDescriptorInternal candidate : candidates.getAllProjects()) {
             if (candidate.getProjectDir().equals(dir)) {
                 matches.add(candidate);
+            }
+        }
+        if (fallBackToRootProject && matches.isEmpty()) {
+            ProjectDescriptorInternal rootProject = candidates.getRootProject();
+            if (rootProject != null) {
+                matches.add(rootProject);
             }
         }
     }
 
     @Override
-    protected void checkPreconditions(ProjectRegistry<?> registry) {
+    protected void checkPreconditions(ProjectDescriptorRegistry registry) {
         if (!dir.exists()) {
             throw new InvalidUserDataException(String.format("Project directory '%s' does not exist.", dir));
         }

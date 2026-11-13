@@ -17,20 +17,20 @@ package org.gradle.execution.commandline
 
 import org.gradle.api.DefaultTask
 import org.gradle.api.Project
-import org.gradle.api.tasks.options.Option
 import org.gradle.api.internal.tasks.options.OptionReader
 import org.gradle.api.tasks.TaskAction
-import org.gradle.execution.TaskSelector
+import org.gradle.api.tasks.options.Option
+import org.gradle.execution.DefaultTaskSelector
 import org.gradle.internal.typeconversion.TypeConversionException
 import org.gradle.testfixtures.ProjectBuilder
 import spock.lang.Specification
 
 class CommandLineTaskConfigurerSpec extends Specification {
 
-    Project project = new ProjectBuilder().build()
+    Project project = ProjectBuilder.builder().build()
     CommandLineTaskConfigurer configurer = new CommandLineTaskConfigurer(new OptionReader());
 
-    TaskSelector selector = Mock()
+    DefaultTaskSelector selector = Mock()
     SomeTask task = project.task('someTask', type: SomeTask)
     SomeTask task2 = project.task('someTask2', type: SomeTask)
     SomeOtherTask otherTask = project.task('otherTask', type: SomeOtherTask)
@@ -161,7 +161,7 @@ class CommandLineTaskConfigurerSpec extends Specification {
         ex.cause.message.contains("Unknown command-line option '-c'")
     }
 
-    public static class SomeTask extends DefaultTask {
+    public static abstract class SomeTask extends DefaultTask {
         String content = 'default content'
 
         @Option(option = "content", description = "Some content.")
@@ -199,7 +199,7 @@ class CommandLineTaskConfigurerSpec extends Specification {
         public void dummy() {}
     }
 
-    public static class SomeOtherTask extends DefaultTask {
+    public static abstract class SomeOtherTask extends DefaultTask {
         boolean someFlag = false
         String stuff
 

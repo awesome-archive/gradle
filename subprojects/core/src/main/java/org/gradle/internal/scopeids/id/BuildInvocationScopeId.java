@@ -17,6 +17,8 @@
 package org.gradle.internal.scopeids.id;
 
 import org.gradle.internal.id.UniqueId;
+import org.gradle.internal.service.scopes.Scope;
+import org.gradle.internal.service.scopes.ServiceScope;
 
 /**
  * The ID of a single build invocation.
@@ -24,10 +26,11 @@ import org.gradle.internal.id.UniqueId;
  * Here, the term "build" is used to represent the overall invocation.
  * For example, buildSrc shares the same build scope ID as the overall build.
  * All composite participants also share the same build scope ID.
- * That is, all “nested” builds (in terms of GradleLauncher etc.) share the same build ID.
+ * That is, all "nested" build trees (in terms of GradleLauncher, GradleBuild etc.) share the same build invocation ID.
  *
  * This ID is, by definition, not persistent.
  */
+@ServiceScope(Scope.BuildTree.class)
 public final class BuildInvocationScopeId extends ScopeId {
 
     public BuildInvocationScopeId(UniqueId id) {

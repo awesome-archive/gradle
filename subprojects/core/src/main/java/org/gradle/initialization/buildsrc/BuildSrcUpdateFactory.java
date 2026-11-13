@@ -16,43 +16,23 @@
 
 package org.gradle.initialization.buildsrc;
 
-import org.gradle.api.internal.GradleInternal;
-import org.gradle.api.logging.Logger;
-import org.gradle.api.logging.Logging;
-import org.gradle.internal.Factory;
-import org.gradle.internal.classpath.CachedClasspathTransformer;
+import org.gradle.internal.buildtree.BuildTreeLifecycleController;
 import org.gradle.internal.classpath.ClassPath;
-import org.gradle.internal.classpath.DefaultClassPath;
-import org.gradle.internal.invocation.BuildController;
+import org.jspecify.annotations.NonNull;
 
-import java.io.File;
-import java.util.Collection;
-
-public class BuildSrcUpdateFactory implements Factory<ClassPath> {
-    private static final Logger LOGGER = Logging.getLogger(BuildSrcUpdateFactory.class);
-
-    private final BuildController buildController;
+public class BuildSrcUpdateFactory {
     private final BuildSrcBuildListenerFactory listenerFactory;
-    private final CachedClasspathTransformer cachedClasspathTransformer;
 
-    public BuildSrcUpdateFactory(BuildController buildController, BuildSrcBuildListenerFactory listenerFactory, CachedClasspathTransformer cachedClasspathTransformer) {
-        this.buildController = buildController;
+    public BuildSrcUpdateFactory(BuildSrcBuildListenerFactory listenerFactory) {
         this.listenerFactory = listenerFactory;
-        this.cachedClasspathTransformer = cachedClasspathTransformer;
     }
 
-    public ClassPath create() {
-        Collection<File> classpath = build();
-        LOGGER.debug("Gradle source classpath is: {}", classpath);
-        return cachedClasspathTransformer.transform(new DefaultClassPath(classpath));
-    }
-
-    private Collection<File> build() {
+    @NonNull
+    public ClassPath create(BuildTreeLifecycleController buildController) {
         BuildSrcBuildListenerFactory.Listener listener = listenerFactory.create();
-        GradleInternal gradle = buildController.getGradle();
-        gradle.addListener(listener);
+        buildController.beforeBuild(gradle -> gradle.addListener(listener));
 
-        buildController.run();
+        buildController.scheduleAndRunTasks(listener);
 
         return listener.getRuntimeClasspath();
     }

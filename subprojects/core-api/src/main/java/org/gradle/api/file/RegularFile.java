@@ -16,7 +16,8 @@
 
 package org.gradle.api.file;
 
-import org.gradle.api.Incubating;
+import org.gradle.declarative.dsl.model.annotations.HiddenInDefinition;
+import org.gradle.declarative.dsl.model.annotations.ValueFactories;
 
 import java.io.File;
 
@@ -28,10 +29,12 @@ import java.io.File;
  *
  * @since 4.1
  */
-@Incubating
 public interface RegularFile extends FileSystemLocation {
     /**
      * Returns the location of this file, as an absolute {@link File}.
      */
+    @Override
+    @ValueFactories
+    @HiddenInDefinition
     File getAsFile();
 }

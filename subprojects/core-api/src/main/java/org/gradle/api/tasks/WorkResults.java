@@ -22,23 +22,14 @@ package org.gradle.api.tasks;
  * @since 4.2
  */
 public class WorkResults {
-    private static final WorkResult DID_WORK = new WorkResult() {
-        @Override
-        public boolean getDidWork() {
-            return true;
-        }
-    };
-    private static final WorkResult DID_NO_WORK = new WorkResult() {
-        @Override
-        public boolean getDidWork() {
-            return false;
-        }
-    };
+    private static final WorkResult DID_WORK = () -> true;
+    private static final WorkResult DID_NO_WORK = () -> false;
 
     private WorkResults() {}
 
     /**
      * Returns a {@link WorkResult} object representing work done according to the given parameter.
+     * @since 4.2
      */
     public static WorkResult didWork(boolean didWork) {
         return didWork ? DID_WORK : DID_NO_WORK;

@@ -13,54 +13,64 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.gradle.api.internal.project;
 
-import org.gradle.api.initialization.ProjectDescriptor;
 import org.gradle.api.internal.GradleInternal;
 import org.gradle.api.internal.initialization.ClassLoaderScope;
 import org.gradle.groovy.scripts.ScriptSource;
 import org.gradle.groovy.scripts.TextResourceScriptSource;
 import org.gradle.initialization.DefaultProjectDescriptor;
+import org.gradle.initialization.DependenciesAccessors;
+import org.gradle.internal.build.BuildState;
+import org.gradle.internal.management.DependencyResolutionManagementInternal;
+import org.gradle.internal.project.ImmutableProjectDescriptor;
 import org.gradle.internal.reflect.Instantiator;
+import org.gradle.internal.resource.TextFileResourceLoader;
 import org.gradle.internal.resource.TextResource;
-import org.gradle.internal.resource.BasicTextResourceLoader;
-import org.gradle.util.NameValidator;
+import org.gradle.internal.scripts.ProjectScopedScriptResolution;
+import org.gradle.internal.service.scopes.ServiceRegistryFactory;
+import org.gradle.util.internal.NameValidator;
 
 import java.io.File;
 
 public class ProjectFactory implements IProjectFactory {
     private final Instantiator instantiator;
-    private final ProjectRegistry<ProjectInternal> projectRegistry;
-    private final BasicTextResourceLoader resourceLoader = new BasicTextResourceLoader();
+    private final TextFileResourceLoader textFileResourceLoader;
+    private final ProjectScopedScriptResolution scriptResolution;
 
-    public ProjectFactory(Instantiator instantiator, ProjectRegistry<ProjectInternal> projectRegistry) {
+    public ProjectFactory(Instantiator instantiator, TextFileResourceLoader textFileResourceLoader, ProjectScopedScriptResolution scriptResolution) {
         this.instantiator = instantiator;
-        this.projectRegistry = projectRegistry;
+        this.textFileResourceLoader = textFileResourceLoader;
+        this.scriptResolution = scriptResolution;
     }
 
-    public DefaultProject createProject(ProjectDescriptor projectDescriptor, ProjectInternal parent, GradleInternal gradle, ClassLoaderScope selfClassLoaderScope, ClassLoaderScope baseClassLoaderScope) {
-        File buildFile = projectDescriptor.getBuildFile();
-        TextResource resource = resourceLoader.loadFile("build file", buildFile);
+    @Override
+    public ProjectInternal createProject(
+        BuildState build,
+        ImmutableProjectDescriptor projectDescriptor,
+        ProjectState owner,
+        ServiceRegistryFactory serviceRegistryFactory,
+        ClassLoaderScope selfClassLoaderScope,
+        ClassLoaderScope baseClassLoaderScope
+    ) {
+        // Need to wrap resolution of the build file to associate the build file with the correct project
+        File buildFile = scriptResolution.resolveScriptsForProject(owner.getIdentity(), projectDescriptor::getBuildFile);
+        TextResource resource = textFileResourceLoader.loadFile("build file", buildFile);
         ScriptSource source = new TextResourceScriptSource(resource);
-        NameValidator.validate(projectDescriptor.getName(), "project name", DefaultProjectDescriptor.INVALID_NAME_IN_INCLUDE_HINT);
         DefaultProject project = instantiator.newInstance(DefaultProject.class,
-                projectDescriptor.getName(),
-                parent,
-                projectDescriptor.getProjectDir(),
-                buildFile,
-                source,
-                gradle,
-                gradle.getServiceRegistryFactory(),
-                selfClassLoaderScope,
-                baseClassLoaderScope
+            buildFile,
+            source,
+            owner,
+            serviceRegistryFactory,
+            selfClassLoaderScope,
+            baseClassLoaderScope
         );
-
-        if (parent != null) {
-            parent.addChildProject(project);
-        }
-        projectRegistry.addProject(project);
-
+        GradleInternal gradle = build.getMutableModel();
+        gradle.getServices().get(DependencyResolutionManagementInternal.class).configureProject(project);
+        project.beforeEvaluate(p -> {
+            NameValidator.validate(project.getName(), "project name", DefaultProjectDescriptor.INVALID_NAME_IN_INCLUDE_HINT);
+            gradle.getServices().get(DependenciesAccessors.class).createExtensions(project);
+        });
         return project;
     }
 }

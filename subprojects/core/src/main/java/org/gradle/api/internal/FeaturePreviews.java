@@ -15,9 +15,8 @@
  */
 package org.gradle.api.internal;
 
-import java.util.Collections;
-import java.util.EnumSet;
-import java.util.Set;
+import org.gradle.internal.buildoption.FeatureFlag;
+import org.jspecify.annotations.Nullable;
 
 public class FeaturePreviews {
 
@@ -25,9 +24,44 @@ public class FeaturePreviews {
      * Feature previews that can be turned on.
      * A feature that is no longer relevant will have the {@code active} flag set to {@code false}.
      */
-    public enum Feature {
-        IMPROVED_POM_SUPPORT(true),
-        GRADLE_METADATA(true);
+    public enum Feature implements FeatureFlag {
+        GROOVY_COMPILATION_AVOIDANCE(true, null),
+        TYPESAFE_PROJECT_ACCESSORS(true, null),
+        STABLE_CONFIGURATION_CACHE(true, "org.gradle.configuration-cache.stable"),
+        /**
+         * When enabled, service usage must be explicitly declared, or deprecation warnings will be issued.
+         * <p>
+         *     This functionality used to be behind {@link #STABLE_CONFIGURATION_CACHE}, but since it triggers false
+         *     positives and does not cover several required scenarios
+         *     (services used by work that is not tasks, services used at configuration time),
+         *     it is now behind a specific (internal) feature, used only by some internal tests.
+         * </p>
+         */
+        INTERNAL_BUILD_SERVICE_USAGE(true, null),
+        /**
+         * When enabled, child projects do not implicitly resolve properties or methods
+         * from their parent projects. Opts the build into the Gradle 10 behavior early.
+         * The deprecation warning that fires for implicit lookups from parent projects in
+         * Vintage mode will be silent under this preview because the lookup is disabled
+         * at the source.
+         */
+        NO_IMPLICIT_LOOKUP_IN_PARENT_PROJECTS(true, null),
+        /**
+         * This exists to test inactive feature previews
+         */
+        ALWAYS_INACTIVE(false, null),
+        /**
+         * Whether to use improved dependency graph sort ordering. With this feature enabled:
+         *
+         * <ul>
+         *  <li>{@link org.gradle.api.artifacts.ResolutionStrategy.SortOrder#DEFAULT} will sort the graph in a traditional BFS order.</li>
+         *  <li>{@link org.gradle.api.artifacts.ResolutionStrategy.SortOrder#CONSUMER_FIRST} will sort the graph in a topological order.</li>
+         *  <li>{@link org.gradle.api.artifacts.ResolutionStrategy.SortOrder#DEPENDENCY_FIRST} will sort the graph in a reverse topological order.</li>
+         * </ul>
+         *
+         * @see <a href="https://docs.gradle.org/nightly/userguide/upgrading_version_9.html#dependency_resolution_ordering">Upgrade Guide</a>
+         */
+        ENHANCED_GRAPH_ORDERING(true, null);
 
         public static Feature withName(String name) {
             try {
@@ -39,53 +73,24 @@ public class FeaturePreviews {
         }
 
         private final boolean active;
+        private final String systemPropertyName;
 
-        Feature(boolean active) {
+        Feature(boolean active, @Nullable String systemPropertyName) {
             this.active = active;
+            this.systemPropertyName = systemPropertyName;
         }
 
+        /**
+         * Returns whether the feature is still relevant.
+         */
         public boolean isActive() {
             return active;
         }
-    }
 
-    private final Set<Feature> activeFeatures;
-    private final EnumSet<Feature> enabledFeatures = EnumSet.noneOf(Feature.class);
-
-    public FeaturePreviews() {
-        EnumSet<Feature> tmpActiveSet = EnumSet.noneOf(Feature.class);
-        for (Feature feature : Feature.values()) {
-            if (feature.isActive()) {
-                tmpActiveSet.add(feature);
-            }
+        @Nullable
+        @Override
+        public String getSystemPropertyName() {
+            return systemPropertyName;
         }
-        activeFeatures = Collections.unmodifiableSet(tmpActiveSet);
-    }
-
-    public void enableFeature(Feature feature) {
-        if (feature.isActive()) {
-            enabledFeatures.add(feature);
-        }
-    }
-
-    public boolean isFeatureEnabled(Feature feature) {
-        return feature.isActive() && enabledFeatures.contains(feature);
-    }
-
-    public void enableFeature(String name) {
-        enableFeature(Feature.withName(name));
-    }
-
-    public boolean isFeatureEnabled(String name) {
-        return isFeatureEnabled(Feature.withName(name));
-    }
-
-    /**
-     * Returns an {@code EnumSet} containing all {@link Feature} that are active.
-     *
-     * @return the active {@code Feature}
-     */
-    public Set<Feature> getActiveFeatures() {
-        return activeFeatures;
     }
 }

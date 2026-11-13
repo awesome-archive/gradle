@@ -18,7 +18,6 @@ package org.gradle.api.attributes;
 
 import org.gradle.api.Action;
 import org.gradle.api.ActionConfiguration;
-import org.gradle.api.Incubating;
 import org.gradle.internal.HasInternalProtocol;
 
 import java.util.Comparator;
@@ -34,8 +33,8 @@ import java.util.Comparator;
  * unmodified, meaning we still have an ambiguous match.</p>
  *
  * @param <T> the concrete type of the attribute
+ * @since 3.3
  */
-@Incubating
 @HasInternalProtocol
 public interface DisambiguationRuleChain<T> {
 
@@ -43,24 +42,24 @@ public interface DisambiguationRuleChain<T> {
      * <p>Adds an arbitrary disambiguation rule to the chain.</p>
      * <p>A disambiguation rule can select the best match from a list of candidates.</p>
      *
-     * <p>A rule <i>can</i> express an preference by calling the @{link {@link MultipleCandidatesDetails#closestMatch(Object)}
+     * <p>A rule <i>can</i> express an preference by calling the {@link MultipleCandidatesDetails#closestMatch(Object)}
      * method to tell that a candidate is the best one.</p>
      *
      * <p>It is not mandatory for a rule to choose, and it is not an error to select multiple candidates.</p>
      *
-     * @param rule the rule to add
+     * @param ruleClass the rule to add
      * @since 4.0
      */
-    void add(Class<? extends AttributeDisambiguationRule<T>> rule);
+    void add(Class<? extends AttributeDisambiguationRule<T>> ruleClass);
 
     /**
      * <p>Adds an arbitrary disambiguation rule to the chain, possibly configuring the rule as well.</p>
      *
-     * @param rule the rule to add
+     * @param ruleClass the rule to add
      * @param configureAction the action to use to configure the rule
      * @since 4.0
      */
-    void add(Class<? extends AttributeDisambiguationRule<T>> rule, Action<? super ActionConfiguration> configureAction);
+    void add(Class<? extends AttributeDisambiguationRule<T>> ruleClass, Action<? super ActionConfiguration> configureAction);
 
     /**
      * Adds an ordered disambiguation rule. Values will be compared using the
@@ -69,6 +68,7 @@ public interface DisambiguationRuleChain<T> {
      * still be an ambiguity).
      *
      * @param comparator the comparator to use
+     * @since 3.3
      */
     void pickFirst(Comparator<? super T> comparator);
 
@@ -79,6 +79,7 @@ public interface DisambiguationRuleChain<T> {
      * still be an ambiguity).
      *
      * @param comparator the comparator to use
+     * @since 3.3
      */
     void pickLast(Comparator<? super T> comparator);
 

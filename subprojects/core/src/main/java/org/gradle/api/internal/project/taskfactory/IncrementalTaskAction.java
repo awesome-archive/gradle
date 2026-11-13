@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 the original author or authors.
+ * Copyright 2019 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,36 +17,31 @@
 package org.gradle.api.internal.project.taskfactory;
 
 import org.gradle.api.Task;
-import org.gradle.api.internal.changedetection.TaskArtifactState;
-import org.gradle.api.internal.tasks.ContextAwareTaskAction;
-import org.gradle.api.internal.tasks.TaskExecutionContext;
-import org.gradle.api.internal.tasks.execution.TaskProperties;
-import org.gradle.api.tasks.incremental.IncrementalTaskInputs;
-import org.gradle.internal.reflect.JavaReflectionUtil;
+import org.gradle.internal.execution.history.changes.InputChangesInternal;
+import org.gradle.internal.reflect.JavaMethod;
+import org.gradle.work.InputChanges;
 
 import java.lang.reflect.Method;
 
-class IncrementalTaskAction extends StandardTaskAction implements ContextAwareTaskAction {
-
-    private TaskArtifactState taskArtifactState;
-    private TaskProperties taskProperties;
+public class IncrementalTaskAction extends StandardTaskAction {
+    private InputChangesInternal inputChanges;
 
     public IncrementalTaskAction(Class<? extends Task> type, Method method) {
         super(type, method);
     }
 
-    public void contextualise(TaskExecutionContext context) {
-        this.taskArtifactState = context.getTaskArtifactState();
-        this.taskProperties = context.getTaskProperties();
+    @Override
+    public void setInputChanges(InputChangesInternal inputChanges) {
+        this.inputChanges = inputChanges;
     }
 
     @Override
-    public void releaseContext() {
-        this.taskArtifactState = null;
-        this.taskProperties = null;
+    public void clearInputChanges() {
+        this.inputChanges = null;
     }
 
+    @Override
     protected void doExecute(Task task, String methodName) {
-        JavaReflectionUtil.method(task, Object.class, methodName, IncrementalTaskInputs.class).invoke(task, taskArtifactState.getInputChanges(taskProperties));
+        JavaMethod.of(task, Object.class, methodName, InputChanges.class).invoke(task, inputChanges);
     }
 }

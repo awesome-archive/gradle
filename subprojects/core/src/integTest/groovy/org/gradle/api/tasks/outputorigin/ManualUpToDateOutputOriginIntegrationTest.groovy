@@ -17,9 +17,8 @@
 package org.gradle.api.tasks.outputorigin
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.OriginFixture
 import org.gradle.integtests.fixtures.ScopeIdsFixture
-import org.gradle.integtests.fixtures.TaskOutputOriginFixture
-import org.gradle.internal.id.UniqueId
 import org.junit.Rule
 
 class ManualUpToDateOutputOriginIntegrationTest extends AbstractIntegrationSpec {
@@ -28,26 +27,26 @@ class ManualUpToDateOutputOriginIntegrationTest extends AbstractIntegrationSpec 
     public final ScopeIdsFixture scopeIds = new ScopeIdsFixture(executer, temporaryFolder)
 
     @Rule
-    public final TaskOutputOriginFixture originBuildInvocationId = new TaskOutputOriginFixture(executer, temporaryFolder)
+    public final OriginFixture originBuildInvocationId = new OriginFixture(executer, temporaryFolder)
 
-    UniqueId getBuildInvocationId() {
-        scopeIds.buildInvocationId
+    String getBuildInvocationId() {
+        scopeIds.buildInvocationId.asString()
     }
 
-    UniqueId originBuildInvocationId(String taskPath) {
+    String originBuildInvocationId(String taskPath) {
         originBuildInvocationId.originId(taskPath)
     }
 
     def "considers invocation that manually declared up-to-date to be an origin"() {
         given:
-        buildScript """
+        buildFile """
             class CustomTask extends DefaultTask {
                 @Input
                 String value = "a"
-                
+
                 @OutputFile
                 File file = project.file("out.txt")
-                
+
                 @TaskAction
                 void action() {
                     if (file.file) {
@@ -57,7 +56,7 @@ class ManualUpToDateOutputOriginIntegrationTest extends AbstractIntegrationSpec 
                     }
                 }
             }
-            
+
             def write = tasks.create("write", CustomTask)
         """
 

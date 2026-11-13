@@ -17,19 +17,28 @@
 package org.gradle.integtests.composite
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import spock.lang.Unroll
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
+import org.gradle.integtests.fixtures.resolve.ResolveTestFixture
+import org.gradle.util.internal.ToBeImplemented
 
 class CompositeBuildConfigurationAttributesResolveIntegrationTest extends AbstractIntegrationSpec {
+    def resolve = new ResolveTestFixture(testDirectory)
 
-    def setup(){
+    def setup() {
+        settingsFile << """
+            rootProject.name = 'test'
+        """
         using m2
     }
 
+    @ToBeFixedForIsolatedProjects(because = "cross-build configuration")
     def "context travels to transitive dependencies"() {
         given:
-        file('settings.gradle') << """
+        createDirs("a", "b", "includedBuild")
+        settingsFile << """
             include 'a', 'b'
             includeBuild 'includedBuild'
+            ${resolve.configureSettings("_compileFreeDebug", "_compileFreeRelease")}
         """
         buildFile << '''
             def buildType = Attribute.of('buildType', String)
@@ -51,17 +60,6 @@ class CompositeBuildConfigurationAttributesResolveIntegrationTest extends Abstra
                     _compileFreeDebug project(':b')
                     _compileFreeRelease project(':b')
                 }
-                task checkDebug(dependsOn: configurations._compileFreeDebug) {
-                    doLast {
-                       assert configurations._compileFreeDebug.collect { it.name } == ['b-transitive.jar', 'c-foo.jar']
-                    }
-                }
-                task checkRelease(dependsOn: configurations._compileFreeRelease) {
-                    doLast {
-                       assert configurations._compileFreeRelease.collect { it.name } == ['b-transitive.jar', 'c-bar.jar']
-                    }
-                }
-
             }
             project(':b') {
                 configurations.create('default')
@@ -74,7 +72,7 @@ class CompositeBuildConfigurationAttributesResolveIntegrationTest extends Abstra
             }
         '''
 
-        file('includedBuild/build.gradle') << '''
+        file('includedBuild/build.gradle') << """
 
             group = 'com.acme.external'
             version = '2.0-SNAPSHOT'
@@ -92,44 +90,61 @@ class CompositeBuildConfigurationAttributesResolveIntegrationTest extends Abstra
                 foo.attributes { attribute(buildType, 'debug'); attribute(flavor, 'free') }
                 bar.attributes { attribute(buildType, 'release'); attribute(flavor, 'free') }
             }
-            task fooJar(type: Jar) {
-               baseName = 'c-foo'
-            }
-            task barJar(type: Jar) {
-               baseName = 'c-bar'
-            }
-            artifacts {
-                foo fooJar
-                bar barJar
-            }
-        '''
+
+            ${fooAndBarJars()}
+        """
         file('includedBuild/settings.gradle') << '''
             rootProject.name = 'external'
         '''
 
         when:
-        run ':a:checkDebug'
+        run ':a:check_compileFreeDebug'
 
         then:
-        executedAndNotSkipped ':external:fooJar'
-        notExecuted ':external:barJar'
+        executedAndNotSkipped ':includedBuild:fooJar'
+        notExecuted ':includedBuild:barJar'
+        resolve.expectGraph(":a") {
+            root(':a', 'test:a:') {
+                project(':b', 'test:b:') {
+                    artifact(name: 'b-transitive')
+                    edge('com.acme.external:external:1.0', ':includedBuild', 'com.acme.external:external:2.0-SNAPSHOT') {
+                        compositeSubstitute()
+                        artifact(name: 'c-foo', fileName: 'c-foo.jar')
+                    }
+                }
+            }
+        }
 
         when:
-        run ':a:checkRelease'
+        run ':a:check_compileFreeRelease'
 
         then:
-        executedAndNotSkipped ':external:barJar'
-        notExecuted ':external:fooJar'
+        executedAndNotSkipped ':includedBuild:barJar'
+        notExecuted ':includedBuild:fooJar'
+        resolve.expectGraph(":a") {
+            root(':a', 'test:a:') {
+                project(':b', 'test:b:') {
+                    artifact(name: 'b-transitive')
+                    edge('com.acme.external:external:1.0', ':includedBuild', 'com.acme.external:external:2.0-SNAPSHOT') {
+                        compositeSubstitute()
+                        artifact(name: 'c-bar', fileName: 'c-bar.jar')
+                    }
+                }
+            }
+        }
     }
 
+    @ToBeFixedForIsolatedProjects(because = "cross-build configuration")
     def "context travels to transitive dependencies via external components (Maven)"() {
         given:
         mavenRepo.module('com.acme.external', 'external', '1.2')
             .dependsOn('com.acme.external', 'c', '0.1')
             .publish()
+        createDirs("a", "b", "includedBuild")
         file('settings.gradle') << """
             include 'a', 'b'
             includeBuild 'includedBuild'
+            ${resolve.configureSettings("_compileFreeDebug", "_compileFreeRelease")}
         """
         buildFile << """
             def buildType = Attribute.of('buildType', String)
@@ -154,16 +169,6 @@ class CompositeBuildConfigurationAttributesResolveIntegrationTest extends Abstra
                     _compileFreeDebug project(':b')
                     _compileFreeRelease project(':b')
                 }
-                task checkDebug(dependsOn: configurations._compileFreeDebug) {
-                    doLast {
-                       assert configurations._compileFreeDebug.collect { it.name } == ['b-transitive.jar', 'external-1.2.jar', 'c-foo.jar']
-                    }
-                }
-                task checkRelease(dependsOn: configurations._compileFreeRelease) {
-                    doLast {
-                       assert configurations._compileFreeRelease.collect { it.name } == ['b-transitive.jar', 'external-1.2.jar', 'c-bar.jar']
-                    }
-                }
             }
             project(':b') {
                 configurations.create('default')
@@ -176,7 +181,7 @@ class CompositeBuildConfigurationAttributesResolveIntegrationTest extends Abstra
             }
         """
 
-        file('includedBuild/build.gradle') << '''
+        file('includedBuild/build.gradle') << """
 
             group = 'com.acme.external'
             version = '2.0-SNAPSHOT'
@@ -194,44 +199,65 @@ class CompositeBuildConfigurationAttributesResolveIntegrationTest extends Abstra
                 foo.attributes { attribute(buildType, 'debug'); attribute(flavor, 'free') }
                 bar.attributes { attribute(buildType, 'release'); attribute(flavor, 'free') }
             }
-            task fooJar(type: Jar) {
-               baseName = 'c-foo'
-            }
-            task barJar(type: Jar) {
-               baseName = 'c-bar'
-            }
-            artifacts {
-                foo fooJar
-                bar barJar
-            }
-        '''
+
+            ${fooAndBarJars()}
+        """
         file('includedBuild/settings.gradle') << '''
             rootProject.name = 'c'
         '''
 
         when:
-        run ':a:checkDebug'
+        run ':a:check_compileFreeDebug'
 
         then:
-        executedAndNotSkipped ':c:fooJar'
-        notExecuted ':c:barJar'
+        executedAndNotSkipped ':includedBuild:fooJar'
+        notExecuted ':includedBuild:barJar'
+        resolve.expectGraph(":a") {
+            root(':a', 'test:a:') {
+                project(':b', 'test:b:') {
+                    artifact(name: 'b-transitive')
+                    module('com.acme.external:external:1.2') {
+                        edge('com.acme.external:c:0.1', ':includedBuild', 'com.acme.external:c:2.0-SNAPSHOT') {
+                            compositeSubstitute()
+                            artifact(name: 'c-foo', fileName: 'c-foo.jar')
+                        }
+                    }
+                }
+            }
+        }
 
         when:
-        run ':a:checkRelease'
+        run ':a:check_compileFreeRelease'
 
         then:
-        executedAndNotSkipped ':c:barJar'
-        notExecuted ':c:fooJar'
+        executedAndNotSkipped ':includedBuild:barJar'
+        notExecuted ':includedBuild:fooJar'
+        resolve.expectGraph(":a") {
+            root(':a', 'test:a:') {
+                project(':b', 'test:b:') {
+                    artifact(name: 'b-transitive')
+                    module('com.acme.external:external:1.2') {
+                        edge('com.acme.external:c:0.1', ':includedBuild', 'com.acme.external:c:2.0-SNAPSHOT') {
+                            compositeSubstitute()
+                            artifact(name: 'c-bar', fileName: 'c-bar.jar')
+                        }
+                    }
+                }
+            }
+        }
     }
 
+    @ToBeFixedForIsolatedProjects(because = "cross-build configuration")
     def "context travels to transitive dependencies via external components (Ivy)"() {
         given:
         ivyRepo.module('com.acme.external', 'external', '1.2')
             .dependsOn('com.acme.external', 'c', '0.1')
             .publish()
+        createDirs("a", "b", "includedBuild")
         file('settings.gradle') << """
             include 'a', 'b'
             includeBuild 'includedBuild'
+            ${resolve.configureSettings("_compileFreeDebug", "_compileFreeRelease")}
         """
         buildFile << """
             def buildType = Attribute.of('buildType', String)
@@ -256,16 +282,6 @@ class CompositeBuildConfigurationAttributesResolveIntegrationTest extends Abstra
                     _compileFreeDebug project(':b')
                     _compileFreeRelease project(':b')
                 }
-                task checkDebug(dependsOn: configurations._compileFreeDebug) {
-                    doLast {
-                       assert configurations._compileFreeDebug.collect { it.name } == ['b-transitive.jar', 'external-1.2.jar', 'c-foo.jar']
-                    }
-                }
-                task checkRelease(dependsOn: configurations._compileFreeRelease) {
-                    doLast {
-                       assert configurations._compileFreeRelease.collect { it.name } == ['b-transitive.jar', 'external-1.2.jar', 'c-bar.jar']
-                    }
-                }
             }
             project(':b') {
                 configurations.create('default')
@@ -278,7 +294,7 @@ class CompositeBuildConfigurationAttributesResolveIntegrationTest extends Abstra
             }
         """
 
-        file('includedBuild/build.gradle') << '''
+        file('includedBuild/build.gradle') << """
 
             group = 'com.acme.external'
             version = '2.0-SNAPSHOT'
@@ -296,45 +312,68 @@ class CompositeBuildConfigurationAttributesResolveIntegrationTest extends Abstra
                 foo.attributes { attribute(buildType, 'debug'); attribute(flavor, 'free') }
                 bar.attributes { attribute(buildType, 'release'); attribute(flavor, 'free') }
             }
-            task fooJar(type: Jar) {
-               baseName = 'c-foo'
-            }
-            task barJar(type: Jar) {
-               baseName = 'c-bar'
-            }
-            artifacts {
-                foo fooJar
-                bar barJar
-            }
-        '''
+
+            ${fooAndBarJars()}
+        """
         file('includedBuild/settings.gradle') << '''
             rootProject.name = 'c'
         '''
 
         when:
-        run ':a:checkDebug'
+        run ':a:check_compileFreeDebug'
+        resolve.expectGraph(":a") {
+            root(':a', 'test:a:') {
+                project(':b', 'test:b:') {
+                    artifact(name: 'b-transitive')
+                    module('com.acme.external:external:1.2') {
+                        edge('com.acme.external:c:0.1', ':includedBuild', 'com.acme.external:c:2.0-SNAPSHOT') {
+                            compositeSubstitute()
+                            artifact(name: 'c-foo', fileName: 'c-foo.jar')
+                        }
+                    }
+                }
+            }
+        }
 
         then:
-        executedAndNotSkipped ':c:fooJar'
-        notExecuted ':c:barJar'
+        executedAndNotSkipped ':includedBuild:fooJar'
+        notExecuted ':includedBuild:barJar'
 
         when:
-        run ':a:checkRelease'
+        run ':a:check_compileFreeRelease'
 
         then:
-        executedAndNotSkipped ':c:barJar'
-        notExecuted ':c:fooJar'
+        executedAndNotSkipped ':includedBuild:barJar'
+        notExecuted ':includedBuild:fooJar'
+        resolve.expectGraph(":a") {
+            root(':a', 'test:a:') {
+                project(':b', 'test:b:') {
+                    artifact(name: 'b-transitive')
+                    module('com.acme.external:external:1.2') {
+                        edge('com.acme.external:c:0.1', ':includedBuild', 'com.acme.external:c:2.0-SNAPSHOT') {
+                            compositeSubstitute()
+                            artifact(name: 'c-bar', fileName: 'c-bar.jar')
+                        }
+                    }
+                }
+            }
+        }
     }
 
-    @Unroll
+    @ToBeFixedForIsolatedProjects(because = "cross-build configuration")
     def "attribute values are matched across builds - #type"() {
         given:
+        createDirs("a", "b", "includedBuild")
         file('settings.gradle') << """
             include 'a', 'b'
             includeBuild 'includedBuild'
+            ${resolve.configureSettings("_compileFree", "_compilePaid")}
         """
         buildFile << """
-            enum SomeEnum { free, paid }
+            enum SomeEnum implements Named {
+                free, paid
+                @Override String getName() { return name() }
+            }
             interface Thing extends Named { }
             @groovy.transform.EqualsAndHashCode
             class OtherThing implements Thing, Serializable { String name }
@@ -356,16 +395,6 @@ class CompositeBuildConfigurationAttributesResolveIntegrationTest extends Abstra
                     _compileFree project(':b')
                     _compilePaid project(':b')
                 }
-                task checkFree(dependsOn: configurations._compileFree) {
-                    doLast {
-                       assert configurations._compileFree.collect { it.name } == ['b-transitive.jar', 'c-foo.jar']
-                    }
-                }
-                task checkPaid(dependsOn: configurations._compilePaid) {
-                    doLast {
-                       assert configurations._compilePaid.collect { it.name } == ['b-transitive.jar', 'c-bar.jar']
-                    }
-                }
             }
             project(':b') {
                 configurations.create('default')
@@ -379,7 +408,10 @@ class CompositeBuildConfigurationAttributesResolveIntegrationTest extends Abstra
         """
 
         file('includedBuild/build.gradle') << """
-            enum SomeEnum { free, paid }
+            enum SomeEnum implements Named {
+                free, paid
+                @Override String getName() { return name() }
+            }
             interface Thing extends Named { }
             @groovy.transform.EqualsAndHashCode
             class OtherThing implements Thing, Serializable { String name }
@@ -398,51 +430,84 @@ class CompositeBuildConfigurationAttributesResolveIntegrationTest extends Abstra
                 foo.attributes { attribute(flavor, $freeValue) }
                 bar.attributes { attribute(flavor, $paidValue) }
             }
-            task fooJar(type: Jar) {
-               baseName = 'c-foo'
-            }
-            task barJar(type: Jar) {
-               baseName = 'c-bar'
-            }
-            artifacts {
-                foo fooJar
-                bar barJar
-            }
+
+            ${fooAndBarJars()}
         """
         file('includedBuild/settings.gradle') << '''
             rootProject.name = 'external'
         '''
 
         when:
-        run ':a:checkFree'
+        run ':a:check_compileFree'
 
         then:
-        executedAndNotSkipped ':external:fooJar'
-        notExecuted ':external:barJar'
+        executedAndNotSkipped ':includedBuild:fooJar'
+        notExecuted ':includedBuild:barJar'
+        resolve.expectGraph(":a") {
+            root(':a', 'test:a:') {
+                project(':b', 'test:b:') {
+                    artifact(name: 'b-transitive')
+                    edge('com.acme.external:external:1.0', ':includedBuild', 'com.acme.external:external:2.0-SNAPSHOT') {
+                        compositeSubstitute()
+                        artifact(name: 'c-foo', fileName: 'c-foo.jar')
+                    }
+                }
+            }
+        }
 
         when:
-        run ':a:checkPaid'
+        run ':a:check_compilePaid'
 
         then:
-        executedAndNotSkipped ':external:barJar'
-        notExecuted ':external:fooJar'
+        executedAndNotSkipped ':includedBuild:barJar'
+        notExecuted ':includedBuild:fooJar'
+        resolve.expectGraph(":a") {
+            root(':a', 'test:a:') {
+                project(':b', 'test:b:') {
+                    artifact(name: 'b-transitive')
+                    edge('com.acme.external:external:1.0', ':includedBuild', 'com.acme.external:external:2.0-SNAPSHOT') {
+                        compositeSubstitute()
+                        artifact(name: 'c-bar', fileName: 'c-bar.jar')
+                    }
+                }
+            }
+        }
 
         where:
         type         | freeValue                      | paidValue
         'SomeEnum'   | 'SomeEnum.free'                | 'SomeEnum.paid'
         'Thing'      | 'objects.named(Thing, "free")' | 'objects.named(Thing, "paid")'
+
+        /*
+          Note that OtherThing represents IMPROPER usage.  Named implementations should only be created by
+          Gradle, NOT by calling their constructor directly.  They shouldn't contain fields,
+          and should be abstract classes.
+
+          If you do try to create this instance via Gradle (as with Thing above), you will get the following error:
+
+           >  Could not create an instance of type OtherThing.
+             > Type OtherThing is not a valid Named implementation class:
+               - Field name is not valid: A Named implementation class must not define any instance fields.
+
+           Ideally, Gradle would verify that Named implementations are implemented correctly and/or
+           were created by Gradle as managed types (perhaps when used to create an Attribute) and would
+           fail-fast at that point.
+
+           So this test is left to document existing behavior, and to serve as a canary, but should not be used as a model for
+           how to use Named implementations.  If this test case causes problems later, it should just be removed.
+         */
         'OtherThing' | 'new OtherThing(name: "free")' | 'new OtherThing(name: "paid")'
     }
 
     def "compatibility and disambiguation rules can be defined by consuming build"() {
         given:
         file('settings.gradle') << """
-            include 'a', 'b'
-            includeBuild 'includedBuild'
+            includeBuild 'external'
         """
         buildFile << """
             interface Thing extends Named { }
-            
+            def flavor = Attribute.of('flavor', Thing)
+
             class CompatRule implements AttributeCompatibilityRule<Thing> {
                 void execute(CompatibilityCheckDetails<Thing> details) {
                     if (details.consumerValue.name == 'paid' && details.producerValue.name == 'blue') {
@@ -463,54 +528,33 @@ class CompositeBuildConfigurationAttributesResolveIntegrationTest extends Abstra
                     }
                 }
             }
+            dependencies {
+                attributesSchema {
+                    attribute(flavor).compatibilityRules.add(CompatRule)
+                    attribute(flavor).disambiguationRules.add(DisRule)
+                }
+            }
 
-            def flavor = Attribute.of('flavor', Thing)
-            allprojects {
-                dependencies {
-                    attributesSchema {
-                        attribute(flavor).compatibilityRules.add(CompatRule)
-                        attribute(flavor).disambiguationRules.add(DisRule)
-                    }
-                }
+            configurations {
+                _compileFree.attributes { attribute(flavor, named(Thing, 'free')) }
+                _compilePaid.attributes { attribute(flavor, named(Thing, 'paid')) }
             }
-            project(':a') {
-                configurations {
-                    _compileFree.attributes { attribute(flavor, objects.named(Thing, 'free')) }
-                    _compilePaid.attributes { attribute(flavor, objects.named(Thing, 'paid')) }
-                }
-                dependencies {
-                    _compileFree project(':b')
-                    _compilePaid project(':b')
-                }
-                task checkFree(dependsOn: configurations._compileFree) {
-                    doLast {
-                       assert configurations._compileFree.collect { it.name } == ['b-transitive.jar', 'c-foo.jar']
-                    }
-                }
-                task checkPaid(dependsOn: configurations._compilePaid) {
-                    doLast {
-                       assert configurations._compilePaid.collect { it.name } == ['b-transitive.jar', 'c-bar.jar']
-                    }
-                }
-            }
-            project(':b') {
-                configurations.create('default')
-                artifacts {
-                    'default' file('b-transitive.jar')
-                }
-                dependencies {
-                    'default'('com.acme.external:external:1.0')
-                }
+
+            ${resolve.configureProject("_compileFree", "_compilePaid")}
+
+            dependencies {
+                _compileFree 'com.acme.external:external:1.0'
+                _compilePaid 'com.acme.external:external:1.0'
             }
         """
 
-        file('includedBuild/build.gradle') << """
+        file('external/build.gradle') << """
             interface Thing extends Named { }
+            def flavor = Attribute.of('flavor', Thing)
 
             group = 'com.acme.external'
             version = '2.0-SNAPSHOT'
 
-            def flavor = Attribute.of('flavor', Thing)
             dependencies {
                 attributesSchema {
                     attribute(flavor)
@@ -518,48 +562,162 @@ class CompositeBuildConfigurationAttributesResolveIntegrationTest extends Abstra
             }
 
             configurations {
-                foo.attributes { attribute(flavor, objects.named(Thing, 'red')) }
-                bar.attributes { attribute(flavor, objects.named(Thing, 'blue')) }
+                foo.attributes { attribute(flavor, named(Thing, 'red')) }
+                bar.attributes { attribute(flavor, named(Thing, 'blue')) }
             }
-            task fooJar(type: Jar) {
-               baseName = 'c-foo'
-            }
-            task barJar(type: Jar) {
-               baseName = 'c-bar'
-            }
-            artifacts {
-                foo fooJar
-                bar barJar
-            }
+
+            ${fooAndBarJars()}
         """
-        file('includedBuild/settings.gradle') << '''
-            rootProject.name = 'external'
-        '''
 
         when:
-        run ':a:checkFree'
+        run ':check_compileFree'
 
         then:
         executedAndNotSkipped ':external:fooJar'
         notExecuted ':external:barJar'
+        resolve.expectGraph {
+            root(':', ':test:') {
+                edge('com.acme.external:external:1.0', ':external', 'com.acme.external:external:2.0-SNAPSHOT') {
+                    compositeSubstitute()
+                    artifact(name: 'c-foo', fileName: 'c-foo.jar')
+                }
+            }
+        }
 
         when:
-        run ':a:checkPaid'
+        run ':check_compilePaid'
 
         then:
         executedAndNotSkipped ':external:barJar'
         notExecuted ':external:fooJar'
+        resolve.expectGraph {
+            root(':', ':test:') {
+                edge('com.acme.external:external:1.0', ':external', 'com.acme.external:external:2.0-SNAPSHOT') {
+                    compositeSubstitute()
+                    artifact(name: 'c-bar', fileName: 'c-bar.jar')
+                }
+            }
+        }
     }
 
-    def "reports failure to resolve due to incompatible attribute values"() {
+    @ToBeImplemented
+    def "compatibility and disambiguation rules can be defined by producing build"() {
         given:
         file('settings.gradle') << """
-            include 'a', 'b'
-            includeBuild 'includedBuild'
+            includeBuild 'external'
         """
         buildFile << """
             interface Thing extends Named { }
-            
+            def flavor = Attribute.of('flavor', Thing)
+
+            dependencies {
+                attributesSchema {
+                    attribute(flavor)
+                }
+            }
+
+            configurations {
+                _compileFree.attributes { attribute(flavor, named(Thing, 'free')) }
+                _compilePaid.attributes { attribute(flavor, named(Thing, 'paid')) }
+            }
+
+            ${resolve.configureProject("_compileFree", "_compilePaid")}
+
+            dependencies {
+                _compileFree 'com.acme.external:external:1.0'
+                _compilePaid 'com.acme.external:external:1.0'
+            }
+        """
+
+        file('external/build.gradle') << """
+            interface Thing extends Named { }
+            def flavor = Attribute.of('flavor', Thing)
+
+            group = 'com.acme.external'
+            version = '2.0-SNAPSHOT'
+            class CompatRule implements AttributeCompatibilityRule<Thing> {
+                void execute(CompatibilityCheckDetails<Thing> details) {
+                    if (details.consumerValue.name == 'paid' && details.producerValue.name == 'blue') {
+                        details.compatible()
+                    } else if (details.producerValue.name == 'red') {
+                        details.compatible()
+                    }
+                }
+            }
+
+            class DisRule implements AttributeDisambiguationRule<Thing> {
+                void execute(MultipleCandidatesDetails<Thing> details) {
+                    for (Thing t: details.candidateValues) {
+                        if (t.name == 'blue') {
+                            details.closestMatch(t)
+                            return
+                        }
+                    }
+                }
+            }
+            dependencies {
+                attributesSchema {
+                    attribute(flavor).compatibilityRules.add(CompatRule)
+                    attribute(flavor).disambiguationRules.add(DisRule)
+                }
+            }
+
+            configurations {
+                foo.attributes { attribute(flavor, named(Thing, 'red')) }
+                bar.attributes { attribute(flavor, named(Thing, 'blue')) }
+            }
+
+            ${fooAndBarJars()}
+        """
+
+        expect:
+        fails(":check_compileFree")
+        fails(":check_compilePaid")
+
+        // TODO: Restore proper expectations when this passes
+//        when:
+//        run ':check_compileFree'
+//
+//        then:
+//        executedAndNotSkipped ':external:fooJar'
+//        notExecuted ':external:barJar'
+//        resolve.expectGraph {
+//            root(':', ':test:') {
+//                edge('com.acme.external:external:1.0', ':external', 'com.acme.external:external:2.0-SNAPSHOT') {
+//                    compositeSubstitute()
+//                    artifact(name: 'c-foo', fileName: 'c-foo.jar')
+//                }
+//            }
+//        }
+//
+//        when:
+//        run ':check_compilePaid'
+//
+//        then:
+//        executedAndNotSkipped ':external:barJar'
+//        notExecuted ':external:fooJar'
+//        resolve.expectGraph {
+//            root(':', ':test:') {
+//                edge('com.acme.external:external:1.0', ':external', 'com.acme.external:external:2.0-SNAPSHOT') {
+//                    compositeSubstitute()
+//                    artifact(name: 'c-bar', fileName: 'c-bar.jar')
+//                }
+//            }
+//        }
+    }
+
+    @ToBeFixedForIsolatedProjects(because = "cross-build configuration")
+    def "reports failure to resolve due to incompatible attribute values"() {
+        given:
+        createDirs("a", "b", "includedBuild")
+        file('settings.gradle') << """
+            include 'a', 'b'
+            includeBuild 'includedBuild'
+            ${resolve.configureSettings("_compileFree", "_compilePaid")}
+        """
+        buildFile << """
+            interface Thing extends Named { }
+
             class CompatRule implements AttributeCompatibilityRule<Thing> {
                 void execute(CompatibilityCheckDetails<Thing> details) {
                     if (details.consumerValue.name == 'paid') {
@@ -578,8 +736,8 @@ class CompositeBuildConfigurationAttributesResolveIntegrationTest extends Abstra
             }
             project(':a') {
                 configurations {
-                    _compileFree.attributes { attribute(flavor, objects.named(Thing, 'free')) }
-                    _compilePaid.attributes { attribute(flavor, objects.named(Thing, 'paid')) }
+                    _compileFree.attributes { attribute(flavor, named(Thing, 'free')) }
+                    _compilePaid.attributes { attribute(flavor, named(Thing, 'paid')) }
                 }
                 dependencies {
                     _compileFree project(':b')
@@ -621,60 +779,59 @@ class CompositeBuildConfigurationAttributesResolveIntegrationTest extends Abstra
             }
 
             configurations {
-                foo.attributes { attribute(flavor, objects.named(Thing, 'red')) }
-                bar.attributes { attribute(flavor, objects.named(Thing, 'blue')) }
+                foo.attributes { attribute(flavor, named(Thing, 'red')) }
+                bar.attributes { attribute(flavor, named(Thing, 'blue')) }
             }
-            task fooJar(type: Jar) {
-               baseName = 'c-foo'
-            }
-            task barJar(type: Jar) {
-               baseName = 'c-bar'
-            }
-            artifacts {
-                foo fooJar
-                bar barJar
-            }
+
+            ${fooAndBarJars()}
         """
         file('includedBuild/settings.gradle') << '''
             rootProject.name = 'external'
         '''
 
         when:
-        fails ':a:checkFree'
+        fails ':a:check_compileFree'
 
         then:
-        failure.assertHasCause("Could not resolve com.acme.external:external:1.0.")
-        failure.assertHasCause("""Unable to find a matching configuration of project :external:
-  - Configuration 'bar': Required flavor 'free' and found incompatible value 'blue'.
-  - Configuration 'foo': Required flavor 'free' and found incompatible value 'red'.""")
+        failure.assertHasCause("Could not resolve project ':includedBuild' (Requested: com.acme.external:external:1.0).")
+        failure.assertHasCause("""No matching variant of project ':includedBuild' was found. The consumer was configured to find attribute 'flavor' with value 'free' but:
+  - Variant 'bar':
+      - Incompatible because this component declares attribute 'flavor' with value 'blue' and the consumer needed attribute 'flavor' with value 'free'
+  - Variant 'foo':
+      - Incompatible because this component declares attribute 'flavor' with value 'red' and the consumer needed attribute 'flavor' with value 'free'""")
 
         when:
-        fails ':a:checkPaid'
+        fails ':a:check_compilePaid'
 
         then:
-        failure.assertHasCause("Could not resolve com.acme.external:external:1.0.")
-        failure.assertHasCause("""Cannot choose between the following configurations of project :external:
+        failure.assertHasCause("Could not resolve project ':includedBuild' (Requested: com.acme.external:external:1.0).")
+        failure.assertHasCause("""The consumer was configured to find attribute 'flavor' with value 'paid'. However we cannot choose between the following variants of project ':includedBuild':
   - bar
   - foo
 All of them match the consumer attributes:
-  - Configuration 'bar': Required flavor 'paid' and found compatible value 'blue'.
-  - Configuration 'foo': Required flavor 'paid' and found compatible value 'red'.""")
+  - Variant 'bar' capability 'com.acme.external:external:2.0-SNAPSHOT' declares attribute 'flavor' with value 'blue'
+  - Variant 'foo' capability 'com.acme.external:external:2.0-SNAPSHOT' declares attribute 'flavor' with value 'red'""")
     }
 
-    @Unroll("context travels down to transitive dependencies with typed attributes using plugin [#v1, #v2, pluginsDSL=#usePluginsDSL]")
-    def "context travels down to transitive dependencies with typed attributes"() {
+    @ToBeFixedForIsolatedProjects(because = "cross-build configuration")
+    def "context travels down to transitive dependencies with typed attributes using plugin"() {
+        def resolve = new ResolveTestFixture(testDirectory)
+
         buildTypedAttributesPlugin('1.0')
         buildTypedAttributesPlugin('1.1')
 
         given:
-        file('settings.gradle') << """
+        createDirs("a", "b", "includedBuild")
+        settingsFile.text = """
             pluginManagement {
                 repositories {
-                    maven { url "${mavenRepo.uri}" }
+                    maven { url = "${mavenRepo.uri}" }
                 }
             }
             include 'a', 'b'
             includeBuild 'includedBuild'
+            rootProject.name = 'test'
+            ${resolve.configureSettings("_compileFreeDebug", "_compileFreeRelease")}
         """
         buildFile << """
             ${usesTypedAttributesPlugin(v1, usePluginsDSL)}
@@ -696,12 +853,12 @@ All of them match the consumer attributes:
                     _compileFreeDebug project(':b')
                     _compileFreeRelease project(':b')
                 }
-                task checkDebug(dependsOn: configurations._compileFreeDebug) {
+                task xcheckDebug(dependsOn: configurations._compileFreeDebug) {
                     doLast {
                        assert configurations._compileFreeDebug.collect { it.name } == ['b-transitive.jar', 'c-foo.jar']
                     }
                 }
-                task checkRelease(dependsOn: configurations._compileFreeRelease) {
+                task xcheckRelease(dependsOn: configurations._compileFreeRelease) {
                     doLast {
                        assert configurations._compileFreeRelease.collect { it.name } == ['b-transitive.jar', 'c-bar.jar']
                     }
@@ -738,40 +895,54 @@ All of them match the consumer attributes:
                 foo.attributes { attribute(buildType, debug); attribute(flavor, free) }
                 bar.attributes { attribute(buildType, release); attribute(flavor, free) }
             }
-            task fooJar(type: Jar) {
-               baseName = 'c-foo'
-            }
-            task barJar(type: Jar) {
-               baseName = 'c-bar'
-            }
-            artifacts {
-                foo fooJar
-                bar barJar
-            }
+
+            ${fooAndBarJars()}
         """
 
         file('includedBuild/settings.gradle') << """
             pluginManagement {
                 repositories {
-                    maven { url "${mavenRepo.uri}" }
+                    maven { url = "${mavenRepo.uri}" }
                 }
             }
             rootProject.name = 'external'
         """
 
         when:
-        run ':a:checkDebug'
+        run ':a:check_compileFreeDebug'
 
         then:
-        executedAndNotSkipped ':external:fooJar'
-        notExecuted ':external:barJar'
+        executedAndNotSkipped ':includedBuild:fooJar'
+        notExecuted ':includedBuild:barJar'
+        resolve.expectGraph(":a") {
+            root(':a', 'test:a:') {
+                project(':b', 'test:b:') {
+                    artifact(name: 'b-transitive')
+                    edge('com.acme.external:external:1.0', ':includedBuild', 'com.acme.external:external:2.0-SNAPSHOT') {
+                        compositeSubstitute()
+                        artifact(name: 'c-foo', fileName: 'c-foo.jar')
+                    }
+                }
+            }
+        }
 
         when:
-        run ':a:checkRelease'
+        run ':a:check_compileFreeRelease'
 
         then:
-        executedAndNotSkipped ':external:barJar'
-        notExecuted ':external:fooJar'
+        executedAndNotSkipped ':includedBuild:barJar'
+        notExecuted ':includedBuild:fooJar'
+        resolve.expectGraph(":a") {
+            root(':a', 'test:a:') {
+                project(':b', 'test:b:') {
+                    artifact(name: 'b-transitive')
+                    edge('com.acme.external:external:1.0', ':includedBuild', 'com.acme.external:external:2.0-SNAPSHOT') {
+                        compositeSubstitute()
+                        artifact(name: 'c-bar', fileName: 'c-bar.jar')
+                    }
+                }
+            }
+        }
 
         where:
         v1    | v2    | usePluginsDSL
@@ -789,7 +960,7 @@ All of them match the consumer attributes:
             } """ : """
             buildscript {
                 repositories {
-                    maven { url "${mavenRepo.uri}" }
+                    maven { url = "${mavenRepo.uri}" }
                 }
                 dependencies {
                     classpath 'com.acme.typed-attributes:com.acme.typed-attributes.gradle.plugin:$version'
@@ -802,8 +973,10 @@ All of them match the consumer attributes:
         """
             $pluginsBlock
 
-            import static com.acme.Flavor.*
-            import static com.acme.BuildType.*
+            import static com.acme.Flavor.free
+            import static com.acme.Flavor.paid
+            import static com.acme.BuildType.debug
+            import static com.acme.BuildType.release
 
             def flavor = Attribute.of(com.acme.Flavor)
             def buildType = Attribute.of(com.acme.BuildType)
@@ -819,21 +992,24 @@ All of them match the consumer attributes:
             'settings.gradle'('rootProject.name="com.acme.typed-attributes.gradle.plugin"')
             'build.gradle'("""
                 apply plugin: 'groovy'
-                apply plugin: 'maven'
+                apply plugin: 'maven-publish'
 
                 group = 'com.acme.typed-attributes'
                 version = '$version'
 
                 dependencies {
-                    compile localGroovy()
-                    compile gradleApi()
+                    implementation localGroovy()
+                    implementation gradleApi()
                 }
 
-                uploadArchives {
+                publishing {
                     repositories {
-                        mavenDeployer {
-                            repository(url: "${mavenRepo.uri}")
+                        maven {
+                            url = "${mavenRepo.uri}"
                         }
+                    }
+                    publications {
+                        maven(MavenPublication) { from components.java }
                     }
                 }
             """)
@@ -842,8 +1018,20 @@ All of them match the consumer attributes:
                     groovy {
                         com {
                             acme {
-                                'Flavor.groovy'('package com.acme; enum Flavor { free, paid }')
-                                'BuildType.groovy'('package com.acme; enum BuildType { debug, release }')
+                                'Flavor.groovy'('''package com.acme
+                                    import org.gradle.api.Named
+                                    enum Flavor implements Named {
+                                        free, paid
+                                        @Override String getName() { return name() }
+                                    }
+                                ''')
+                                'BuildType.groovy'('''package com.acme
+                                    import org.gradle.api.Named
+                                    enum BuildType implements Named {
+                                        debug {}, release {}
+                                        @Override String getName() { return name() }
+                                    }
+                                ''')
                                 'TypedAttributesPlugin.groovy'('''package com.acme
 
                                     import org.gradle.api.Plugin
@@ -872,9 +1060,25 @@ All of them match the consumer attributes:
                 }
             }
         }
-        executer.usingBuildScript(new File(pluginDir, "build.gradle"))
-            .withTasks("uploadArchives")
+        executer.inDirectory(pluginDir)
+            .withTasks("publishMavenPublicationToMavenRepository")
             .run()
+    }
 
+    private String fooAndBarJars() {
+        '''
+            task fooJar(type: Jar) {
+                archiveBaseName = 'c-foo'
+                destinationDirectory = projectDir
+            }
+            task barJar(type: Jar) {
+                archiveBaseName = 'c-bar'
+                destinationDirectory = projectDir
+            }
+            artifacts {
+                foo fooJar
+                bar barJar
+            }
+        '''
     }
 }

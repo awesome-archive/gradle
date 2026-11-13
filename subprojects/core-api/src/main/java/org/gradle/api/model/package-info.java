@@ -17,4 +17,7 @@
 /**
  * Classes that operate on the Gradle model.
  */
+@NullMarked
 package org.gradle.api.model;
+
+import org.jspecify.annotations.NullMarked;

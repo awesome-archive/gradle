@@ -17,17 +17,11 @@
 package org.gradle.api.tasks
 
 import org.gradle.integtests.fixtures.DirectoryBuildCacheFixture
-import spock.lang.Unroll
 
-@Unroll
 class CachedPathSensitivityIntegrationTest extends AbstractPathSensitivityIntegrationSpec implements DirectoryBuildCacheFixture {
     def setup() {
         buildFile << """
-            task clean {
-                doLast {
-                    delete(tasks*.outputs*.files)
-                }
-            }
+            apply plugin: 'base'
         """
     }
 
@@ -41,26 +35,37 @@ class CachedPathSensitivityIntegrationTest extends AbstractPathSensitivityIntegr
         run "clean"
     }
 
+    @Override
+    String getStatusForReusedOutput() {
+        return "FROM-CACHE"
+    }
+
     def "single #pathSensitivity input file loaded from cache can be used as input"() {
         file("src/data/input.txt").text = "data"
 
-        buildFile << """
+        buildFile """
             task producer {
                 outputs.cacheIf { true }
-                outputs.file("outputs/producer.txt")
+                def outputFile = file("build/outputs/producer.txt")
+                outputs.file(outputFile)
                 doLast {
-                    mkdir("outputs")
-                    file("outputs/producer.txt").text = "alma"
+                    outputFile.text = "alma"
                 }
             }
-            
+
             task consumer {
                 dependsOn producer
                 outputs.cacheIf { true }
-                inputs.file("outputs/producer.txt").withPathSensitivity(PathSensitivity.$pathSensitivity)
-                outputs.file("outputs/consumer.txt")
+                def inputFile = file("build/outputs/producer.txt")
+                def outputFile = file("build/outputs/consumer.txt")
+
+                inputs.file(inputFile)
+                    .withPropertyName("producer")
+                    .withPathSensitivity(PathSensitivity.$pathSensitivity)
+                outputs.file(outputFile)
+                    .withPropertyName("consumer")
                 doLast {
-                    file("outputs/consumer.txt").text = file("outputs/producer.txt").text
+                    outputFile.text = inputFile.text
                 }
             }
         """

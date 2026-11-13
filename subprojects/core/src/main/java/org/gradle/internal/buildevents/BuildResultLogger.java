@@ -15,14 +15,16 @@
  */
 package org.gradle.internal.buildevents;
 
-import org.gradle.BuildAdapter;
 import org.gradle.BuildResult;
 import org.gradle.api.logging.LogLevel;
+import org.gradle.execution.WorkValidationWarningReporter;
+import org.gradle.internal.deprecation.DeprecationLogger;
 import org.gradle.internal.logging.format.DurationFormatter;
 import org.gradle.internal.logging.text.StyledTextOutput;
 import org.gradle.internal.logging.text.StyledTextOutputFactory;
 import org.gradle.internal.time.Clock;
-import org.gradle.util.SingleMessageLogger;
+
+import java.util.Locale;
 
 import static org.gradle.internal.logging.text.StyledTextOutput.Style.FailureHeader;
 import static org.gradle.internal.logging.text.StyledTextOutput.Style.SuccessHeader;
@@ -30,29 +32,40 @@ import static org.gradle.internal.logging.text.StyledTextOutput.Style.SuccessHea
 /**
  * A {@link org.gradle.BuildListener} which logs the final result of the build.
  */
-public class BuildResultLogger extends BuildAdapter {
+public class BuildResultLogger {
 
     private final StyledTextOutputFactory textOutputFactory;
     private final BuildStartedTime buildStartedTime;
     private final DurationFormatter durationFormatter;
+    private final WorkValidationWarningReporter workValidationWarningReporter;
     private final Clock clock;
 
-    public BuildResultLogger(StyledTextOutputFactory textOutputFactory, BuildStartedTime buildStartedTime, Clock clock, DurationFormatter durationFormatter) {
+    public BuildResultLogger(
+        StyledTextOutputFactory textOutputFactory,
+        BuildStartedTime buildStartedTime,
+        Clock clock,
+        DurationFormatter durationFormatter,
+        WorkValidationWarningReporter workValidationWarningReporter
+    ) {
         this.textOutputFactory = textOutputFactory;
         this.buildStartedTime = buildStartedTime;
         this.clock = clock;
         this.durationFormatter = durationFormatter;
+        this.workValidationWarningReporter = workValidationWarningReporter;
     }
 
     public void buildFinished(BuildResult result) {
         // Summary of deprecations is considered a part of the build summary
-        SingleMessageLogger.reportSuppressedDeprecations();
+        DeprecationLogger.reportSuppressedDeprecations();
+
+        // Summary of validation warnings during the build
+        workValidationWarningReporter.reportWorkValidationWarningsAtEndOfBuild();
 
         boolean buildSucceeded = result.getFailure() == null;
 
         StyledTextOutput textOutput = textOutputFactory.create(BuildResultLogger.class, buildSucceeded ? LogLevel.LIFECYCLE : LogLevel.ERROR);
         textOutput.println();
-        String action = result.getAction().toUpperCase();
+        String action = result.getAction().toUpperCase(Locale.ROOT);
         if (buildSucceeded) {
             textOutput.withStyle(SuccessHeader).text(action + " SUCCESSFUL");
         } else {

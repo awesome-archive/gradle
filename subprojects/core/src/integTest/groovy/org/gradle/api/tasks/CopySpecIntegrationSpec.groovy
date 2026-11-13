@@ -16,120 +16,23 @@
 
 package org.gradle.api.tasks
 
-import groovy.transform.NotYetImplemented
+import groovy.test.NotYetImplemented
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.TestResources
+import org.gradle.test.precondition.Requires
+import org.gradle.test.preconditions.OsTestPreconditions
+
 import org.junit.Rule
 import spock.lang.Issue
-import spock.lang.Unroll
 
-import java.nio.charset.Charset
-
-class CopySpecIntegrationSpec extends AbstractIntegrationSpec {
+class CopySpecIntegrationSpec extends AbstractIntegrationSpec implements UnreadableCopyDestinationFixture {
 
     @Rule
     public final TestResources resources = new TestResources(testDirectoryProvider, "copyTestResources")
 
-    @Unroll
-    def "can #taskName files with #taskType task using #charsetDescription charset when filteringCharset is #isSetDescription"() {
-        given:
-        buildScript """
-            task ($taskName, type:$taskType) {
-                from 'src'
-                into 'dest'
-                expand(one: 1)
-                ${filteringCharset ? "filteringCharset = '$filteringCharset'" : ''}
-            }
-        """.stripIndent()
-
-        when:
-        if(platformDefaultCharset) {
-            executer.withDefaultCharacterEncoding(platformDefaultCharset)
-        }
-        run taskName
-
-        then:
-        file('dest/accents.c').readLines(readCharset)[0] == expected
-
-        where:
-        // UTF8 is the actual encoding of the file accents.c.
-        // Any byte sequence of the file accents.c is a valid ISO-8859-1 character sequence,
-        // so we can read and write it with that encoding as well.
-        taskType | platformDefaultCharset | filteringCharset | expected
-        // platform default charset is honored
-        'Copy'   | 'UTF-8'                | null             | 'éàüî 1'
-        'Copy'   | 'UTF-8'                | null             | 'éàüî 1'
-        'Sync'   | 'UTF-8'                | null             | 'éàüî 1'
-        'Sync'   | 'UTF-8'                | null             | 'éàüî 1'
-        // filtering charset is honored
-        'Copy'   | null                   | 'UTF-8'          | 'éàüî 1'
-        'Copy'   | null                   | 'ISO-8859-1'     | new String('éàüî 1'.getBytes('UTF-8'), 'ISO-8859-1')
-        'Copy'   | null                   | 'UTF-8'          | 'éàüî 1'
-        'Copy'   | null                   | 'ISO-8859-1'     | new String('éàüî 1'.getBytes('UTF-8'), 'ISO-8859-1')
-        'Sync'   | null                   | 'UTF-8'          | 'éàüî 1'
-        'Sync'   | null                   | 'ISO-8859-1'     | new String('éàüî 1'.getBytes('UTF-8'), 'ISO-8859-1')
-        'Sync'   | null                   | 'UTF-8'          | 'éàüî 1'
-        'Sync'   | null                   | 'ISO-8859-1'     | new String('éàüî 1'.getBytes('UTF-8'), 'ISO-8859-1')
-        // derived data
-        taskName = taskType.toLowerCase(Locale.US)
-        charsetDescription = filteringCharset ?: "platform default ${platformDefaultCharset ?: Charset.defaultCharset().name()}"
-        isSetDescription = filteringCharset ? 'set' : 'unset'
-        readCharset = filteringCharset ?: platformDefaultCharset
-    }
-
-    @Unroll
-    def "can #operation files with #operation file operation using #charsetDescription charset when filteringCharset is #isSetDescription"() {
-        given:
-        buildScript """
-            task ($operation) {
-                doLast {
-                    project.$operation {
-                        from 'src'
-                        into 'dest'
-                        expand(one: 1)
-                        ${filteringCharset ? "filteringCharset = '$filteringCharset'" : ''}
-                    }
-                }
-            }
-        """.stripIndent()
-
-        when:
-        if(platformDefaultCharset) {
-            executer.withDefaultCharacterEncoding(platformDefaultCharset)
-        }
-        run operation
-
-        then:
-        file('dest/accents.c').readLines(readCharset)[0] == expected
-
-        where:
-        // UTF8 is the actual encoding of the file accents.c.
-        // Any byte sequence of the file accents.c is a valid ISO-8859-1 character sequence,
-        // so we can read and write it with that encoding as well.
-        operation | platformDefaultCharset | filteringCharset | expected
-        // platform default charset is honored
-        'copy'    | 'UTF-8'                | null             | 'éàüî 1'
-        'copy'    | 'UTF-8'                | null             | 'éàüî 1'
-        'sync'    | 'UTF-8'                | null             | 'éàüî 1'
-        'sync'    | 'UTF-8'                | null             | 'éàüî 1'
-        // filtering charset is honored
-        'copy'    | null                   | 'UTF-8'          | 'éàüî 1'
-        'copy'    | null                   | 'ISO-8859-1'     | new String('éàüî 1'.getBytes('UTF-8'), 'ISO-8859-1')
-        'copy'    | null                   | 'UTF-8'          | 'éàüî 1'
-        'copy'    | null                   | 'ISO-8859-1'     | new String('éàüî 1'.getBytes('UTF-8'), 'ISO-8859-1')
-        'sync'    | null                   | 'UTF-8'          | 'éàüî 1'
-        'sync'    | null                   | 'ISO-8859-1'     | new String('éàüî 1'.getBytes('UTF-8'), 'ISO-8859-1')
-        'sync'    | null                   | 'UTF-8'          | 'éàüî 1'
-        'sync'    | null                   | 'ISO-8859-1'     | new String('éàüî 1'.getBytes('UTF-8'), 'ISO-8859-1')
-        // derived data
-        charsetDescription = filteringCharset ?: "platform default ${platformDefaultCharset ?: Charset.defaultCharset().name()}"
-        isSetDescription = filteringCharset ? 'set' : 'unset'
-        readCharset = filteringCharset ?: platformDefaultCharset
-    }
-
     def "can use filesMatching with List"() {
         given:
-        buildScript """
+        buildFile """
             task (copy, type: Copy) {
                 from 'src'
                 into 'dest'
@@ -150,7 +53,7 @@ class CopySpecIntegrationSpec extends AbstractIntegrationSpec {
 
     def "can use filesNotMatching with List"() {
         given:
-        buildScript """
+        buildFile """
             task (copy, type: Copy) {
                 from 'src'
                 into 'dest'
@@ -173,7 +76,7 @@ class CopySpecIntegrationSpec extends AbstractIntegrationSpec {
     @Issue("gradle/gradle#789")
     def "can copy files with supplementary characters or surrogate pairs in file names"() {
         given:
-        buildScript """
+        buildFile """
             task(copy, type: Copy) {
                 from 'src'
                 into 'dest'
@@ -193,5 +96,30 @@ class CopySpecIntegrationSpec extends AbstractIntegrationSpec {
         file('dest/𩸽.txt').exists()
         file('dest/😀.txt').exists()
         false // TODO This test can pass on Windows with proper locale, this force the test to fail, remove once fixed
+    }
+
+    @Requires(OsTestPreconditions.Unix)
+    @Issue("https://github.com/gradle/gradle/issues/2552")
+    def "copying files to a directory with named pipes fails"() {
+        def input = file("input.txt").createFile()
+
+        def outputDirectory = file("output").createDir()
+        def pipe = outputDirectory.file("testPipe").createNamedPipe()
+
+        buildFile << """
+            task copy(type: Copy) {
+                from '${input.name}'
+                into '${outputDirectory.name}'
+            }
+        """
+
+        when:
+        runAndFail "copy"
+        then:
+        expectUnreadableCopyDestinationFailure()
+        failureHasCause("java.io.IOException: Cannot snapshot ${pipe}: not a regular file")
+
+        cleanup:
+        pipe.delete()
     }
 }

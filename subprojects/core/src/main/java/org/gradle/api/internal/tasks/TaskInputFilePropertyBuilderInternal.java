@@ -16,19 +16,20 @@
 
 package org.gradle.api.internal.tasks;
 
-import org.gradle.api.NonNullApi;
-import org.gradle.api.internal.changedetection.state.PathNormalizationStrategy;
-import org.gradle.api.tasks.FileNormalizer;
 import org.gradle.api.tasks.PathSensitivity;
 import org.gradle.api.tasks.TaskInputFilePropertyBuilder;
+import org.gradle.internal.fingerprint.FileNormalizer;
+import org.jspecify.annotations.NullMarked;
 
-@NonNullApi
+import java.util.function.BooleanSupplier;
+
+@NullMarked
 public interface TaskInputFilePropertyBuilderInternal extends TaskInputFilePropertyBuilder, TaskFilePropertyBuilderInternal {
-    @Override
-    TaskInputFilePropertyBuilderInternal withPathNormalizationStrategy(PathNormalizationStrategy pathNormalizationStrategy);
 
     @Override
-    TaskInputFilePropertyBuilderInternal withNormalizer(Class<? extends FileNormalizer> normalizer);
+    TaskInputFilePropertyBuilderInternal withNormalizer(Class<? extends org.gradle.api.tasks.FileNormalizer> normalizer);
+
+    TaskInputFilePropertyBuilderInternal withInternalNormalizer(FileNormalizer normalizer);
 
     @Override
     TaskInputFilePropertyBuilderInternal withPropertyName(String propertyName);
@@ -41,6 +42,14 @@ public interface TaskInputFilePropertyBuilderInternal extends TaskInputFilePrope
 
     @Override
     TaskInputFilePropertyBuilderInternal skipWhenEmpty(boolean skipWhenEmpty);
+
+    /**
+     * Same as {@link #skipWhenEmpty(boolean)}, but lazy.
+     * <p>
+     * The supplier may be queried whenever the registered properties are visited, possibly more than once
+     * and as early as the end of the task's configuration.
+     */
+    TaskInputFilePropertyBuilderInternal skipWhenEmpty(BooleanSupplier skipWhenEmpty);
 
     @Override
     TaskInputFilePropertyBuilderInternal optional();

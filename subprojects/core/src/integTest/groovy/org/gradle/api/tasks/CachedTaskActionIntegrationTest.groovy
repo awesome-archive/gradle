@@ -16,26 +16,31 @@
 
 package org.gradle.api.tasks
 
+
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.DirectoryBuildCacheFixture
+import org.gradle.integtests.fixtures.modes.ToBeFixedForConfigurationCache
+
 
 class CachedTaskActionIntegrationTest extends AbstractIntegrationSpec implements DirectoryBuildCacheFixture {
 
     def "ad hoc tasks with different actions don't share results"() {
         buildFile << """
             task first {
-                outputs.file file("first.txt")
+                def outputFile = file("first.txt")
+                outputs.file(outputFile)
                 outputs.cacheIf { true }
                 doFirst {
-                    file("first.txt").text = "Hello from the first task"
+                    outputFile.text = "Hello from the first task"
                 }
             }
 
             task second {
-                outputs.file file("second.txt")
+                def secondOutputFile = file("second.txt")
+                outputs.file(secondOutputFile)
                 outputs.cacheIf { true }
                 doFirst {
-                    file("second.txt").text = "Hello from the second task"
+                    secondOutputFile.text = "Hello from the second task"
                 }
             }
         """
@@ -43,11 +48,15 @@ class CachedTaskActionIntegrationTest extends AbstractIntegrationSpec implements
         when:
         withBuildCache().run "first", "second"
         then:
-        nonSkippedTasks == [":first", ":second"]
+        executedAndNotSkipped(":first", ":second")
         file("first.txt").text == "Hello from the first task"
         file("second.txt").text == "Hello from the second task"
     }
 
+    @ToBeFixedForConfigurationCache(
+        issue = "https://github.com/gradle/gradle/issues/37247",
+        because = "build cache is not shared"
+    )
     def "ad hoc tasks with the same action share results"() {
         file("input.txt").text = "data"
         buildFile << """
@@ -63,7 +72,7 @@ class CachedTaskActionIntegrationTest extends AbstractIntegrationSpec implements
                 outputs.cacheIf { true }
                 doFirst action
             }
- 
+
             task taskB {
                 def output = file("build/task-b/output.txt")
                 inputs.file input
@@ -76,8 +85,8 @@ class CachedTaskActionIntegrationTest extends AbstractIntegrationSpec implements
         when:
         withBuildCache().run "taskA", "taskB"
         then:
-        nonSkippedTasks == [":taskA"]
-        skippedTasks as List == [":taskB"]
+        executedAndNotSkipped(":taskA")
+        skipped(":taskB")
     }
 
     def "built-in tasks with different actions don't share results"() {
@@ -86,16 +95,16 @@ class CachedTaskActionIntegrationTest extends AbstractIntegrationSpec implements
             def input = file("input.txt")
 
             task compileA(type: JavaCompile) {
-                destinationDir = file("build/compile-a")
+                destinationDirectory = file("build/compile-a")
                 doLast {
-                    file("\$destinationDir/output.txt") << "From compile task A"
+                    destinationDirectory.file("output.txt").get().asFile << "From compile task A"
                 }
             }
- 
+
             task compileB(type: JavaCompile) {
-                destinationDir = file("build/compile-b")
+                destinationDirectory = file("build/compile-b")
                 doLast {
-                    file("\$destinationDir/output.txt") << "From compile task B"
+                    destinationDirectory.file("output.txt").get().asFile << "From compile task B"
                 }
             }
 
@@ -110,7 +119,7 @@ class CachedTaskActionIntegrationTest extends AbstractIntegrationSpec implements
         when:
         withBuildCache().run "compileA", "compileB"
         then:
-        nonSkippedTasks == [":compileA", ":compileB"]
+        executedAndNotSkipped(":compileA", ":compileB")
         file("build/compile-a/output.txt").text == "From compile task A"
         file("build/compile-b/output.txt").text == "From compile task B"
     }

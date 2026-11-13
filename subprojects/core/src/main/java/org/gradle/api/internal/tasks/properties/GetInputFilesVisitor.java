@@ -17,32 +17,70 @@
 package org.gradle.api.internal.tasks.properties;
 
 import com.google.common.collect.ImmutableSortedSet;
-import com.google.common.collect.Lists;
-import org.gradle.api.internal.tasks.TaskInputFilePropertySpec;
-import org.gradle.api.internal.tasks.TaskPropertyUtils;
+import org.gradle.api.internal.file.FileCollectionFactory;
+import org.gradle.api.internal.file.FileCollectionInternal;
+import org.gradle.api.internal.tasks.PropertyFileCollection;
+import org.gradle.internal.fingerprint.DirectorySensitivity;
+import org.gradle.internal.fingerprint.FileNormalizer;
+import org.gradle.internal.fingerprint.LineEndingSensitivity;
+import org.gradle.internal.properties.InputBehavior;
+import org.gradle.internal.properties.InputFilePropertyType;
+import org.gradle.internal.properties.PropertyValue;
+import org.gradle.internal.properties.PropertyVisitor;
+import org.jspecify.annotations.Nullable;
 
+import java.util.ArrayList;
 import java.util.List;
 
-public class GetInputFilesVisitor extends PropertyVisitor.Adapter {
-    private final List<TaskInputFilePropertySpec> specs = Lists.newArrayList();
+public class GetInputFilesVisitor implements PropertyVisitor {
+    private final List<InputFilePropertySpec> specs = new ArrayList<>();
+    private final FileCollectionFactory fileCollectionFactory;
+    private final String ownerDisplayName;
     private boolean hasSourceFiles;
 
-    private ImmutableSortedSet<TaskInputFilePropertySpec> fileProperties;
+    private ImmutableSortedSet<InputFilePropertySpec> fileProperties;
 
-    public GetInputFilesVisitor() {
+    public GetInputFilesVisitor(String ownerDisplayName, FileCollectionFactory fileCollectionFactory) {
+        this.ownerDisplayName = ownerDisplayName;
+        this.fileCollectionFactory = fileCollectionFactory;
     }
 
     @Override
-    public void visitInputFileProperty(TaskInputFilePropertySpec inputFileProperty) {
-        specs.add(inputFileProperty);
-        if (inputFileProperty.isSkipWhenEmpty()) {
+    public void visitInputFileProperty(
+        final String propertyName,
+        boolean optional,
+        InputBehavior behavior,
+        DirectorySensitivity directorySensitivity,
+        LineEndingSensitivity lineEndingSensitivity,
+        @Nullable FileNormalizer fileNormalizer,
+        PropertyValue value,
+        InputFilePropertyType filePropertyType
+    ) {
+        FileCollectionInternal actualValue = FileParameterUtils.resolveInputFileValue(fileCollectionFactory, filePropertyType, value);
+        FileNormalizer normalizer = FileParameterUtils.normalizerOrDefault(fileNormalizer);
+        specs.add(new DefaultInputFilePropertySpec(
+            propertyName,
+            normalizer,
+            new PropertyFileCollection(ownerDisplayName, propertyName, "input", actualValue),
+            value,
+            behavior,
+            normalizeDirectorySensitivity(normalizer, directorySensitivity),
+            lineEndingSensitivity
+        ));
+        if (behavior.shouldSkipWhenEmpty()) {
             hasSourceFiles = true;
         }
     }
 
-    public ImmutableSortedSet<TaskInputFilePropertySpec> getFileProperties() {
+    private DirectorySensitivity normalizeDirectorySensitivity(FileNormalizer normalizer, DirectorySensitivity directorySensitivity) {
+        return normalizer.isIgnoringDirectories()
+            ? DirectorySensitivity.DEFAULT
+            : directorySensitivity;
+    }
+
+    public ImmutableSortedSet<InputFilePropertySpec> getFileProperties() {
         if (fileProperties == null) {
-            fileProperties = TaskPropertyUtils.collectFileProperties("input", specs.iterator());
+            fileProperties = FileParameterUtils.collectFileProperties("input", specs.iterator());
         }
         return fileProperties;
     }

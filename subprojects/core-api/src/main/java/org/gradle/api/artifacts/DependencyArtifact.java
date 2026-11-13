@@ -15,20 +15,29 @@
  */
 package org.gradle.api.artifacts;
 
+import org.jspecify.annotations.Nullable;
+
 /**
- * <p>An {@code Artifact} represents an artifact included in a {@link org.gradle.api.artifacts.Dependency}.</p>
- * An artifact is an (immutable) value object.
+ * Data class that represents an artifact included in a {@link org.gradle.api.artifacts.Dependency}.
+ * @since 0.7
  */
 public interface DependencyArtifact {
+    /**
+     * The default type.
+     *
+     * @since 0.7
+     */
     String DEFAULT_TYPE = "jar";
 
     /**
      * Returns the name of this artifact.
+     * @since 0.7
      */
     String getName();
 
     /**
      * Sets the name of this artifact.
+     * @since 2.14
      */
     void setName(String name);
 
@@ -37,12 +46,14 @@ public interface DependencyArtifact {
      * but sometimes this is not the case. For example for an ivy XML module descriptor, the type is
      * <em>ivy</em> and the extension is <em>xml</em>.
      *
-     * @see #getExtension() 
+     * @see #getExtension()
+     * @since 0.7
      */
     String getType();
 
     /**
      * Sets the type of this artifact.
+     * @since 2.14
      */
     void setType(String type);
 
@@ -51,33 +62,42 @@ public interface DependencyArtifact {
      * but sometimes this is not the case. For example for an ivy XML module descriptor, the type is
      * <em>ivy</em> and the extension is <em>xml</em>.
      *
-     * @see #getType() 
+     * @see #getType()
+     * @since 0.7
      */
+    @Nullable
     String getExtension();
 
     /**
      * Sets the extension of this artifact.
+     * @since 2.14
      */
-    void setExtension(String extension);
+    void setExtension(@Nullable String extension);
 
     /**
      * Returns the classifier of this artifact.
+     * @since 0.7
      */
+    @Nullable
     String getClassifier();
 
     /**
      * Sets the classifier of this artifact.
+     * @since 2.14
      */
-    void setClassifier(String classifier);
+    void setClassifier(@Nullable String classifier);
 
     /**
-     * Returns an URL under which this artifact can be retrieved. If not
-     * specified the user repositories are used for retrieving. 
+     * Returns a URL under which this artifact can be retrieved. If not
+     * specified the user repositories are used for retrieving.
+     * @since 0.7
      */
+    @Nullable
     String getUrl();
 
     /**
      * Sets the URL for this artifact.
+     * @since 2.14
      */
-    void setUrl(String url);
+    void setUrl(@Nullable String url);
 }

@@ -17,16 +17,77 @@
 package org.gradle.initialization.buildsrc
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
+
+import static org.gradle.integtests.fixtures.SuggestionsMessages.GET_HELP
+import static org.gradle.integtests.fixtures.SuggestionsMessages.INFO_DEBUG
+import static org.gradle.integtests.fixtures.SuggestionsMessages.SCAN
+import static org.gradle.integtests.fixtures.SuggestionsMessages.STACKTRACE_MESSAGE
+import static org.gradle.integtests.fixtures.SuggestionsMessages.repositoryHint
 
 class BuildSrcIdentityIntegrationTest extends AbstractIntegrationSpec {
-    def "includes build identifier in error message on failure to resolve dependencies of build"() {
+    def "includes build identifier in logging output with #display"() {
+        file("buildSrc/build.gradle") << """
+            println "configuring \$project.path"
+            classes.doLast { t ->
+                println "classes of \$t.path"
+            }
+        """
+        file("buildSrc/settings.gradle") << settings << "\n"
+
+        when:
+        run()
+
+        then:
+        outputContains("> Configure project :buildSrc")
+        result.groupedOutput.task(":buildSrc:classes").output.contains("classes of :classes")
+
+        where:
+        settings                     | display
+        ""                           | "default root project name"
+        "rootProject.name='someLib'" | "configured root project name"
+    }
+
+    @ToBeFixedForIsolatedProjects(because = "allprojects")
+    def "includes build identifier in dependency report with #display"() {
+        createDirs("buildSrc", "buildSrc/b1", "buildSrc/b2")
+        file("buildSrc/settings.gradle") << """
+            $settings
+            include 'b1', 'b2'
+        """
+
+        file("buildSrc/build.gradle") << """
+            allprojects { apply plugin: 'java' }
+            dependencies { implementation project(':b1') }
+            project(':b1') { dependencies { implementation project(':b2') } }
+            classes.dependsOn tasks.dependencies
+        """
+
+        when:
+        run()
+
+        then:
+        outputContains("""
+runtimeClasspath - Runtime classpath of source set 'main'.
+\\--- project ':buildSrc:b1'
+     \\--- project ':buildSrc:b2'
+""")
+
+        where:
+        settings                     | display
+        ""                           | "default root project name"
+        "rootProject.name='someLib'" | "configured root project name"
+    }
+
+    def "includes build identifier in error message on failure to resolve dependencies of build with #display"() {
         def m = mavenRepo.module("org.test", "test", "1.2")
 
         given:
+        file("buildSrc/settings.gradle") << settings << "\n"
         def buildSrc = file("buildSrc/build.gradle")
         buildSrc << """
             repositories {
-                maven { url '$mavenRepo.uri' }
+                maven { url = '$mavenRepo.uri' }
             }
 
             dependencies {
@@ -39,13 +100,19 @@ class BuildSrcIdentityIntegrationTest extends AbstractIntegrationSpec {
         fails()
 
         then:
-        failure.assertHasDescription("Could not resolve all files for configuration ':buildSrc:runtimeClasspath'.")
+        failure.assertHasDescription("Execution failed for task ':buildSrc:compileJava' (registered by plugin class 'org.gradle.api.plugins.JavaBasePlugin').")
+        failure.assertHasCause("Could not resolve all files for configuration ':buildSrc:compileClasspath'.")
         failure.assertHasCause("""Could not find org.test:test:1.2.
 Searched in the following locations:
-    ${m.pom.file.toURL()}
-    ${m.artifact.file.toURL()}
+  - ${m.pom.file.displayUri}
 Required by:
-    project :buildSrc""")
+    project ':buildSrc'""")
+        failure.assertHasResolutions(repositoryHint("Maven POM"),
+            STACKTRACE_MESSAGE,
+            INFO_DEBUG,
+            SCAN,
+            GET_HELP)
+
 
         when:
         m.publish()
@@ -54,11 +121,18 @@ Required by:
         fails()
 
         then:
-        failure.assertHasDescription("Could not resolve all files for configuration ':buildSrc:runtimeClasspath'.")
-        failure.assertHasCause("Could not find test.jar (org.test:test:1.2).")
+        failure.assertHasDescription("Execution failed for task ':buildSrc:compileJava' (registered by plugin class 'org.gradle.api.plugins.JavaBasePlugin').")
+        failure.assertHasCause("Could not resolve all files for configuration ':buildSrc:compileClasspath'.")
+        failure.assertHasCause("Could not find test-1.2.jar (org.test:test:1.2).")
+
+        where:
+        settings                     | display
+        ""                           | "default root project name"
+        "rootProject.name='someLib'" | "configured root project name"
     }
 
-    def "includes build identifier in task failure error message"() {
+    def "includes build identifier in task failure error message with #display"() {
+        file("buildSrc/settings.gradle") << settings << "\n"
         def buildSrc = file("buildSrc/build.gradle")
         buildSrc << """
             classes.doLast {
@@ -70,13 +144,21 @@ Required by:
         fails()
 
         then:
-        failure.assertHasDescription("Execution failed for task ':buildSrc:classes'.")
+        failure.assertHasDescription("Execution failed for task ':buildSrc:classes' (registered by plugin class 'org.gradle.api.plugins.JavaBasePlugin').")
         failure.assertHasCause("broken")
+
+        where:
+        settings                     | display
+        ""                           | "default root project name"
+        "rootProject.name='someLib'" | "configured root project name"
     }
 
-    def "includes build identifier in dependency resolution results"() {
+    @ToBeFixedForIsolatedProjects(because = "Configure projects from root")
+    def "includes build identifier in dependency resolution results with #display"() {
         given:
+        createDirs("buildSrc", "buildSrc/a")
         file("buildSrc/settings.gradle") << """
+            ${settings}
             include 'a'
         """
         file("buildSrc/build.gradle") << """
@@ -89,16 +171,29 @@ Required by:
             classes.doLast {
                 def components = configurations.compileClasspath.incoming.resolutionResult.allComponents.id
                 assert components.size() == 2
-                assert components[0].build.name == 'buildSrc'
+                assert components[0].build.buildPath == ':buildSrc'
                 assert components[0].projectPath == ':'
-                assert components[0].projectName == 'buildSrc'
-                assert components[1].build.name == 'buildSrc'
+                assert components[0].projectName == '$rootProjectName'
+                assert components[0].buildTreePath == ':buildSrc'
+                assert components[1].build.buildPath == ':buildSrc'
                 assert components[1].projectPath == ':a'
                 assert components[1].projectName == 'a'
+                assert components[1].buildTreePath == ':buildSrc:a'
+
+                def selectors = configurations.runtimeClasspath.incoming.resolutionResult.allDependencies.requested
+                assert selectors.size() == 1
+                assert selectors[0].displayName == "project ':buildSrc:a'"
+                assert selectors[0].buildPath == ':buildSrc'
+                assert selectors[0].projectPath == ':a'
             }
         """
 
         expect:
         succeeds()
+
+        where:
+        settings                     | rootProjectName | display
+        ""                           | "buildSrc"      | "default root project name"
+        "rootProject.name='someLib'" | "someLib"       | "configured root project name"
     }
 }

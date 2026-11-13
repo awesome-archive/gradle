@@ -1,0 +1,100 @@
+// Copyright (C) 2024 Gradle, Inc.
+//
+// Licensed under the Creative Commons Attribution-Noncommercial-ShareAlike 4.0 International License.;
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://creativecommons.org/licenses/by-nc-sa/4.0/
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+[[caching_android_projects]]
+= Caching Android projects
+
+While it is true that Android uses the Java toolchain as its foundation, there are nevertheless some significant differences from pure Java projects; these differences impact task cacheability.
+This is even more true for Android projects that include Kotlin source code.
+
+[[android_disambiguation]]
+== Disambiguation
+
+This guide is about Gradle’s build cache.
+Android Gradle Plugin versions before 4.1 also had an internal Android build cache, which is a different thing.
+Android Gradle Plugin 4.1 removed it in favor of the Gradle build cache, and Android Gradle Plugin 7.0 removed the `android.enableBuildCache` and `android.buildCacheDir` properties and the `cleanBuildCache` task.
+
+[[android_why_use_build_cache]]
+== Why use the build cache?
+
+The build cache can _significantly_ improve build performance for Android projects, in many cases by 30-40%.
+Many of the compilation and assembly tasks provided by the Android Gradle Plugin are cacheable, and more are made so with each new iteration.
+
+TIP: To measure the effect on your own build, use link:https://develocity.ai/product/build-scan/[Build Scan] to compare a cached and an uncached run, or track the cache hit rate in link:https://develocity.ai/product/build-cache/[Develocity].
+
+[[android_faster_ci_builds]]
+=== Faster CI builds
+
+CI builds benefit particularly from the build cache.
+A typical CI build starts with a `clean`, which means that pre-existing build outputs are deleted and none of the tasks that make up the build will be `UP-TO-DATE`.
+However, it is likely that many of those tasks will have been run with exactly the same inputs in a prior CI build, populating the build cache; the outputs from those prior runs can safely be reused, resulting in dramatic build performance improvements.
+
+[[android_reusing_ci_builds]]
+=== Reusing CI builds for local development
+
+When you sign into work at the start of your day, it’s not unusual for your first task to be pulling the main branch and then running a build (Android Studio will probably do the latter, whether you ask it to or not).
+Assuming all merges to main are built on CI (a best practice!), you can expect this first local build of the day to enjoy a larger-than-typical benefit with Gradle’s _remote cache_.
+CI already built this commit -- why should you re-do that work?
+
+[[android_switching_branches]]
+=== Switching branches
+
+During local development, it is not uncommon to switch branches several times per day.
+This defeats <<incremental_build.adoc#incremental_build, incremental build>> (i.e., `UP-TO-DATE` checks), but this issue is mitigated via the use of the local build cache.
+You might run a build on Branch A, which will populate the local cache.
+You then switch to Branch B to conduct a code review, help a colleague, or address feedback on an open PR.
+You then switch back to Branch A to continue your original work.
+When you next build, all of the outputs previously built while working on Branch A can be reused from the cache, saving potentially a lot of time.
+
+[[android_gradle_plugin]]
+== The Android Gradle Plugin
+
+The first thing you should always do when working to optimize your build is ensure you’re on the latest stable, supported versions of the Android Gradle Plugin and the Gradle Build Tool.
+Each new version of these tools includes many performance improvements, not least of which is to the build cache.
+The https://developer.android.com/build/releases/gradle-plugin[Android Gradle Plugin release notes] list the Gradle version each Android Gradle Plugin version requires.
+
+[[android_java_and_kotlin_compilation]]
+== Java and Kotlin compilation
+
+The <<caching_java_projects.adoc#java_compilation,discussion>> above in "Caching Java projects" is equally relevant here.
+Kotlin compilation also uses the build cache and supports compilation avoidance.
+See the https://kotlinlang.org/docs/gradle-compilation-and-caches.html[Kotlin documentation] for details.
+
+[[android_annotation_processors_and_kotlin]]
+== Annotation processors and Kotlin
+
+The <<caching_java_projects.adoc#annotation_processors,advice above>> for pure Java projects also applies to Android projects.
+If you use annotation processors, such as Dagger, with Kotlin and the `kotlin-kapt` plugin, Gradle caches the kapt tasks by default.
+See the https://kotlinlang.org/docs/kapt.html[kapt documentation] for details.
+
+[[android_unit_test_execution]]
+== Unit test execution
+
+Like unit tests in a pure Java project, the equivalent test task in an Android project (`AndroidUnitTest`) is also cacheable since Android Gradle Plugin 3.6.0.
+
+[[android_instrumented_test_execution]]
+== Instrumented test execution (i.e., Espresso tests)
+
+Android instrumented tests (`DeviceProviderInstrumentTestTask`), often referred to as "Espresso" tests, are not cacheable when they run on a connected device, because Gradle does not control the state of the device.
+To use the build cache for instrumented tests, run them on https://developer.android.com/studio/test/gradle-managed-devices[Gradle Managed Devices].
+See https://issuetracker.google.com/issues/115873051[this issue] for details.
+
+[[android_lint]]
+== Lint
+
+Users of Android’s lint tasks are well aware of the heavy performance penalty they pay for using them, but also know that they are indispensable for finding common issues in Android projects.
+Starting with Android Gradle Plugin 7.0, the lint analysis and report tasks are `UP-TO-DATE` when their inputs have not changed.
+With `checkDependencies = true`, lint only analyzes the modules that changed.
+Starting with Android Gradle Plugin 7.1, the lint analysis task is cacheable and loads its output from the build cache when possible.
+See the https://developer.android.com/build/releases/past-releases/agp-7-0-0-release-notes[7.0.0] and https://developer.android.com/build/releases/past-releases/agp-7-1-0-release-notes[7.1.0] Android Gradle Plugin release notes for details.

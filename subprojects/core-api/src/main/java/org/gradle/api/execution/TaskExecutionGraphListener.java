@@ -16,17 +16,23 @@
 
 package org.gradle.api.execution;
 
+import org.gradle.internal.service.scopes.EventScope;
+import org.gradle.internal.service.scopes.Scope;
+
 /**
  * <p>A {@code TaskExecutionGraphListener} is notified when the {@link TaskExecutionGraph} has been populated. You can
  * use this interface in your build file to perform some action based on the contents of the graph, before any tasks are
  * actually executed.</p>
+ * @since 0.7
  */
+@EventScope(Scope.Build.class)
 public interface TaskExecutionGraphListener {
     /**
      * <p>This method is called when the {@link TaskExecutionGraph} has been populated, and before any tasks are
      * executed.
      *
      * @param graph The graph. Never null.
+     * @since 0.7
      */
     void graphPopulated(TaskExecutionGraph graph);
 }

@@ -16,6 +16,7 @@
 package org.gradle.api.invocation;
 
 import groovy.lang.Closure;
+import groovy.lang.DelegatesTo;
 import org.gradle.BuildListener;
 import org.gradle.BuildResult;
 import org.gradle.StartParameter;
@@ -23,13 +24,20 @@ import org.gradle.api.Action;
 import org.gradle.api.Incubating;
 import org.gradle.api.Project;
 import org.gradle.api.ProjectEvaluationListener;
+import org.gradle.api.UnknownDomainObjectException;
 import org.gradle.api.execution.TaskExecutionGraph;
 import org.gradle.api.initialization.IncludedBuild;
 import org.gradle.api.initialization.Settings;
+import org.gradle.api.plugins.ExtensionAware;
 import org.gradle.api.plugins.PluginAware;
+import org.gradle.api.provider.ProviderFactory;
+import org.gradle.api.services.BuildServiceRegistry;
 import org.gradle.internal.HasInternalProtocol;
+import org.gradle.internal.accesscontrol.ForExternalUse;
+import org.gradle.internal.service.scopes.Scope;
+import org.gradle.internal.service.scopes.ServiceScope;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.io.File;
 import java.util.Collection;
 
@@ -37,13 +45,25 @@ import java.util.Collection;
  * Represents an invocation of Gradle.
  *
  * <p>You can obtain a {@code Gradle} instance by calling {@link Project#getGradle()}.</p>
+ * @since 0.8
  */
 @HasInternalProtocol
-public interface Gradle extends PluginAware {
+// Public `Gradle` service shadowed at the project scope by the IP reporting wrapper
+@ServiceScope({Scope.Build.class, Scope.Project.class})
+public interface Gradle extends PluginAware, ExtensionAware {
+
+    /**
+     * Get the path of this build relative to the root build.
+     *
+     * @since 9.1.0
+     */
+    String getBuildPath();
+
     /**
      * Returns the current Gradle version.
      *
      * @return The Gradle version. Never returns null.
+     * @since 0.8
      */
     String getGradleVersion();
 
@@ -53,6 +73,7 @@ public interface Gradle extends PluginAware {
      * This directory is used to cache downloaded resources, compiled build scripts and so on.
      *
      * @return The user home directory. Never returns null.
+     * @since 0.8
      */
     File getGradleUserHomeDir();
 
@@ -61,13 +82,14 @@ public interface Gradle extends PluginAware {
      *
      * This directory is the directory containing the Gradle distribution executing this build.
      * <p>
-     * When using the “Gradle Daemon”, this may not be the same Gradle distribution that the build was started with.
+     * When using the "Gradle Daemon", this may not be the same Gradle distribution that the build was started with.
      * If an existing daemon process is running that is deemed compatible (e.g. has the desired JVM characteristics)
-     * then this daemon may be used instead of starting a new process and it may have been started from a different “gradle home”.
-     * However, it is guaranteed to be the same version of Gradle. For more information on the Gradle Daemon, please consult
-     * <a href="https://docs.gradle.org/current/userguide/gradle_daemon.html" target="_top">the user guide</a>.
+     * then this daemon may be used instead of starting a new process and it may have been started from a different "gradle home".
+     * However, it is guaranteed to be the same version of Gradle. For more information on the Gradle Daemon, please consult the
+     * <a href="https://docs.gradle.org/current/userguide/gradle_daemon.html" target="_top">User Manual</a>.
      *
      * @return The home directory. May return null.
+     * @since 0.8
      */
     @Nullable
     File getGradleHomeDir();
@@ -76,6 +98,7 @@ public interface Gradle extends PluginAware {
      * Returns the parent build of this build, if any.
      *
      * @return The parent build. May return null.
+     * @since 0.9
      */
     @Nullable
     Gradle getParent();
@@ -85,7 +108,9 @@ public interface Gradle extends PluginAware {
      *
      * @return The root project. Never returns null.
      * @throws IllegalStateException When called before the root project is available.
+     * @since 0.8
      */
+    @ForExternalUse
     Project getRootProject() throws IllegalStateException;
 
     /**
@@ -95,6 +120,7 @@ public interface Gradle extends PluginAware {
      * is executed immediately. Otherwise, the action is executed when the root project becomes available.
      *
      * @param action The action to execute.
+     * @since 1.0
      */
     void rootProject(Action<? super Project> action);
 
@@ -105,6 +131,7 @@ public interface Gradle extends PluginAware {
      * already available. It is also executed as subsequent projects are added to this build.
      *
      * @param action The action to execute.
+     * @since 1.0
      */
     void allprojects(Action<? super Project> action);
 
@@ -112,6 +139,7 @@ public interface Gradle extends PluginAware {
      * Returns the {@link TaskExecutionGraph} for this build.
      *
      * @return The task graph. Never returns null.
+     * @since 0.8
      */
     TaskExecutionGraph getTaskGraph();
 
@@ -119,6 +147,7 @@ public interface Gradle extends PluginAware {
      * Returns the {@link StartParameter} used to start this build.
      *
      * @return The start parameter. Never returns null.
+     * @since 0.8
      */
     StartParameter getStartParameter();
 
@@ -127,6 +156,7 @@ public interface Gradle extends PluginAware {
      *
      * @param listener The listener to add. Does nothing if this listener has already been added.
      * @return The added listener.
+     * @since 0.8
      */
     ProjectEvaluationListener addProjectEvaluationListener(ProjectEvaluationListener listener);
 
@@ -134,14 +164,24 @@ public interface Gradle extends PluginAware {
      * Removes the given listener from this build.
      *
      * @param listener The listener to remove. Does nothing if this listener has not been added.
+     * @since 0.8
      */
     void removeProjectEvaluationListener(ProjectEvaluationListener listener);
+
+    /**
+     * Gives access to the new Gradle build lifecycle callbacks.
+     *
+     * @since 8.8
+     */
+    @Incubating
+    GradleLifecycle getLifecycle();
 
     /**
      * Adds a closure to be called immediately before a project is evaluated. The project is passed to the closure as a
      * parameter.
      *
      * @param closure The closure to execute.
+     * @since 0.8
      */
     void beforeProject(Closure closure);
 
@@ -160,6 +200,7 @@ public interface Gradle extends PluginAware {
      * is passed as the second parameter. Both parameters are optional.
      *
      * @param closure The closure to execute.
+     * @since 0.8
      */
     void afterProject(Closure closure);
 
@@ -172,21 +213,20 @@ public interface Gradle extends PluginAware {
     void afterProject(Action<? super Project> action);
 
     /**
-     * Adds a closure to be called when the build is started.
+     * Adds an action to be called before the build settings have been loaded and evaluated.
      *
-     * This {@code Gradle} instance is passed to the closure as the first parameter.
-     *
-     * @param closure The closure to execute.
+     * @param closure The action to execute.
+     * @since 6.0
      */
-    void buildStarted(Closure closure);
+    void beforeSettings(@DelegatesTo(Settings.class) Closure<?> closure);
 
     /**
-     * Adds an action to be called when the build is started.
+     * Adds an action to be called before the build settings have been loaded and evaluated.
      *
      * @param action The action to execute.
-     * @since 3.4
+     * @since 6.0
      */
-    void buildStarted(Action<? super Gradle> action);
+    void beforeSettings(Action<? super Settings> action);
 
     /**
      * Adds a closure to be called when the build settings have been loaded and evaluated.
@@ -195,6 +235,7 @@ public interface Gradle extends PluginAware {
      * {@link org.gradle.api.initialization.Settings} object is passed to the closure as a parameter.
      *
      * @param closure The closure to execute.
+     * @since 0.9
      */
     void settingsEvaluated(Closure closure);
 
@@ -229,6 +270,7 @@ public interface Gradle extends PluginAware {
      * </pre>
      *
      * @param closure The closure to execute.
+     * @since 0.9
      */
     void projectsLoaded(Closure closure);
 
@@ -249,6 +291,7 @@ public interface Gradle extends PluginAware {
      * This {@code Gradle} instance is passed to the closure as a parameter.
      *
      * @param closure The closure to execute.
+     * @since 0.9
      */
     void projectsEvaluated(Closure closure);
 
@@ -269,7 +312,11 @@ public interface Gradle extends PluginAware {
      * A {@link BuildResult} instance is passed to the closure as a parameter.
      *
      * @param closure The closure to execute.
+     * @see org.gradle.api.flow.FlowProviders#getBuildWorkResult()
+     * @deprecated This method is not supported when configuration caching is enabled.
+     * @since 0.9
      */
+    @Deprecated
     void buildFinished(Closure closure);
 
     /**
@@ -278,8 +325,11 @@ public interface Gradle extends PluginAware {
      * All selected tasks have been executed.
      *
      * @param action The action to execute.
+     * @see org.gradle.api.flow.FlowProviders#getBuildWorkResult()
      * @since 3.4
+     * @deprecated This method is not supported when configuration caching is enabled.
      */
+    @Deprecated
     void buildFinished(Action<? super BuildResult> action);
 
     /**
@@ -287,7 +337,12 @@ public interface Gradle extends PluginAware {
      *
      * The listener is notified of events which occur during the execution of the build.
      *
+     * <p>{@link BuildListener} is not supported when the
+     * configuration cache is enabled. Check the individual
+     * methods of {@link BuildListener} for compatible replacements.
+     *
      * @param buildListener The listener to add.
+     * @since 0.8
      */
     void addBuildListener(BuildListener buildListener);
 
@@ -295,18 +350,24 @@ public interface Gradle extends PluginAware {
      * Adds the given listener to this build. The listener may implement any of the given listener interfaces:
      *
      * <ul>
-     * <li>{@link org.gradle.BuildListener}
      * <li>{@link org.gradle.api.execution.TaskExecutionGraphListener}
      * <li>{@link org.gradle.api.ProjectEvaluationListener}
-     * <li>{@link org.gradle.api.execution.TaskExecutionListener}
-     * <li>{@link org.gradle.api.execution.TaskActionListener}
-     * <li>{@link org.gradle.api.logging.StandardOutputListener}
-     * <li>{@link org.gradle.api.tasks.testing.TestListener}
-     * <li>{@link org.gradle.api.tasks.testing.TestOutputListener}
      * <li>{@link org.gradle.api.artifacts.DependencyResolutionListener}
      * </ul>
      *
+     * <p>The following listener types can be used, but are not supported when configuration caching is enabled.
+     * Their usage is deprecated and adding a listener of these types become an error in a future Gradle version:</p>
+     *
+     * <ul>
+     * <li>{@link org.gradle.BuildListener}
+     * <li>{@link org.gradle.api.execution.TaskExecutionListener}
+     * <li>{@link org.gradle.api.execution.TaskActionListener}
+     * <li>{@link org.gradle.api.tasks.testing.TestListener}
+     * <li>{@link org.gradle.api.tasks.testing.TestOutputListener}
+     * </ul>
+     *
      * @param listener The listener to add. Does nothing if this listener has already been added.
+     * @since 0.8
      */
     void addListener(Object listener);
 
@@ -314,6 +375,7 @@ public interface Gradle extends PluginAware {
      * Removes the given listener from this build.
      *
      * @param listener The listener to remove. Does nothing if this listener has not been added.
+     * @since 0.8
      */
     void removeListener(Object listener);
 
@@ -329,7 +391,10 @@ public interface Gradle extends PluginAware {
      * provides with your own implementation, for certain types of events.
      *
      * @param logger The logger to use.
+     * @deprecated Will be removed in Gradle 10. Logging customization through listeners is no longer supported.
+     * @since 0.9
      */
+    @Deprecated
     void useLogger(Object logger);
 
     /**
@@ -341,22 +406,38 @@ public interface Gradle extends PluginAware {
      * may be hidden, such as, for example, from a method or closure.
      *
      * @return this. Never returns null.
+     * @since 0.8
      */
     Gradle getGradle();
+
+    /**
+     * Returns the build services that are shared by all projects of this build.
+     *
+     * @since 6.1
+     */
+    BuildServiceRegistry getSharedServices();
 
     /**
      * Returns the included builds for this build.
      *
      * @since 3.1
      */
-    @Incubating
     Collection<IncludedBuild> getIncludedBuilds();
 
     /**
      * Returns the included build with the specified name for this build.
      *
+     * @throws UnknownDomainObjectException when there is no build with the given name
      * @since 3.1
      */
+    IncludedBuild includedBuild(String name) throws UnknownDomainObjectException;
+
+    /**
+     * Provides access to methods to create various kinds of {@link org.gradle.api.provider.Provider} instances.
+     *
+     * @return the provider factory. Never returns null.
+     * @since 9.4.0
+     */
     @Incubating
-    IncludedBuild includedBuild(String name);
+    ProviderFactory getProviders();
 }

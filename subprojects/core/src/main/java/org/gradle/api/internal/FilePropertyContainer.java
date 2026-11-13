@@ -16,26 +16,26 @@
 
 package org.gradle.api.internal;
 
-import com.google.common.collect.Lists;
-import org.gradle.api.internal.tasks.TaskFilePropertySpec;
+import org.gradle.api.internal.tasks.TaskPropertyRegistration;
 import org.gradle.api.tasks.TaskFilePropertyBuilder;
 
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
 /**
- * Container for {@link org.gradle.api.internal.tasks.TaskPropertySpec}s that might not have a name. The container
- * ensures that whenever properties are iterated they are always assigned a name.
+ * Container for {@link TaskPropertyRegistration}s that might not have a name. The container
+ * ensures that whenever parameters are iterated they are always assigned a name.
  */
-public class FilePropertyContainer<T extends TaskFilePropertyBuilder & TaskFilePropertySpec> implements Iterable<T> {
-    private final List<T> properties = Lists.newArrayList();
+public class FilePropertyContainer<T extends TaskFilePropertyBuilder & TaskPropertyRegistration> implements Iterable<T> {
+    private final List<T> properties = new ArrayList<>();
     private boolean changed;
     private int unnamedPropertyCounter;
 
     private FilePropertyContainer() {
     }
 
-    public static <T extends TaskFilePropertyBuilder & TaskFilePropertySpec> FilePropertyContainer<T> create() {
+    public static <T extends TaskFilePropertyBuilder & TaskPropertyRegistration> FilePropertyContainer<T> create() {
         return new FilePropertyContainer<T>();
     }
 
@@ -50,7 +50,7 @@ public class FilePropertyContainer<T extends TaskFilePropertyBuilder & TaskFileP
             for (T propertySpec : properties) {
                 String propertyName = propertySpec.getPropertyName();
                 if (propertyName == null) {
-                    propertyName = "$" + (++unnamedPropertyCounter);
+                    propertyName = "$" + ++unnamedPropertyCounter;
                     propertySpec.withPropertyName(propertyName);
                 }
             }

@@ -16,13 +16,14 @@
 
 package org.gradle.api.artifacts;
 
-import org.gradle.api.Incubating;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Selects a module version.
  * If you need to change this interface, you're probably doing it wrong:
- * it is superceded by {@link org.gradle.api.artifacts.component.ModuleComponentSelector}, so check this first, and only
+ * it is superseded by {@link org.gradle.api.artifacts.component.ModuleComponentSelector}, so check this first, and only
  * add methods here if it's for bridging.
+ * @since 1.0
  */
 public interface ModuleVersionSelector {
 
@@ -30,6 +31,7 @@ public interface ModuleVersionSelector {
      * The group of the module.
      *
      * @return module group
+     * @since 1.0
      */
     String getGroup();
 
@@ -37,25 +39,19 @@ public interface ModuleVersionSelector {
      * The name of the module.
      *
      * @return module name
+     * @since 1.0
      */
     String getName();
 
     /**
-     * The version of the module
+     * The version of the module. May be null.
      *
      * @return module version
      *
+     * @since 1.0
      */
+    @Nullable
     String getVersion();
-
-    /**
-     * Returns the version constraint to be used during selection.
-     * @return the version constraint
-     *
-     * @since 4.4
-     */
-    @Incubating
-    VersionConstraint getVersionConstraint();
 
     /**
      * To match strictly means that the given identifier needs to have
@@ -64,7 +60,17 @@ public interface ModuleVersionSelector {
      * e.g. '1.+' selector does not strictly match '1.2' identifier.
      *
      * @return if this selector matches exactly the given identifier.
+     * @since 1.3
      */
-    @Incubating
     boolean matchesStrictly(ModuleVersionIdentifier identifier);
+
+    /**
+     * The module identifier of the component. Returns the same information
+     * as {@link #getGroup()} and {@link #getName()}.
+     *
+     * @return the module identifier
+     *
+     * @since 4.9
+     */
+    ModuleIdentifier getModule();
 }

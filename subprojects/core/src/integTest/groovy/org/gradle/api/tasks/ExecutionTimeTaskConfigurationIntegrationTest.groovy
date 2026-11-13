@@ -17,43 +17,41 @@
 package org.gradle.api.tasks
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import spock.lang.Unroll
+import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
 
 class ExecutionTimeTaskConfigurationIntegrationTest extends AbstractIntegrationSpec {
-    @Unroll
     def "fails when task is configured using #config during execution time"() {
         buildFile.text = """
             def anAction = {} as Action
 
-            task broken {
+            def broken1 = tasks.register("broken1") {
                 doLast {
                     $config
                 }
             }
 
-            task broken2 << {
-                $config
+            def broken2 = tasks.register("broken2") {
+                doLast {}
             }
 
-            task broken3 << { }
-
-            task broken4 {
-                dependsOn broken3
+            def broken3 = tasks.register("broken3") {
+                dependsOn broken2
                 doLast {
-                    broken3.configure { $config }
+                    broken2.configure { $config }
                 }
             }
         """
 
         when:
         executer.withArgument("--continue")
-        executer.expectDeprecationWarning()
-        fails("broken", "broken2", "broken4")
+        fails("broken1", "broken2", "broken3")
 
         then:
-        failure.assertHasCause("Cannot call ${description} on task ':broken' after task has started execution.")
-        failure.assertHasCause("Cannot call ${description} on task ':broken2' after task has started execution. Check the configuration of task ':broken2' as you may have misused '<<' at task declaration.")
-        failure.assertHasCause("Cannot call ${description} on task ':broken3' after task has started execution.")
+        failure.assertHasCause("Cannot call ${description} on task ':broken1' after task has started execution.")
+        failure.assertHasCause("Cannot call ${description} on task ':broken2' after task has started execution.")
+        if (GradleContextualExecuter.configCache) {
+            failureDescriptionContains("Configuration cache problems found in this build.")
+        }
 
         where:
         config                                                      | description
@@ -92,42 +90,5 @@ class ExecutionTimeTaskConfigurationIntegrationTest extends AbstractIntegrationS
         "outputs.files('a')"                                        | "TaskOutputs.files(Object...)"
         "outputs.dirs(['prop':'a'])"                                | "TaskOutputs.dirs(Object...)"
         "outputs.dir('a')"                                          | "TaskOutputs.dir(Object)"
-    }
-
-    def "fails when task is configured using deleteAllActions() during execution time"() {
-        buildFile.text = """
-            def anAction = {} as Action
-
-            task broken {
-                doLast {
-                deleteAllActions()
-                }
-            }
-
-            task broken2 << {
-                deleteAllActions()
-            }
-
-            task broken3 << { }
-
-            task broken4 {
-                dependsOn broken3
-                doLast {
-                    broken3.configure {
-                        deleteAllActions()
-                    }
-                }
-            }
-        """
-
-        when:
-        executer.withArgument("--continue")
-        executer.expectDeprecationWarnings(2)
-        fails("broken", "broken2", "broken4")
-
-        then:
-        failure.assertHasCause("Cannot call Task.deleteAllActions() on task ':broken' after task has started execution.")
-        failure.assertHasCause("Cannot call Task.deleteAllActions() on task ':broken2' after task has started execution. Check the configuration of task ':broken2' as you may have misused '<<' at task declaration.")
-        failure.assertHasCause("Cannot call Task.deleteAllActions() on task ':broken3' after task has started execution.")
     }
 }

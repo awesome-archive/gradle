@@ -22,12 +22,20 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * <p>Attached to a task property to indicate that the property is not to be taken into account for up-to-date checking.</p>
+ * <p>Attached to a task property to indicate that the property is not to be taken into account for input fingerprinting,
+ * meaning changing its value won't affect up-to-date checking and build caching.</p>
  *
  * <p>This annotation should be attached to the getter method in Java or the property in Groovy.
+ * In Kotlin, use the {@code get:} use-site target to attach it to the property getter, for example {@code @get:Internal}.
+ * This also works on abstract properties, where the annotation without a use-site target does not compile.
  * Annotations on setters or just the field in Java are ignored.</p>
  *
  * <p>This will cause the task <em>not</em> to be considered out-of-date when the property has changed.</p>
+ *
+ * <p>Properties annotated with {@code @Internal} are not subject to presence validation and are treated as
+ * inherently optional. There is no need, and it is an error, to also annotate them with {@link org.gradle.api.tasks.Optional}.</p>
+ *
+ * @since 3.0
  */
 @Documented
 @Retention(RetentionPolicy.RUNTIME)
@@ -35,6 +43,7 @@ import java.lang.annotation.Target;
 public @interface Internal {
     /**
      * The reason for ignoring this element.
+     * @since 3.0
      */
     String value() default "";
 }

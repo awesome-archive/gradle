@@ -21,19 +21,28 @@ import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
 import com.google.common.util.concurrent.UncheckedExecutionException;
-import org.gradle.api.internal.file.TestFiles;
 import org.gradle.internal.serialize.Serializer;
 
 import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
 
 public class TestFileContentCacheFactory implements FileContentCacheFactory {
+
+    private final List<File> calculationLog = new ArrayList<>();
+
+    public List<File> getCalculationLog() {
+        return calculationLog;
+    }
+
     @Override
     public <V> FileContentCache<V> newCache(String name, int normalizedCacheSize, final Calculator<? extends V> calculator, Serializer<V> serializer) {
         return new FileContentCache<V>() {
-            LoadingCache<File, V> cache = CacheBuilder.newBuilder().build(new CacheLoader<File, V>() {
+            final LoadingCache<File, V> cache = CacheBuilder.newBuilder().build(new CacheLoader<File, V>() {
                 @Override
-                public V load(File file) throws Exception {
-                    return calculator.calculate(file, TestFiles.fileSystem().stat(file).getType());
+                public V load(File file) {
+                    calculationLog.add(file);
+                    return calculator.calculate(file, file.isFile());
                 }
             });
 
@@ -42,7 +51,8 @@ public class TestFileContentCacheFactory implements FileContentCacheFactory {
                 try {
                     return cache.getUnchecked(file);
                 } catch (UncheckedExecutionException e) {
-                    throw Throwables.propagate(e.getCause());
+                    Throwables.throwIfUnchecked(e.getCause());
+                    throw new RuntimeException(e.getCause());
                 }
             }
         };

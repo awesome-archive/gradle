@@ -15,8 +15,6 @@
  */
 package org.gradle.api.artifacts.result;
 
-import org.gradle.api.Incubating;
-
 import java.util.Set;
 
 /**
@@ -24,7 +22,6 @@ import java.util.Set;
  *
  * @since 2.0
  */
-@Incubating
 public interface ArtifactResolutionResult {
     /**
      * <p>Return a set of {@link ComponentResult} instances representing all requested components.
@@ -37,6 +34,7 @@ public interface ArtifactResolutionResult {
      *     <li>{@link UnresolvedComponentResult} for any component that could not be resolved from the set of repositories.</li>
      * </ul>
      * @return the set of results for all requested components
+     * @since 2.0
      */
     Set<ComponentResult> getComponents();
 
@@ -46,6 +44,7 @@ public interface ArtifactResolutionResult {
      * <p>Calling this method is the same as calling {@link #getComponents()} and filtering the resulting set for elements of type {@link ComponentArtifactsResult}.
      *
      * @return the set of all successfully resolved components
+     * @since 2.0
      */
     Set<ComponentArtifactsResult> getResolvedComponents();
 }

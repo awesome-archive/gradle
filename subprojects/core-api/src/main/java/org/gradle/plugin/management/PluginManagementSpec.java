@@ -17,37 +17,83 @@
 package org.gradle.plugin.management;
 
 import org.gradle.api.Action;
-import org.gradle.api.Incubating;
 import org.gradle.api.artifacts.dsl.RepositoryHandler;
+import org.gradle.api.initialization.ConfigurableIncludedPluginBuild;
+import org.gradle.declarative.dsl.model.annotations.Adding;
+import org.gradle.declarative.dsl.model.annotations.HiddenInDefinition;
 import org.gradle.internal.HasInternalProtocol;
+import org.gradle.internal.service.scopes.Scope;
+import org.gradle.internal.service.scopes.ServiceScope;
+import org.gradle.plugin.use.PluginDependenciesSpec;
 
 /**
  * Configures how plugins are resolved.
  *
  * @since 3.5
  */
-@Incubating
+@ServiceScope(Scope.Settings.class)
 @HasInternalProtocol
 public interface PluginManagementSpec {
 
     /**
      * Defines the plugin repositories to use.
+     * @since 3.5
      */
+    @HiddenInDefinition
     void repositories(Action<? super RepositoryHandler> repositoriesAction);
 
     /**
      * The plugin repositories to use.
+     * @since 3.5
      */
     RepositoryHandler getRepositories();
 
     /**
      * Configure the plugin resolution strategy.
+     * @since 3.5
      */
+    @HiddenInDefinition
     void resolutionStrategy(Action<? super PluginResolutionStrategy> action);
 
     /**
      * The plugin resolution strategy.
+     * @since 3.5
      */
+    @HiddenInDefinition
     PluginResolutionStrategy getResolutionStrategy();
 
+    /**
+     * Configure the default plugin versions.
+     * @since 5.6
+     */
+    @HiddenInDefinition
+    void plugins(Action<? super PluginDependenciesSpec> action);
+
+    /**
+     * The Plugin dependencies, permitting default plugin versions to be configured.
+     * @since 5.6
+     */
+    @HiddenInDefinition
+    PluginDependenciesSpec getPlugins();
+
+    /**
+     * Includes a plugin build at the specified path to the composite build.
+     * Included plugin builds can contribute settings and project plugins.
+     * @param rootProject The path to the root project directory for the build.
+     *
+     * @since 7.0
+     */
+    @Adding
+    void includeBuild(String rootProject);
+
+    /**
+     * Includes a plugin build at the specified path to the composite build, with the supplied configuration.
+     * Included plugin builds can contribute settings and project plugins.
+     * @param rootProject The path to the root project directory for the build.
+     * @param configuration An action to configure the included build.
+     *
+     * @since 7.0
+     */
+    @HiddenInDefinition
+    void includeBuild(String rootProject, Action<ConfigurableIncludedPluginBuild> configuration);
 }

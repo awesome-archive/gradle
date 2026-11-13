@@ -15,18 +15,15 @@
  */
 package org.gradle.api.artifacts;
 
-import org.gradle.api.Incubating;
 import org.gradle.internal.HasInternalProtocol;
-
-import javax.annotation.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A configurable version constraint. This is exposed to the build author, so that one can express
- * more constraints on a version,
+ * more constraints on a module version.
  *
  * @since 4.4
  */
-@Incubating
 @HasInternalProtocol
 public interface MutableVersionConstraint extends VersionConstraint {
     /**
@@ -34,6 +31,7 @@ public interface MutableVersionConstraint extends VersionConstraint {
      *
      * @since 4.6
      */
+    @Override
     @Nullable
     String getBranch();
 
@@ -46,22 +44,56 @@ public interface MutableVersionConstraint extends VersionConstraint {
     void setBranch(@Nullable String branch);
 
     /**
-     * Sets the preferred version of this module. Any other rejection/strict constraint will be overriden.
-     * @param version the preferred version of this module
-     */
-    void prefer(String version);
-
-    /**
-     * Sets the version as strict, meaning that if any other dependency version for this module disagrees with
-     * this version, resolution will fail.
+     * Sets the version as strict.
+     * <p>
+     * Any version not matched by this version notation will be excluded. This is the strongest version declaration.
+     * It will cause dependency resolution to fail if no version acceptable by this clause can be selected.
+     * This term supports dynamic versions.
+     * <p>
+     * This will override a previous {@link #require(String) require} declaration.
+     * <p>
+     * This clears any set rejected versions.
      *
      * @param version the strict version to be used for this module
+     * @since 4.4
      */
     void strictly(String version);
 
     /**
+     * Sets the required version of this module.
+     * <p>
+     * Implies that the selected version cannot be lower than what {@code require} accepts but could be higher through conflict resolution, even if higher has an exclusive higher bound.
+     * This is what a direct dependency translates to.
+     * This term supports dynamic versions.
+     * <p>
+     * This will override a previous {@link #strictly(String) strictly} declaration.
+     * <p>
+     * This clears any set rejected versions.
+     *
+     * @param version the required version of this module
+     * @since 5.0
+     */
+    void require(String version);
+
+    /**
+     * Sets the preferred version of this module.
+     * <p>
+     * This is a very soft version declaration.
+     * It applies only if there is no stronger non dynamic opinion on a version for the module.
+     * This term does not support dynamic versions.
+     * <p>
+     * This can complement a {@link #strictly(String) strictly} or {@link #require(String) require} indication.
+     * <p>
+     * This clears any set rejected versions.
+     *
+     * @param version the preferred version of this module
+     * @since 4.4
+     */
+    void prefer(String version);
+
+    /**
      * Declares a list of rejected versions. If such a version is found during dependency resolution, it will not
-     * be selected.
+     * be selected. This term supports dynamic versions.
      *
      * @param versions the rejected versions
      *
@@ -70,8 +102,8 @@ public interface MutableVersionConstraint extends VersionConstraint {
     void reject(String... versions);
 
     /**
-     * Rejects all versions of this component. Can be used to declare that a component is incompatible with another
-     * (typically, cannot have both a 2 different implementations of the same API).
+     * Rejects all versions of this component. Can be used to make sure that if such a component is seen in a
+     * dependency graph, resolution fails.
      *
      * @since 4.5
      */

@@ -16,13 +16,15 @@
 
 package org.gradle.internal.metaobject;
 
+import org.jspecify.annotations.Nullable;
+
 public class DynamicInvokeResult {
 
     private static final Object NO_VALUE = new Object();
     private static final DynamicInvokeResult NOT_FOUND = new DynamicInvokeResult(NO_VALUE);
     private static final DynamicInvokeResult NULL = new DynamicInvokeResult(null);
 
-    public static DynamicInvokeResult found(Object value) {
+    public static DynamicInvokeResult found(@Nullable Object value) {
         return value == null ? found() : new DynamicInvokeResult(value);
     }
 
@@ -34,12 +36,13 @@ public class DynamicInvokeResult {
         return DynamicInvokeResult.NOT_FOUND;
     }
 
-    private final Object value;
+    private final @Nullable Object value;
 
-    private DynamicInvokeResult(Object value) {
+    private DynamicInvokeResult(@Nullable Object value) {
         this.value = value;
     }
 
+    @Nullable
     public Object getValue() {
         if (isFound()) {
             return value;
@@ -50,5 +53,16 @@ public class DynamicInvokeResult {
 
     public boolean isFound() {
         return value != NO_VALUE;
+    }
+
+    @Override
+    public String toString() {
+        if (!isFound()) {
+            return "DynamicInvokeResult.notFound()";
+        } else if (value == null) {
+            return "DynamicInvokeResult.found(null)";
+        } else {
+            return "DynamicInvokeResult.found(" + value.getClass().getSimpleName() + ": " + value + ")";
+        }
     }
 }

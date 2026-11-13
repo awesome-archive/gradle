@@ -1,0 +1,46 @@
+/*
+ * Copyright 2017 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.gradle.composite.internal;
+
+import org.gradle.execution.plan.Node;
+import org.gradle.internal.build.BuildState;
+import org.gradle.internal.buildtree.BuildTreeWorkGraph;
+import org.gradle.internal.service.scopes.Scope;
+import org.gradle.internal.service.scopes.ServiceScope;
+import org.jspecify.annotations.Nullable;
+
+import java.util.function.Consumer;
+import java.util.function.Function;
+
+/**
+ * A service that allows work graphs to be created, populated and executed.
+ */
+@ServiceScope(Scope.BuildTree.class)
+public interface BuildTreeWorkGraphController {
+
+    /**
+     * Queues the given node of the given build for execution, but does not schedule it. Use {@link BuildTreeWorkGraph#scheduleWork(Consumer)} to schedule queued tasks.
+     */
+    void queueForExecution(BuildState targetBuild, Node node);
+
+    /**
+     * Runs the given action against a new, empty work graph. This allows tasks to be run while calculating the task graph of the build tree, for example to run `buildSrc` tasks or
+     * to build local plugins in an included build.
+     */
+    <T extends @Nullable Object> T withNewWorkGraph(Function<? super BuildTreeWorkGraph, T> action);
+
+}

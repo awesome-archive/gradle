@@ -17,11 +17,17 @@
 package org.gradle.api;
 
 import groovy.lang.Closure;
+import groovy.lang.DelegatesTo;
 import groovy.lang.MissingPropertyException;
+import groovy.transform.stc.ClosureParams;
+import groovy.transform.stc.SimpleType;
 import org.gradle.api.logging.Logger;
 import org.gradle.api.logging.LoggingManager;
-import org.gradle.api.plugins.Convention;
 import org.gradle.api.plugins.ExtensionAware;
+import org.gradle.api.provider.Property;
+import org.gradle.api.provider.Provider;
+import org.gradle.api.services.BuildService;
+import org.gradle.api.services.BuildServiceRegistration;
 import org.gradle.api.specs.Spec;
 import org.gradle.api.tasks.Internal;
 import org.gradle.api.tasks.TaskDependency;
@@ -30,9 +36,11 @@ import org.gradle.api.tasks.TaskInputs;
 import org.gradle.api.tasks.TaskLocalState;
 import org.gradle.api.tasks.TaskOutputs;
 import org.gradle.api.tasks.TaskState;
+import org.gradle.declarative.dsl.model.annotations.HiddenInDefinition;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.io.File;
+import java.time.Duration;
 import java.util.List;
 import java.util.Set;
 
@@ -56,7 +64,7 @@ import java.util.Set;
  * and the task's name. Path elements are separated using the {@value org.gradle.api.Project#PATH_SEPARATOR}
  * character.</p>
  *
- * <h3>Task Actions</h3>
+ * <h2>Task Actions</h2>
  *
  * <p>A <code>Task</code> is made up of a sequence of {@link Action} objects. When the task is executed, each of the
  * actions is executed in turn, by calling {@link Action#execute}. You can add actions to a task by calling {@link
@@ -72,7 +80,7 @@ import java.util.Set;
  * next task by throwing a {@link org.gradle.api.tasks.StopExecutionException}. Using these exceptions allows you to
  * have precondition actions which skip execution of the task, or part of the task, if not true.</p>
  *
- * <a name="dependencies"></a><h3>Task Dependencies and Task Ordering</h3>
+ * <h2 id="dependencies">Task Dependencies and Task Ordering</h2>
  *
  * <p>A task may have dependencies on other tasks or might be scheduled to always run after another task.
  * Gradle ensures that all task dependencies and ordering rules are honored when executing tasks, so that the task is executed after
@@ -86,18 +94,19 @@ import java.util.Set;
  * <ul>
  *
  * <li>A {@code String}, {@code CharSequence} or {@code groovy.lang.GString} task path or name. A relative path is interpreted relative to the task's {@link Project}. This
- * allows you to refer to tasks in other projects.</li>
+ * allows you to refer to tasks in other projects. These task references will not cause task creation.</li>
  *
  * <li>A {@link Task}.</li>
  *
- * <li>A closure. The closure may take a {@code Task} as parameter. It may return any of the types listed here. Its
- * return value is recursively converted to tasks. A {@code null} return value is treated as an empty collection.</li>
- *
  * <li>A {@link TaskDependency} object.</li>
+ *
+ * <li>A {@link org.gradle.api.tasks.TaskReference} object.</li>
  *
  * <li>A {@link Buildable} object.</li>
  *
  * <li>A {@link org.gradle.api.file.RegularFileProperty} or {@link org.gradle.api.file.DirectoryProperty}.</li>
+ *
+ * <li>A {@link Provider} object. May contain any of the types listed here.</li>
  *
  * <li>A {@code Iterable}, {@code Collection}, {@code Map} or array. May contain any of the types listed here. The elements of the
  * iterable/collection/map/array are recursively converted to tasks.</li>
@@ -105,11 +114,17 @@ import java.util.Set;
  * <li>A {@code Callable}. The {@code call()} method may return any of the types listed here. Its return value is
  * recursively converted to tasks. A {@code null} return value is treated as an empty collection.</li>
  *
+ * <li>A Groovy {@code Closure} or Kotlin function.
+ * The closure or function may return any of the types listed here. Its return value is
+ * recursively converted to tasks. A {@code null} return value is treated as an empty collection.</li>
+ *
+ * <li>Anything else is treated as an error.</li>
+ *
  * </ul>
  *
- * <h3>Using a Task in a Build File</h3>
+ * <h2>Using a Task in a Build File</h2>
  *
- * <a name="properties"></a> <h4>Dynamic Properties</h4>
+ * <h3 id="properties">Dynamic Properties</h3>
  *
  * <p>A {@code Task} has 4 'scopes' for properties. You can access these properties by name from the build file or by
  * calling the {@link #property(String)} method. You can change the value of these properties by calling the {@link #setProperty(String, Object)} method.</p>
@@ -123,41 +138,78 @@ import java.util.Set;
  * <li>The <em>extensions</em> added to the task by plugins. Each extension is available as a read-only property with the same
  * name as the extension.</li>
  *
- * <li>The <em>convention</em> properties added to the task by plugins. A plugin can add properties and methods to a task through
- * the task's {@link Convention} object.  The properties of this scope may be readable or writable, depending on the convention objects.</li>
- *
  * <li>The <em>extra properties</em> of the task. Each task object maintains a map of additional properties. These
  * are arbitrary name -&gt; value pairs which you can use to dynamically add properties to a task object.  Once defined, the properties
  * of this scope are readable and writable.</li>
  *
  * </ul>
  *
- * <h4>Dynamic Methods</h4>
- *
- * <p>A {@link Plugin} may add methods to a {@code Task} using its {@link Convention} object.</p>
- *
- * <h4>Parallel Execution</h4>
+ * <h3>Parallel Execution</h3>
  * <p>
  * By default, tasks are not executed in parallel unless a task is waiting on asynchronous work and another task (which
  * is not dependent) is ready to execute.
  *
  * Parallel execution can be enabled by the <code>--parallel</code> flag when the build is initiated.
  * In parallel mode, the tasks of different projects (i.e. in a multi project build) are able to be executed in parallel.
+ * @since 0.7
  */
-public interface Task extends Comparable<Task>, ExtensionAware {
+@HiddenInDefinition
+public interface Task extends Comparable<Task>, ExtensionAware, Named {
+    /**
+     * The task name.
+     *
+     * @since 0.7
+     */
     String TASK_NAME = "name";
 
+    /**
+     * The task description.
+     *
+     * @since 0.7
+     */
     String TASK_DESCRIPTION = "description";
 
+    /**
+     * The task group.
+     *
+     * @since 1.0
+     */
     String TASK_GROUP = "group";
 
+    /**
+     * The task type.
+     *
+     * @since 0.7
+     */
     String TASK_TYPE = "type";
 
+    /**
+     * The task depends on.
+     *
+     * @since 0.7
+     */
     String TASK_DEPENDS_ON = "dependsOn";
 
+    /**
+     * The task overwrite.
+     *
+     * @since 0.7
+     */
     String TASK_OVERWRITE = "overwrite";
 
+    /**
+     * The task action.
+     *
+     * @since 0.7
+     */
     String TASK_ACTION = "action";
+
+    /**
+     * Constructor arguments for the Task
+     *
+     * @since 4.7
+     */
+    String TASK_CONSTRUCTOR_ARGS = "constructorArgs";
 
     /**
      * <p>Returns the name of this task. The name uniquely identifies the task within its {@link Project}.</p>
@@ -165,21 +217,16 @@ public interface Task extends Comparable<Task>, ExtensionAware {
      * @return The name of the task. Never returns null.
      */
     @Internal
+    @Override
     String getName();
-
-    /**
-     * A {@link org.gradle.api.Namer} namer for tasks that returns {@link #getName()}.
-     */
-    class Namer implements org.gradle.api.Namer<Task> {
-        public String determineName(Task c) {
-            return c.getName();
-        }
-    }
 
     /**
      * <p>Returns the {@link Project} which this task belongs to.</p>
      *
+     * <p>Calling this method from a task action is not supported when configuration caching is enabled.</p>
+     *
      * @return The project this task belongs to. Never returns null.
+     * @since 0.7
      */
     @Internal
     Project getProject();
@@ -189,6 +236,7 @@ public interface Task extends Comparable<Task>, ExtensionAware {
      * execution.</p>
      *
      * @return The task actions in the order they are executed. Returns an empty list if this task has no actions.
+     * @since 0.7
      */
     @Internal
     List<Action<? super Task>> getActions();
@@ -197,13 +245,17 @@ public interface Task extends Comparable<Task>, ExtensionAware {
      * <p>Sets the sequence of {@link Action} objects which will be executed by this task.</p>
      *
      * @param actions The actions.
+     * @since 0.7
      */
     void setActions(List<Action<? super Task>> actions);
 
     /**
      * <p>Returns a {@link TaskDependency} which contains all the tasks that this task depends on.</p>
      *
+     * <p>Calling this method from a task action is not supported when configuration caching is enabled.</p>
+     *
      * @return The dependencies of this task. Never returns null.
+     * @since 0.7
      */
     @Internal
     TaskDependency getTaskDependencies();
@@ -212,50 +264,28 @@ public interface Task extends Comparable<Task>, ExtensionAware {
      * <p>Returns the dependencies of this task.</p>
      *
      * @return The dependencies of this task. Returns an empty set if this task has no dependencies.
+     * @since 0.7
      */
     @Internal
     Set<Object> getDependsOn();
 
     /**
-     * <p>Sets the dependencies of this task. See <a href="#dependencies">here</a> for a description of the types of
+     * <p>Sets the dependencies of this task. See <a href="./Task.html#dependencies">here</a> for a description of the types of
      * objects which can be used as task dependencies.</p>
      *
      * @param dependsOnTasks The set of task paths.
+     * @since 0.8
      */
     void setDependsOn(Iterable<?> dependsOnTasks);
 
     /**
-     * <p>Adds the given dependencies to this task. See <a href="#dependencies">here</a> for a description of the types
+     * <p>Adds the given dependencies to this task. See <a href="./Task.html#dependencies">here</a> for a description of the types
      * of objects which can be used as task dependencies.</p>
      *
-     * @param paths The dependencies to add to this task. The path can be defined by:
-     * <ul>
-     * <li>A {@code String}, {@code CharSequence} or {@code groovy.lang.GString} task path or name. A relative path is interpreted relative to the task's {@link Project}. This
-     * allows you to refer to tasks in other projects.</li>
-     *
-     * <li>A {@link Task}.</li>
-     *
-     * <li>A closure. The closure may take a {@code Task} as parameter. It may return any of the types listed here. Its
-     * return value is recursively converted to tasks. A {@code null} return value is treated as an empty collection.</li>
-     *
-     * <li>A {@link TaskDependency} object.</li>
-     *
-     * <li>A {@link org.gradle.api.tasks.TaskReference} object.</li>
-     *
-     * <li>A {@link Buildable} object.</li>
-     *
-     * <li>A {@link org.gradle.api.file.RegularFileProperty} or {@link org.gradle.api.file.DirectoryProperty}.</li>
-     *
-     * <li>A {@code Iterable}, {@code Collection}, {@code Map} or array. May contain any of the types listed here. The elements of the
-     * iterable/collection/map/array are recursively converted to tasks.</li>
-     *
-     * <li>A {@code Callable}. The {@code call()} method may return any of the types listed here. Its return value is
-     * recursively converted to tasks. A {@code null} return value is treated as an empty collection.</li>
-     *
-     * <li>Anything else is treated as a failure.</li>
-     * </ul>
+     * @param paths The dependencies to add to this task.
      *
      * @return the task object this method is applied to
+     * @since 0.7
      */
     Task dependsOn(Object... paths);
 
@@ -266,11 +296,44 @@ public interface Task extends Comparable<Task>, ExtensionAware {
      *
      * <p>You may add multiple such predicates. The task is skipped if any of the predicates return false.</p>
      *
-     * <p>Typical usage:<code>myTask.onlyIf{ dependsOnTaskDidWork() } </code></p>
+     * <p>Typical usage:<code>myTask.onlyIf { isProductionEnvironment() }</code></p>
      *
      * @param onlyIfClosure code to execute to determine if task should be run
+     * @since 0.7
      */
-    void onlyIf(Closure onlyIfClosure);
+    void onlyIf(Closure<?> onlyIfClosure);
+
+    /**
+     * Do not track the state of the task.
+     *
+     * <p>Instructs Gradle to treat the task as untracked.
+     *
+     * @see org.gradle.api.tasks.UntrackedTask
+     * @since 7.3
+     */
+    void doNotTrackState(String reasonNotToTrackState);
+
+    /**
+     * Specifies that this task is not compatible with the configuration cache.
+     *
+     * <p>
+     * Configuration cache problems found in the task will be reported but won't cause the build to fail.
+     * </p>
+     *
+     * <p>
+     * The presence of incompatible tasks in the task graph will cause the configuration state to be discarded
+     * at the end of the build unless the global {@code configuration-cache-problems} option is set to {@code warn},
+     * in which case the configuration state would still be cached in a best-effort manner as usual for the option.
+     * </p>
+     *
+     * <p>
+     * <b>IMPORTANT:</b> This setting doesn't affect how Gradle treats problems found in other tasks also present in the task graph and those
+     * could still cause the build to fail.
+     * </p>
+     *
+     * @since 7.4
+     */
+    void notCompatibleWithConfigurationCache(String reason);
 
     /**
      * <p>Execute the task only if the given spec is satisfied. The spec will be evaluated at task execution time, not
@@ -281,14 +344,37 @@ public interface Task extends Comparable<Task>, ExtensionAware {
      * <p>Typical usage (from Java):</p>
      * <pre>myTask.onlyIf(new Spec&lt;Task&gt;() {
      *    boolean isSatisfiedBy(Task task) {
-     *       return task.dependsOnTaskDidWork();
+     *       return isProductionEnvironment();
      *    }
      * });
      * </pre>
      *
      * @param onlyIfSpec specifies if a task should be run
+     * @since 0.7
      */
     void onlyIf(Spec<? super Task> onlyIfSpec);
+
+    /**
+     * <p>Execute the task only if the given spec is satisfied. The spec will be evaluated at task execution time, not
+     * during configuration. If the Spec is not satisfied, the task will be skipped.</p>
+     *
+     * <p>You may add multiple such predicates. The task is skipped if any of the predicates return false.</p>
+     *
+     * <p>Typical usage (from Java):</p>
+     * <pre>myTask.onlyIf("run only in production environment", new Spec&lt;Task&gt;() {
+     *    boolean isSatisfiedBy(Task task) {
+     *       return isProductionEnvironment();
+     *    }
+     * });
+     * </pre>
+     *
+     * @param onlyIfReason specifies the reason for a task to run, which is used for logging
+     * @param onlyIfSpec specifies if a task should be run
+     *
+     * @since 7.6
+     */
+    @Incubating
+    void onlyIf(String onlyIfReason, Spec<? super Task> onlyIfSpec);
 
     /**
      * <p>Execute the task only if the given closure returns true.  The closure will be evaluated at task execution
@@ -298,8 +384,9 @@ public interface Task extends Comparable<Task>, ExtensionAware {
      * <p>The given predicate replaces all such predicates for this task.</p>
      *
      * @param onlyIfClosure code to execute to determine if task should be run
+     * @since 0.9
      */
-    void setOnlyIf(Closure onlyIfClosure);
+    void setOnlyIf(Closure<?> onlyIfClosure);
 
     /**
      * <p>Execute the task only if the given spec is satisfied. The spec will be evaluated at task execution time, not
@@ -308,14 +395,30 @@ public interface Task extends Comparable<Task>, ExtensionAware {
      * <p>The given predicate replaces all such predicates for this task.</p>
      *
      * @param onlyIfSpec specifies if a task should be run
+     * @since 0.9
      */
     void setOnlyIf(Spec<? super Task> onlyIfSpec);
+
+    /**
+     * <p>Execute the task only if the given spec is satisfied. The spec will be evaluated at task execution time, not
+     * during configuration. If the Spec is not satisfied, the task will be skipped.</p>
+     *
+     * <p>The given predicate replaces all such predicates for this task.</p>
+     *
+     * @param onlyIfReason specifies the reason for a task to run, which is used for logging
+     * @param onlyIfSpec specifies if a task should be run
+     *
+     * @since 7.6
+     */
+    @Incubating
+    void setOnlyIf(String onlyIfReason, Spec<? super Task> onlyIfSpec);
 
     /**
      * Returns the execution state of this task. This provides information about the execution of this task, such as
      * whether it has executed, been skipped, has failed, etc.
      *
      * @return The execution state of this task. Never returns null.
+     * @since 0.9
      */
     @Internal
     TaskState getState();
@@ -323,8 +426,8 @@ public interface Task extends Comparable<Task>, ExtensionAware {
     /**
      * Sets whether the task actually did any work.  Most built-in tasks will set this automatically, but
      * it may be useful to manually indicate this for custom user tasks.
-     * <p>This is useful when combined with onlyIf { dependsOnTaskDidWork() }.
      * @param didWork indicates if the task did any work
+     * @since 0.9
      */
     void setDidWork(boolean didWork);
 
@@ -334,6 +437,7 @@ public interface Task extends Comparable<Task>, ExtensionAware {
      * task was run.</p>
      *
      * @return true if this task did any work
+     * @since 0.7
      */
     @Internal
     boolean getDidWork();
@@ -343,6 +447,7 @@ public interface Task extends Comparable<Task>, ExtensionAware {
      * its {@link Project} plus the name of the task, separated by <code>:</code>.</p>
      *
      * @return the path of the task, which is equal to the path of the project plus the name of the task.
+     * @since 0.7
      */
     @Internal
     String getPath();
@@ -352,6 +457,7 @@ public interface Task extends Comparable<Task>, ExtensionAware {
      *
      * @param action The action to add
      * @return the task object this method is applied to
+     * @since 0.8
      */
     Task doFirst(Action<? super Task> action);
 
@@ -361,8 +467,11 @@ public interface Task extends Comparable<Task>, ExtensionAware {
      *
      * @param action The action closure to execute.
      * @return This task.
+     * @since 0.7
      */
-    Task doFirst(Closure action);
+    Task doFirst(@DelegatesTo(Task.class)
+                 @ClosureParams(value = SimpleType.class, options = "org.gradle.api.Task")
+                 Closure action);
 
     /**
      * <p>Adds the given {@link Action} to the beginning of this task's action list.</p>
@@ -373,7 +482,6 @@ public interface Task extends Comparable<Task>, ExtensionAware {
      *
      * @since 4.2
      */
-    @Incubating
     Task doFirst(String actionName, Action<? super Task> action);
 
     /**
@@ -381,6 +489,7 @@ public interface Task extends Comparable<Task>, ExtensionAware {
      *
      * @param action The action to add.
      * @return the task object this method is applied to
+     * @since 0.8
      */
     Task doLast(Action<? super Task> action);
 
@@ -393,7 +502,6 @@ public interface Task extends Comparable<Task>, ExtensionAware {
      *
      * @since 4.2
      */
-    @Incubating
     Task doLast(String actionName, Action<? super Task> action);
 
     /**
@@ -402,35 +510,17 @@ public interface Task extends Comparable<Task>, ExtensionAware {
      *
      * @param action The action closure to execute.
      * @return This task.
+     * @since 0.7
      */
-    Task doLast(Closure action);
-
-    /**
-     * <p>Adds the given closure to the end of this task's action list.  The closure is passed this task as a parameter
-     * when executed. You can call this method from your build script using the &lt;&lt; left shift operator.</p>
-     *
-     * @param action The action closure to execute.
-     * @return This task.
-     *
-     * @deprecated Use {@link #doLast(Closure action)}
-     */
-    @Deprecated
-    Task leftShift(Closure action);
-
-    /**
-     * <p>Removes all the actions of this task.</p>
-     *
-     * @return the task object this method is applied to
-     *
-     * @deprecated Don't use this.
-     */
-    @Deprecated
-    Task deleteAllActions();
+    Task doLast(@DelegatesTo(Task.class)
+                @ClosureParams(value = SimpleType.class, options = "org.gradle.api.Task")
+                Closure action);
 
     /**
      * <p>Returns if this task is enabled or not.</p>
      *
      * @see #setEnabled(boolean)
+     * @since 0.7
      */
     @Internal
     boolean getEnabled();
@@ -440,6 +530,7 @@ public interface Task extends Comparable<Task>, ExtensionAware {
      * disabling a task does not prevent the execution of the tasks which this task depends on.</p>
      *
      * @param enabled The enabled state of this task (true or false)
+     * @since 0.7
      */
     void setEnabled(boolean enabled);
 
@@ -449,6 +540,7 @@ public interface Task extends Comparable<Task>, ExtensionAware {
      *
      * @param configureClosure The closure to be applied (can be null).
      * @return This task
+     * @since 0.7
      */
     Task configure(Closure configureClosure);
 
@@ -457,14 +549,18 @@ public interface Task extends Comparable<Task>, ExtensionAware {
      * tasks.</p>
      *
      * @return The <code>AntBuilder</code>
+     * @since 0.7
+     * @deprecated This method will be removed in Gradle 10.
      */
     @Internal
+    @Deprecated
     AntBuilder getAnt();
 
     /**
      * <p>Returns the logger for this task. You can use this in your build file to write log messages.</p>
      *
      * @return The logger. Never returns null.
+     * @since 0.7
      */
     @Internal
     Logger getLogger();
@@ -475,6 +571,7 @@ public interface Task extends Comparable<Task>, ExtensionAware {
      * the QUIET log level, and System.err is redirected at the ERROR log level.
      *
      * @return the LoggingManager. Never returns null.
+     * @since 0.9
      */
     @Internal
     LoggingManager getLogging();
@@ -488,8 +585,6 @@ public interface Task extends Comparable<Task>, ExtensionAware {
      *
      * <li>If this task has an extension with the given name, return the extension. </li>
      *
-     * <li>If this task's convention object has a property with the given name, return the value of the property.</li>
-     *
      * <li>If this task has an extra property with the given name, return the value of the property.</li>
      *
      * <li>If not found, throw {@link MissingPropertyException}</li>
@@ -499,6 +594,7 @@ public interface Task extends Comparable<Task>, ExtensionAware {
      * @param propertyName The name of the property.
      * @return The value of the property, possibly null.
      * @throws MissingPropertyException When the given property is unknown.
+     * @since 0.7
      */
     @Nullable
     Object property(String propertyName) throws MissingPropertyException;
@@ -509,6 +605,7 @@ public interface Task extends Comparable<Task>, ExtensionAware {
      *
      * @param propertyName The name of the property to locate.
      * @return True if this project has the given property, false otherwise.
+     * @since 0.7
      */
     boolean hasProperty(String propertyName);
 
@@ -520,8 +617,6 @@ public interface Task extends Comparable<Task>, ExtensionAware {
      *
      * <li>The task object itself.  For example, the <code>enabled</code> project property.</li>
      *
-     * <li>The task's convention object.</li>
-     *
      * <li>The task's extra properties.</li>
      *
      * </ol>
@@ -530,22 +625,15 @@ public interface Task extends Comparable<Task>, ExtensionAware {
      *
      * @param name The name of the property
      * @param value The value of the property
+     * @since 0.7
      */
     void setProperty(String name, Object value) throws MissingPropertyException;
-
-    /**
-     * <p>Returns the {@link Convention} object for this task. A {@link Plugin} can use the convention object to
-     * contribute properties and methods to this task.</p>
-     *
-     * @return The convention object. Never returns null.
-     */
-    @Internal
-    Convention getConvention();
 
     /**
      * Returns the description of this task.
      *
      * @return the description. May return null.
+     * @since 0.7
      */
     @Internal
     @Nullable
@@ -556,6 +644,7 @@ public interface Task extends Comparable<Task>, ExtensionAware {
      * description will be displayed when <code>gradle tasks</code> is called.
      *
      * @param description The description of the task. Might be null.
+     * @since 0.7
      */
     void setDescription(@Nullable String description);
 
@@ -564,6 +653,7 @@ public interface Task extends Comparable<Task>, ExtensionAware {
      * group related tasks together when presenting a list of tasks to the user.
      *
      * @return The task group for this task. Might be null.
+     * @since 0.9
      */
     @Internal
     @Nullable
@@ -574,24 +664,15 @@ public interface Task extends Comparable<Task>, ExtensionAware {
      * group related tasks together when presenting a list of tasks to the user.
      *
      * @param group The task group for this task. Can be null.
+     * @since 0.9
      */
     void setGroup(@Nullable String group);
-
-    /**
-     * <p>Checks if any of the tasks that this task depends on {@link Task#getDidWork() didWork}.</p>
-     *
-     * @return true if any task this task depends on did work.
-     *
-     * @deprecated Build logic should not depend on this information about a task. Instead, declare
-     * task inputs and outputs to allow Gradle to optimize task execution.
-     */
-    @Deprecated
-    boolean dependsOnTaskDidWork();
 
     /**
      * <p>Returns the inputs of this task.</p>
      *
      * @return The inputs. Never returns null.
+     * @since 0.9
      */
     @Internal
     TaskInputs getInputs();
@@ -600,6 +681,7 @@ public interface Task extends Comparable<Task>, ExtensionAware {
      * <p>Returns the outputs of this task.</p>
      *
      * @return The outputs. Never returns null.
+     * @since 0.9
      */
     @Internal
     TaskOutputs getOutputs();
@@ -610,7 +692,6 @@ public interface Task extends Comparable<Task>, ExtensionAware {
      *
      * @since 4.0
      */
-    @Incubating
     @Internal
     TaskDestroyables getDestroyables();
 
@@ -619,7 +700,7 @@ public interface Task extends Comparable<Task>, ExtensionAware {
      *
      * @since 4.3
      */
-    @Incubating
+    @Internal
     TaskLocalState getLocalState();
 
     /**
@@ -628,6 +709,7 @@ public interface Task extends Comparable<Task>, ExtensionAware {
      * execution of the task.</p>
      *
      * @return The directory. Never returns null. The directory will already exist.
+     * @since 0.9
      */
     @Internal
     File getTemporaryDir();
@@ -644,14 +726,14 @@ public interface Task extends Comparable<Task>, ExtensionAware {
      * <p>For each supplied task, this action adds a task 'ordering', and does not specify a 'dependency' between the tasks.
      * As such, it is still possible to execute 'taskY' without first executing the 'taskX' in the example.</p>
      *
-     * <p>See <a href="#dependencies">here</a> for a description of the types of objects which can be used to specify
+     * <p>See <a href="./Task.html#dependencies">here</a> for a description of the types of objects which can be used to specify
      * an ordering relationship.</p>
      *
      * @param paths The tasks this task must run after.
      *
      * @return the task object this method is applied to
+     * @since 1.6
      */
-    @Incubating
     Task mustRunAfter(Object... paths);
 
     /**
@@ -666,20 +748,20 @@ public interface Task extends Comparable<Task>, ExtensionAware {
      * <p>For each supplied task, this action adds a task 'ordering', and does not specify a 'dependency' between the tasks.
      * As such, it is still possible to execute 'taskY' without first executing the 'taskX' in the example.</p>
      *
-     * <p>See <a href="#dependencies">here</a> for a description of the types of objects which can be used to specify
+     * <p>See <a href="./Task.html#dependencies">here</a> for a description of the types of objects which can be used to specify
      * an ordering relationship.</p>
      *
      * @param mustRunAfter The set of task paths this task must run after.
+     * @since 1.6
      */
-    @Incubating
     void setMustRunAfter(Iterable<?> mustRunAfter);
 
     /**
      * <p>Returns tasks that this task must run after.</p>
      *
      * @return The tasks that this task must run after. Returns an empty set if this task has no tasks it must run after.
+     * @since 1.6
      */
-    @Incubating
     @Internal
     TaskDependency getMustRunAfter();
 
@@ -692,14 +774,14 @@ public interface Task extends Comparable<Task>, ExtensionAware {
      * }
      * </pre>
      *
-     * <p>See <a href="#dependencies">here</a> for a description of the types of objects which can be used to specify
+     * <p>See <a href="./Task.html#dependencies">here</a> for a description of the types of objects which can be used to specify
      * a finalizer task.</p>
      *
      * @param paths The tasks that finalize this task.
      *
      * @return the task object this method is applied to
+     * @since 1.7
      */
-    @Incubating
     Task finalizedBy(Object... paths);
 
     /**
@@ -711,20 +793,20 @@ public interface Task extends Comparable<Task>, ExtensionAware {
      * }
      * </pre>
      *
-     * <p>See <a href="#dependencies">here</a> for a description of the types of objects which can be used to specify
+     * <p>See <a href="./Task.html#dependencies">here</a> for a description of the types of objects which can be used to specify
      * a finalizer task.</p>
      *
      * @param finalizedBy The tasks that finalize this task.
+     * @since 1.7
      */
-    @Incubating
     void setFinalizedBy(Iterable<?> finalizedBy);
 
     /**
      * <p>Returns tasks that finalize this task.</p>
      *
      * @return The tasks that finalize this task. Returns an empty set if there are no finalising tasks for this task.
+     * @since 1.7
      */
-    @Incubating
     @Internal
     TaskDependency getFinalizedBy();
 
@@ -740,14 +822,14 @@ public interface Task extends Comparable<Task>, ExtensionAware {
      * <p>For each supplied task, this action adds a task 'ordering', and does not specify a 'dependency' between the tasks.
      * As such, it is still possible to execute 'taskY' without first executing the 'taskX' in the example.</p>
      *
-     * <p>See <a href="#dependencies">here</a> for a description of the types of objects which can be used to specify
+     * <p>See <a href="./Task.html#dependencies">here</a> for a description of the types of objects which can be used to specify
      * an ordering relationship.</p>
      *
      * @param paths The tasks this task should run after.
      *
      * @return the task object this method is applied to
+     * @since 1.10
      */
-    @Incubating
     TaskDependency shouldRunAfter(Object... paths);
 
     /**
@@ -762,20 +844,53 @@ public interface Task extends Comparable<Task>, ExtensionAware {
      * <p>For each supplied task, this action adds a task 'ordering', and does not specify a 'dependency' between the tasks.
      * As such, it is still possible to execute 'taskY' without first executing the 'taskX' in the example.</p>
      *
-     * <p>See <a href="#dependencies">here</a> for a description of the types of objects which can be used to specify
+     * <p>See <a href="./Task.html#dependencies">here</a> for a description of the types of objects which can be used to specify
      * an ordering relationship.</p>
      *
      * @param shouldRunAfter The set of task paths this task should run after.
+     * @since 1.10
      */
-    @Incubating
     void setShouldRunAfter(Iterable<?> shouldRunAfter);
 
     /**
      * <p>Returns tasks that this task should run after.</p>
      *
      * @return The tasks that this task should run after. Returns an empty set if this task has no tasks it must run after.
+     * @since 1.10
      */
-    @Incubating
     @Internal
     TaskDependency getShouldRunAfter();
+
+    /**
+     * <p>The timeout of this task.</p>
+     *
+     * <pre class='autoTested'>
+     *   task myTask {
+     *       timeout = Duration.ofMinutes(10)
+     *   }
+     * </pre>
+     *
+     * <p>
+     * The Thread executing this task will be interrupted if the task takes longer than the specified amount of time to run.
+     * In order for a task to work properly with this feature, it needs to react to interrupts and must clean up any resources it opened.
+     * </p>
+     * <p>By default, tasks never time out.</p>
+     *
+     * @since 5.0
+     */
+    @Internal
+    Property<Duration> getTimeout();
+
+    /**
+     * Registers a {@link BuildService} that is used by this task so
+     * {@link BuildServiceRegistration#getMaxParallelUsages() its constraint on parallel execution} can be honored.
+     * <p>
+     * This is not necessary for task properties declared as {@link org.gradle.api.services.ServiceReference}s.
+     * </p>
+     *
+     * @param service The service provider.
+     * @since 6.1
+     * @see org.gradle.api.services.ServiceReference
+     */
+    void usesService(Provider<? extends BuildService<?>> service);
 }

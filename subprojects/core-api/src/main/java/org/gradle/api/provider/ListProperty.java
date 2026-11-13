@@ -16,18 +16,78 @@
 
 package org.gradle.api.provider;
 
-import org.gradle.api.Incubating;
+import org.gradle.api.model.ManagedType;
+import org.gradle.declarative.dsl.model.annotations.internal.DeclarativeWithHiddenMembers;
+import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 
 /**
  * Represents a property whose type is a {@link List} of elements of type {@link T}.
  *
- * <p><b>Note:</b> This interface is not intended for implementation by build script or plugin authors. An instance of this class can be created through the factory method {@link org.gradle.api.model.ObjectFactory#listProperty(Class)}.
+ * <p>
+ * Instances of this interface are not thread-safe for reading and writing.
+ * It is not safe to share the same ListProperty instance between different projects.
+ * </p>
+ *
+ * <p><b>Note:</b> This interface is not intended for implementation by build script or plugin authors.
  *
  * @param <T> the type of elements.
  * @since 4.3
+ *
+ * @see ManagedType Create an instance of this as a managed property (preferred).
+ * @see org.gradle.api.model.ObjectFactory#listProperty(Class) Create an instance of this manually.
  */
-@Incubating
+@ManagedType
+@DeclarativeWithHiddenMembers
 public interface ListProperty<T> extends Provider<List<T>>, HasMultipleValues<T> {
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    ListProperty<T> empty();
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    ListProperty<T> value(@Nullable Iterable<? extends T> elements);
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    ListProperty<T> value(Provider<? extends Iterable<? extends T>> provider);
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    ListProperty<T> convention(@Nullable Iterable<? extends T> elements);
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    ListProperty<T> convention(Provider<? extends Iterable<? extends T>> provider);
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>
+     * This is similar to calling {@link #value(Iterable)} with a <code>null</code> argument.
+     * </p>
+     */
+    @Override
+    ListProperty<T> unset();
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>
+     * This is similar to calling {@link #convention(Iterable)} with a <code>null</code> argument.
+     * </p>
+     */
+    @Override
+    ListProperty<T> unsetConvention();
 }

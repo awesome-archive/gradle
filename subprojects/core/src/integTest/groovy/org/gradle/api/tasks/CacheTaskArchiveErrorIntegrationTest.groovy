@@ -17,23 +17,36 @@
 package org.gradle.api.tasks
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.BuildCacheOperationFixtures
+import org.gradle.integtests.fixtures.BuildOperationsFixture
 import org.gradle.integtests.fixtures.TestBuildCache
 import org.gradle.test.fixtures.file.TestFile
-import spock.lang.Unroll
+import org.gradle.test.precondition.Requires
+import org.gradle.test.preconditions.FileSystemTestPreconditions
 
-import static org.gradle.api.tasks.LocalStateFixture.defineTaskWithLocalState
+import spock.lang.Issue
+
+import java.util.function.Consumer
+import java.util.function.Predicate
+
+import static org.gradle.util.internal.TextUtil.escapeString
 
 class CacheTaskArchiveErrorIntegrationTest extends AbstractIntegrationSpec {
+
+    private static final String CACHE_KEY_PATTERN = "[0-9a-f]+"
 
     def localCache = new TestBuildCache(file("local-cache"))
     def remoteCache = new TestBuildCache(file("remote-cache"))
 
+    def buildOperations = new BuildOperationsFixture(executer, temporaryFolder)
+    def cacheOperations = new BuildCacheOperationFixtures(buildOperations)
+
     def setup() {
-        executer.beforeExecute { it.withBuildCacheEnabled() }
+        executer.beforeExecute { withBuildCacheEnabled() }
         settingsFile << localCache.localCacheConfiguration()
     }
 
-    def "describes error while packing archive"() {
+    def "fails build when packing archive fails"() {
         when:
         file("input.txt") << "data"
 
@@ -41,41 +54,33 @@ class CacheTaskArchiveErrorIntegrationTest extends AbstractIntegrationSpec {
         buildFile << """
             apply plugin: "base"
             task customTask {
-                inputs.file "input.txt"
-                outputs.file "build/output" withPropertyName "output"
+                def outputDir = file("build/output")
+                def outputFile = file("build/output/output.txt")
+                def inputFile = file("input.txt")
+
+                inputs.file(inputFile)
+                outputs.file(outputDir).withPropertyName("output")
                 outputs.cacheIf { true }
                 doLast {
-                  mkdir('build/output')
-                  file('build/output/output.txt').text = file('input.txt').text
+                  outputDir.mkdirs()
+                  outputFile.text = inputFile.text
                 }
             }
         """
 
         then:
-        executer.withStackTraceChecksDisabled()
-        succeeds "customTask"
-        output =~ /Failed to store cache entry .+ for task ':customTask'/
-        output =~ /Could not pack property 'output'/
-        localCache.empty
+        fails "customTask"
+
+        failureHasCause(~/Failed to store cache entry $CACHE_KEY_PATTERN for task ':customTask': Could not pack tree 'output': Expected '${escapeString(file('build/output'))}' to be a file/)
+        errorOutput =~ /Could not pack tree 'output'/
+        def cacheKey = cacheOperations.getCacheKeyForTask(":customTask")
+        !localCache.hasCacheEntry(cacheKey)
         localCache.listCacheTempFiles().empty
-
-        when:
-        buildFile << """
-            customTask {
-                actions = []
-                doLast {
-                    mkdir("build") 
-                    file("build/output").text = "text" 
-                }
-            }
-        """
-
-        then:
-        succeeds("clean", "customTask")
-        ":customTask" in executedTasks
     }
 
     def "archive is not pushed to remote when packing fails"() {
+        executer.withStacktraceEnabled()
+
         when:
         file("input.txt") << "data"
         settingsFile << remoteCache.remoteCacheConfiguration()
@@ -84,23 +89,27 @@ class CacheTaskArchiveErrorIntegrationTest extends AbstractIntegrationSpec {
         buildFile << """
             apply plugin: "base"
             task customTask {
-                inputs.file "input.txt"
-                outputs.file "build/output" withPropertyName "output"
+                def outputDir = file("build/output")
+                def outputFile = file("build/output/output.txt")
+                def inputFile = file("input.txt")
+
+                inputs.file(inputFile)
+                outputs.file(outputDir).withPropertyName("output")
                 outputs.cacheIf { true }
                 doLast {
-                  mkdir('build/output')
-                  file('build/output/output.txt').text = file('input.txt').text
+                  outputDir.mkdirs()
+                  outputFile.text = inputFile.text
                 }
             }
         """
 
         then:
-        executer.withStackTraceChecksDisabled()
-        succeeds "customTask"
-        remoteCache.empty
-        output =~ /org.gradle.api.GradleException: Could not pack property 'output'/
-    }
+        fails "customTask"
 
+        remoteCache.empty
+        failureHasCause(~/Failed to store cache entry $CACHE_KEY_PATTERN for task ':customTask': Could not pack tree 'output': Expected '${escapeString(file('build/output'))}' to be a file/)
+        errorOutput =~ /${RuntimeException.name}: Could not pack tree 'output'/
+    }
 
     def "corrupt archive loaded from remote cache is not copied into local cache"() {
         when:
@@ -109,85 +118,83 @@ class CacheTaskArchiveErrorIntegrationTest extends AbstractIntegrationSpec {
         buildFile << """
             apply plugin: "base"
             task customTask {
-                inputs.file "input.txt"
-                outputs.file "build/output" withPropertyName "output"
+                def outputFile = file("build/output")
+                def inputFile = file("input.txt")
+
+                inputs.file(inputFile)
+                outputs.file(outputFile).withPropertyName("output")
                 outputs.cacheIf { true }
                 doLast {
-                  mkdir('build')
-                  file('build/output').text = file('input.txt').text
+                  outputFile.parentFile.mkdirs()
+                  outputFile.text = inputFile.text
                 }
             }
         """
         succeeds("customTask")
 
         then:
-        remoteCache.listCacheFiles().size() == 1
+        def cacheKey = cacheOperations.getCacheKeyForTask(":customTask")
+        remoteCache.hasCacheEntry(cacheKey)
 
         when:
-        remoteCache.listCacheFiles().first().text = "corrupt"
-        localCache.listCacheFiles()*.delete()
+        def cacheEntry = remoteCache.getCacheEntry(cacheKey)
+        cacheEntry.text = "corrupt"
+        localCache.deleteCacheEntry(cacheKey)
 
         then:
-        executer.withStackTraceChecksDisabled()
-        succeeds("clean", "customTask")
-        output =~ /Build cache entry .+ from remote build cache is invalid/
-        output =~ /java.util.zip.ZipException: Not in GZIP format/
+        fails("clean", "customTask")
+        failureHasCause(~/Failed to load cache entry $CACHE_KEY_PATTERN for task ':customTask': Could not load from remote cache: Not in GZIP format/)
 
         and:
-        localCache.listCacheFiles().size() == 1
-        localCache.listCacheFiles().first().text != "corrupt"
-
-        when:
-        settingsFile << """
-            buildCache.remote.enabled = false
-        """
-
-        then:
-        succeeds("clean", "customTask")
-        ":customTask" in executedTasks
+        !localCache.hasCacheEntry(cacheKey)
     }
 
     def "corrupt archive loaded from local cache is purged"() {
+        executer.withStacktraceEnabled()
+
         when:
         file("input.txt") << "data"
         buildFile << """
             apply plugin: "base"
             task customTask {
-                inputs.file "input.txt"
-                outputs.file "build/output" withPropertyName "output"
+                def inputTxt = file("input.txt")
+                def outputTxt = file("build/output")
+                inputs.file inputTxt
+                outputs.file outputTxt withPropertyName "output"
                 outputs.cacheIf { true }
                 doLast {
-                  mkdir('build')
-                  file('build/output').text = file('input.txt').text
+                  outputTxt.parentFile.mkdirs()
+                  outputTxt.text = inputTxt.text
                 }
             }
         """
         succeeds("customTask")
 
         then:
-        localCache.listCacheFiles().size() == 1
+        def cacheKey = cacheOperations.getCacheKeyForTask(":customTask")
+        localCache.hasCacheEntry(cacheKey)
 
         when:
-        localCache.listCacheFiles().first().bytes = localCache.listCacheFiles().first().bytes[0..-100]
+        def cacheEntry = localCache.getCacheEntry(cacheKey)
+        cacheEntry.bytes = cacheEntry.bytes[0..-100]
 
         then:
-        executer.withStackTraceChecksDisabled()
-        succeeds("clean", "customTask")
-        output =~ /Cleaning outputs for task ':customTask' after failed load from cache/
-        output =~ /Failed to load cache entry for task ':customTask', falling back to executing task/
-        output =~ /Build cache entry .+ from local build cache is invalid/
-        output =~ /java.io.EOFException: Unexpected end of ZLIB input stream/
-
-        and:
-        localCache.listCacheFiles().size() == 1
+        fails("clean", "customTask")
+        failureHasCause(~/Failed to load cache entry $CACHE_KEY_PATTERN for task ':customTask': Could not load from local cache: Unexpected end of ZLIB input stream/)
+        errorOutput.contains("Caused by: java.io.EOFException: Unexpected end of ZLIB input stream")
         localCache.listCacheFailedFiles().size() == 1
 
         and:
-        succeeds("clean", "customTask")
-        ":customTask" in executedTasks
+        !localCache.hasCacheEntry(cacheKey)
+
+        when:
+        file("build").deleteDir()
+
+        then:
+        succeeds("customTask")
     }
 
-    def "corrupted cache provides useful error message"() {
+    def "corrupted cache artifact metadata provides useful error message"() {
         when:
         buildFile << """
             @CacheableTask
@@ -204,66 +211,72 @@ class CacheTaskArchiveErrorIntegrationTest extends AbstractIntegrationSpec {
         succeeds("cacheable")
 
         then:
-        localCache.listCacheFiles().size() == 1
+        def cacheKey = cacheOperations.getCacheKeyForTask(":cacheable")
+        localCache.hasCacheEntry(cacheKey)
 
         when:
+        executer.withStacktraceEnabled()
         cleanBuildDir()
 
         and:
-        executer.withStackTraceChecksDisabled()
         corruptMetadata({ metadata -> metadata.text = "corrupt" })
-        succeeds("cacheable")
+        fails("cacheable")
 
         then:
-        output =~ /Cached result format error, corrupted origin metadata\./
+        errorOutput.contains("Caused by: java.lang.IllegalStateException: Cached result format error, corrupted origin metadata")
         localCache.listCacheFailedFiles().size() == 1
-
-        when:
-        file("build").deleteDir()
-
-        then:
-        succeeds("cacheable")
     }
 
-    @Unroll
-    def "local state declared via #api API is destroyed when task fails to load from cache"() {
-        def localStateFile = file("local-state.json")
-        buildFile << defineTaskWithLocalState(useRuntimeApi)
+    @Requires(FileSystemTestPreconditions.Symlinks)
+    @Issue("https://github.com/gradle/gradle/issues/9906")
+    def "don't cache if task produces broken symlink"() {
+        def link = file('root/link')
+        buildFile << """
+            import java.nio.file.*
+            class ProducesLink extends DefaultTask {
+                @OutputDirectory File outputDirectory
+
+                @TaskAction execute() {
+                    Files.createSymbolicLink(Paths.get('${link}'), Paths.get('target'));
+                }
+            }
+
+            task producesLink(type: ProducesLink) {
+                outputDirectory = file 'root'
+                outputs.cacheIf { true }
+            }
+        """
 
         when:
-        succeeds "customTask"
+        fails "producesLink"
         then:
-        executedAndNotSkipped ":customTask"
-        localStateFile.assertIsFile()
-
-        when:
-        cleanBuildDir()
-        executer.withStackTraceChecksDisabled()
-        corruptMetadata({ metadata -> metadata.text = "corrupt" })
-        succeeds "customTask", "-PassertNoLocalState"
-        then:
-        executedAndNotSkipped ":customTask"
-
-        where:
-        useRuntimeApi << [true, false]
-        api = useRuntimeApi ? "runtime" : "annotation"
+        failureHasCause(~/Failed to store cache entry $CACHE_KEY_PATTERN for task ':producesLink': Could not pack tree 'outputDirectory': Couldn't read content of file '${link}'/)
+        errorOutput.contains("Couldn't read content of file '${link}'")
     }
 
     private TestFile cleanBuildDir() {
         file("build").deleteDir()
     }
 
-    def corruptMetadata(Closure corrupter) {
-        def cacheFiles = localCache.listCacheFiles()
-        assert cacheFiles.size() == 1
-        def cacheEntry = cacheFiles[0]
-        def tgzCacheEntry = temporaryFolder.file("cache.tgz")
-        cacheEntry.copyTo(tgzCacheEntry)
-        cacheEntry.delete()
-        def extractDir = temporaryFolder.file("extract")
-        tgzCacheEntry.untarTo(extractDir)
-        corrupter(extractDir.file("METADATA"))
-        extractDir.tgzTo(cacheEntry)
-    }
+    def corruptMetadata(Consumer<File> corrupter, Predicate<File> matcher = { true }) {
+        localCache.listCacheFiles().each { cacheEntry ->
+            println "> Considering corrupting $cacheEntry.name..."
 
+            // Must rename to "*.tgz" for unpacking to work
+            def tgzCacheEntry = temporaryFolder.file("cache.tgz")
+            cacheEntry.copyTo(tgzCacheEntry)
+            def extractDir = temporaryFolder.file("extract")
+            tgzCacheEntry.untarTo(extractDir)
+            tgzCacheEntry.delete()
+
+            def metadataFile = extractDir.file("METADATA")
+            if (matcher.test(metadataFile)) {
+                println "> Corrupting $cacheEntry..."
+                corrupter.accept(metadataFile)
+                cacheEntry.delete()
+                extractDir.tgzTo(cacheEntry)
+            }
+            extractDir.deleteDir()
+        }
+    }
 }

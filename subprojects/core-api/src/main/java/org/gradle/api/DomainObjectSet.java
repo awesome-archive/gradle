@@ -16,34 +16,45 @@
 package org.gradle.api;
 
 import groovy.lang.Closure;
+import org.gradle.api.model.ManagedType;
 import org.gradle.api.specs.Spec;
 
 import java.util.Set;
 
 /**
- * <p>A {@code DomainObjectSet} is a specialisation of {@link DomainObjectCollection} that guarantees {@link Set} semantics.</p>
+ * <p>A {@code DomainObjectSet} is a specialization of {@link DomainObjectCollection} that guarantees {@link Set} semantics.</p>
  *
- * @param <T> The type of domain objects in this set.
+ * @param <T> The type of objects in this set.
+ *
+ * @see ManagedType Create an instance of this as a managed property (preferred).
+ * @see org.gradle.api.model.ObjectFactory#domainObjectSet(Class) Create an instance of this manually.
+ * @since 1.0
  */
+@ManagedType
 public interface DomainObjectSet<T> extends DomainObjectCollection<T>, Set<T> {
 
     /**
      * {@inheritDoc}
      */
+    @Override
     <S extends T> DomainObjectSet<S> withType(Class<S> type);
 
     /**
      * {@inheritDoc}
      */
+    @Override
     DomainObjectSet<T> matching(Spec<? super T> spec);
 
     /**
      * {@inheritDoc}
      */
+    @Override
     DomainObjectSet<T> matching(Closure spec);
 
     /**
      * {@inheritDoc}
      */
+    @Override
+    @Deprecated
     Set<T> findAll(Closure spec);
 }

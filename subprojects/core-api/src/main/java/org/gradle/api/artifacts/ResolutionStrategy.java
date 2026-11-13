@@ -17,7 +17,10 @@
 package org.gradle.api.artifacts;
 
 import org.gradle.api.Action;
-import org.gradle.api.Incubating;
+import org.gradle.api.artifacts.component.ModuleComponentSelector;
+import org.gradle.api.provider.Property;
+import org.gradle.api.provider.Provider;
+import org.gradle.api.provider.ProviderConvertible;
 
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -27,8 +30,10 @@ import java.util.concurrent.TimeUnit;
  * For example, forcing certain dependency versions, substitutions, conflict resolutions or snapshot timeouts.
  * <p>
  * Examples:
- * <pre class='autoTested'>
- * apply plugin: 'java' //so that there are some configurations
+ * <pre>
+ * plugins {
+ *     id 'java' // so that there are some configurations
+ * }
  *
  * configurations.all {
  *   resolutionStrategy {
@@ -47,8 +52,8 @@ import java.util.concurrent.TimeUnit;
  *
  *     // add dependency substitution rules
  *     dependencySubstitution {
- *       substitute module('org.gradle:api') with project(':api')
- *       substitute project(':util') with module('org.gradle:util:3.0')
+ *       substitute module('org.gradle:api') using project(':api')
+ *       substitute project(':util') using module('org.gradle:util:3.0')
  *     }
  *
  *     // cache dynamic versions for 10 minutes
@@ -59,7 +64,7 @@ import java.util.concurrent.TimeUnit;
  * }
  * </pre>
  *
- * @since 1.0-milestone-6
+ * @since 1.0
  */
 public interface ResolutionStrategy {
 
@@ -70,7 +75,9 @@ public interface ResolutionStrategy {
      * The check includes both first level and transitive dependencies. See example below:
      *
      * <pre class='autoTested'>
-     * apply plugin: 'java' //so that there are some configurations
+     * plugins {
+     *     id 'java' // so that there are some configurations
+     * }
      *
      * configurations.all {
      *   resolutionStrategy.failOnVersionConflict()
@@ -78,9 +85,47 @@ public interface ResolutionStrategy {
      * </pre>
      *
      * @return this resolution strategy instance
-     * @since 1.0-milestone-6
+     * @since 1.0
      */
     ResolutionStrategy failOnVersionConflict();
+
+    /**
+     * If this method is called, Gradle will make sure that no dynamic version was used in the resulting dependency graph.
+     * In practice, it means that if the resolved dependency graph contains a module and that the versions participating
+     * in the selection of that module contain at least one dynamic version, then resolution will fail if the resolution
+     * result can change because of this version selector.
+     *
+     * This can be used in cases you want to make sure your build is reproducible, <i>without</i> relying on
+     * dependency locking.
+     *
+     * @return this resolution strategy
+     * @since 6.1
+     */
+    ResolutionStrategy failOnDynamicVersions();
+
+    /**
+     * If this method is called, Gradle will make sure that no changing version participates in resolution.
+     *
+     * This can be used in cases you want to make sure your build is reproducible, <i>without</i> relying on
+     * dependency locking.
+     *
+     * @return this resolution strategy
+     * @since 6.1
+     */
+    ResolutionStrategy failOnChangingVersions();
+
+    /**
+     * Configures Gradle to fail the build is the resolution result is expected to be unstable, that is to say that
+     * it includes dynamic versions or changing versions and therefore the result may change depending
+     * on when the build is executed.
+     *
+     * This method is equivalent to calling both {@link #failOnDynamicVersions()} and
+     * {@link #failOnChangingVersions()}.
+     *
+     * @return this resolution strategy
+     * @since 6.1
+     */
+    ResolutionStrategy failOnNonReproducibleResolution();
 
     /**
      * Gradle can resolve conflicts purely by version number or prioritize project dependencies over binary.
@@ -88,7 +133,9 @@ public interface ResolutionStrategy {
      * This applies to both first level and transitive dependencies. See example below:
      *
      * <pre class='autoTested'>
-     * apply plugin: 'java' //so that there are some configurations
+     * plugins {
+     *     id 'java' // so that there are some configurations
+     * }
      *
      * configurations.all {
      *   resolutionStrategy.preferProjectModules()
@@ -97,33 +144,74 @@ public interface ResolutionStrategy {
      *
      * @since 3.2
      */
-    @Incubating
     void preferProjectModules();
+
+    /**
+     * Activates dependency locking support in Gradle.
+     * Once turned on a configuration, resolution result can be saved and then reused for subsequent builds.
+     * This enables reproducible builds when using dynamic versions.
+     *
+     * @return this resolution strategy instance
+     * @since 4.8
+     */
+    ResolutionStrategy activateDependencyLocking();
+
+    /**
+     * Deactivates dependency locking support in Gradle.
+     *
+     * @return this resolution strategy instance
+     * @since 6.0
+     */
+    ResolutionStrategy deactivateDependencyLocking();
+
+
+    /**
+     * Deactivates dependency verification for this configuration.
+     * You should always be careful when disabling verification, and in particular avoid
+     * disabling it for verification of plugins, because a plugin could use this to disable
+     * verification itself.
+     *
+     * @since 6.2
+     */
+    ResolutionStrategy disableDependencyVerification();
+
+    /**
+     * Enabled dependency verification for this configuration.
+     *
+     * @since 6.2
+     */
+    ResolutionStrategy enableDependencyVerification();
 
     /**
      * Allows forcing certain versions of dependencies, including transitive dependencies.
      * <b>Appends</b> new forced modules to be considered when resolving dependencies.
      * <p>
-     * It accepts following notations:
+     * It accepts the following notations:
      * <ul>
      *   <li>String in a format of: 'group:name:version', for example: 'org.gradle:gradle-core:1.0'</li>
-     *   <li>instance of {@link ModuleVersionSelector}</li>
+     *   <li>Map with keys 'group', 'name' and 'version'; for example: [group: 'org.gradle', name: 'gradle-core', version: '1.0']</li>
+     *   <li>{@link Provider} and {@link ProviderConvertible} of {@link MinimalExternalModuleDependency}</li>
+     *   <li>instance of {@link ExternalDependency}</li>
+     *   <li>instance of {@link ModuleComponentSelector}</li>
+     *   <li>instance of {@link ModuleVersionSelector} (deprecated)</li>
      *   <li>any collection or array of above will be automatically flattened</li>
      * </ul>
      * Example:
      * <pre class='autoTested'>
-     * apply plugin: 'java' //so that there are some configurations
+     * plugins {
+     *     id 'java' // so that there are some configurations
+     * }
      *
      * configurations.all {
      *   resolutionStrategy.force 'asm:asm-all:3.3.1', 'commons-io:commons-io:1.4'
      * }
      * </pre>
      *
-     * @param moduleVersionSelectorNotations typically group:name:version notations to append
+     * @param notations typically group:name:version notations to append
      * @return this ResolutionStrategy instance
-     * @since 1.0-milestone-7
+     * @since 1.0
      */
-    ResolutionStrategy force(Object... moduleVersionSelectorNotations);
+    ResolutionStrategy force(Object... notations);
 
     /**
      * Allows forcing certain versions of dependencies, including transitive dependencies.
@@ -133,7 +221,9 @@ public interface ResolutionStrategy {
      * <p>
      * Example:
      * <pre class='autoTested'>
-     * apply plugin: 'java' //so that there are some configurations
+     * plugins {
+     *     id 'java' // so that there are some configurations
+     * }
      *
      * configurations.all {
      *   resolutionStrategy.forcedModules = ['asm:asm-all:3.3.1', 'commons-io:commons-io:1.4']
@@ -142,7 +232,7 @@ public interface ResolutionStrategy {
      *
      * @param moduleVersionSelectorNotations typically group:name:version notations to set
      * @return this ResolutionStrategy instance
-     * @since 1.0-milestone-7
+     * @since 1.0
      */
     ResolutionStrategy setForcedModules(Object... moduleVersionSelectorNotations);
 
@@ -150,7 +240,7 @@ public interface ResolutionStrategy {
      * Returns currently configured forced modules. For more information on forcing versions see {@link #force(Object...)}
      *
      * @return forced modules
-     * @since 1.0-milestone-7
+     * @since 1.0
      */
     Set<ModuleVersionSelector> getForcedModules();
 
@@ -161,7 +251,7 @@ public interface ResolutionStrategy {
      * Example:
      * <pre class='autoTested'>
      * configurations {
-     *   compile.resolutionStrategy {
+     *   compileClasspath.resolutionStrategy {
      *     eachDependency { DependencyResolveDetails details -&gt;
      *       //specifying a fixed version for all libraries with 'org.gradle' group
      *       if (details.requested.group == 'org.gradle') {
@@ -184,7 +274,6 @@ public interface ResolutionStrategy {
      * @return this
      * @since 1.4
      */
-    @Incubating
     ResolutionStrategy eachDependency(Action<? super DependencyResolveDetails> rule);
 
     /**
@@ -192,9 +281,10 @@ public interface ResolutionStrategy {
      *
      * <p>A convenience method for {@link #cacheDynamicVersionsFor(int, java.util.concurrent.TimeUnit)} with units expressed as a String.
      * Units are resolved by calling the {@code valueOf(String)} method of {@link java.util.concurrent.TimeUnit} with the upper-cased string value.</p>
+     *
      * @param value The number of time units
      * @param units The units
-     * @since 1.0-milestone-6
+     * @since 1.0
      */
     void cacheDynamicVersionsFor(int value, String units);
 
@@ -204,9 +294,10 @@ public interface ResolutionStrategy {
      * <p>Gradle keeps a cache of dynamic version =&gt; resolved version (ie 2.+ =&gt; 2.3). By default, these cached values are kept for 24 hours, after which the cached entry is expired
      * and the dynamic version is resolved again.</p>
      * <p>Use this method to provide a custom expiry time after which the cached value for any dynamic version will be expired.</p>
+     *
      * @param value The number of time units
      * @param units The units
-     * @since 1.0-milestone-6
+     * @since 1.0
      */
     void cacheDynamicVersionsFor(int value, TimeUnit units);
 
@@ -215,9 +306,10 @@ public interface ResolutionStrategy {
      *
      * <p>A convenience method for {@link #cacheChangingModulesFor(int, java.util.concurrent.TimeUnit)} with units expressed as a String.
      * Units are resolved by calling the {@code valueOf(String)} method of {@link java.util.concurrent.TimeUnit} with the upper-cased string value.</p>
+     *
      * @param value The number of time units
      * @param units The units
-     * @since 1.0-milestone-6
+     * @since 1.0
      */
     void cacheChangingModulesFor(int value, String units);
 
@@ -227,9 +319,10 @@ public interface ResolutionStrategy {
      * <p>Gradle caches the contents and artifacts of changing modules. By default, these cached values are kept for 24 hours,
      * after which the cached entry is expired and the module is resolved again.</p>
      * <p>Use this method to provide a custom expiry time after which the cached entries for any changing module will be expired.</p>
+     *
      * @param value The number of time units
      * @param units The units
-     * @since 1.0-milestone-6
+     * @since 1.0
      */
     void cacheChangingModulesFor(int value, TimeUnit units);
 
@@ -239,17 +332,15 @@ public interface ResolutionStrategy {
      * @return the version selection rules
      * @since 2.2
      */
-    @Incubating
     ComponentSelectionRules getComponentSelection();
 
     /**
-     * The componentSelection block provides rules to filter or blacklist certain components from appearing in the resolution result.
+     * The componentSelection block provides rules to filter or prevent certain components from appearing in the resolution result.
      *
      * @param action Action to be applied to the {@link ComponentSelectionRules}
      * @return this ResolutionStrategy instance
      * @since 2.2
      */
-    @Incubating
     ResolutionStrategy componentSelection(Action<? super ComponentSelectionRules> action);
 
     /**
@@ -257,7 +348,6 @@ public interface ResolutionStrategy {
      *
      * @since 2.5
      */
-    @Incubating
     DependencySubstitutions getDependencySubstitution();
 
     /**
@@ -269,11 +359,11 @@ public interface ResolutionStrategy {
      * configurations.all {
      *   resolutionStrategy.dependencySubstitution {
      *     // Substitute project and module dependencies
-     *     substitute module('org.gradle:api') with project(':api')
-     *     substitute project(':util') with module('org.gradle:util:3.0')
+     *     substitute module('org.gradle:api') using project(':api')
+     *     substitute project(':util') using module('org.gradle:util:3.0')
      *
      *     // Substitute one module dependency for another
-     *     substitute module('org.gradle:api:2.0') with module('org.gradle:api:2.1')
+     *     substitute module('org.gradle:api:2.0') using module('org.gradle:api:2.1')
      *   }
      * }
      * </pre>
@@ -282,15 +372,28 @@ public interface ResolutionStrategy {
      * @see DependencySubstitutions
      * @since 2.5
      */
-    @Incubating
     ResolutionStrategy dependencySubstitution(Action<? super DependencySubstitutions> action);
+
+    /**
+     * Gradle implicitly registers dependency substitution rules for all configurations in the whole build
+     * tree to find projects in other included builds. These rules are always active by default.
+     *
+     * There are however cases, where a certain configuration should not apply these rules when resolving.
+     * For example, if a binary version of a module should be discovered that is also represented by
+     * a project in another build.
+     *
+     * This property may be used to deactivate these global substitution rules.
+     *
+     * @since 7.4
+     */
+    Property<Boolean> getUseGlobalDependencySubstitutionRules();
 
     /**
      * Specifies the ordering for resolved artifacts. Options are:
      * <ul>
      * <li>{@link SortOrder#DEFAULT} : Don't specify the sort order. Gradle will provide artifacts in the default order.</li>
-     * <li>{@link SortOrder#CONSUMER_FIRST} : Artifacts for a consuming component should appear <em>before</em> artifacts for it's dependencies.</li>
-     * <li>{@link SortOrder#DEPENDENCY_FIRST} : Artifacts for a consuming component should appear <em>after</em> artifacts for it's dependencies.</li>
+     * <li>{@link SortOrder#CONSUMER_FIRST} : Artifacts for a consuming component should appear <em>before</em> artifacts for its dependencies.</li>
+     * <li>{@link SortOrder#DEPENDENCY_FIRST} : Artifacts for a consuming component should appear <em>after</em> artifacts for its dependencies.</li>
      * </ul>
      * A best attempt will be made to sort artifacts according the supplied {@link SortOrder}, but no guarantees will be made in the presence of dependency cycles.
      *
@@ -299,8 +402,23 @@ public interface ResolutionStrategy {
      *
      * @since 3.5
      */
-    @Incubating
     void sortArtifacts(SortOrder sortOrder);
+
+    /**
+     * Configures the capabilities resolution strategy.
+     *
+     * @param action the configuration action.
+     * @return this resolution strategy
+     * @since 5.6
+     */
+    ResolutionStrategy capabilitiesResolution(Action<? super CapabilitiesResolution> action);
+
+    /**
+     * Returns the capabilities resolution strategy.
+     *
+     * @since 5.6
+     */
+    CapabilitiesResolution getCapabilitiesResolution();
 
     /**
      * Defines the sort order for components and artifacts produced by the configuration.
@@ -308,8 +426,18 @@ public interface ResolutionStrategy {
      * @see #sortArtifacts(SortOrder)
      * @since 3.5
      */
-    @Incubating
     enum SortOrder {
-        DEFAULT, CONSUMER_FIRST, DEPENDENCY_FIRST
+        /**
+         * @since 3.5
+         */
+        DEFAULT,
+        /**
+         * @since 3.5
+         */
+        CONSUMER_FIRST,
+        /**
+         * @since 3.5
+         */
+        DEPENDENCY_FIRST
     }
 }

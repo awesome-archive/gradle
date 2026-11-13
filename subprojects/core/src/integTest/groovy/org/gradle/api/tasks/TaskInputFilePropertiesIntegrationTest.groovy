@@ -16,23 +16,36 @@
 
 package org.gradle.api.tasks
 
+import org.gradle.api.internal.file.FileCollectionFactory
+import org.gradle.api.internal.tasks.TaskPropertyUtils
+import org.gradle.api.internal.tasks.properties.GetInputFilesVisitor
+import org.gradle.api.problems.Severity
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
+import org.gradle.internal.properties.bean.PropertyWalker
+import org.gradle.internal.reflect.validation.ValidationMessageChecker
 import spock.lang.Issue
-import spock.lang.Unroll
 
-class TaskInputFilePropertiesIntegrationTest extends AbstractIntegrationSpec {
+import static org.hamcrest.CoreMatchers.containsString
 
-    @Unroll
+class TaskInputFilePropertiesIntegrationTest extends AbstractIntegrationSpec implements ValidationMessageChecker {
+    def setup() {
+        expectReindentedValidationMessage()
+        enableProblemsApiCheck()
+    }
+
     def "allows optional @#annotation.simpleName to have null value"() {
         buildFile << """
-            import org.gradle.api.internal.tasks.properties.GetInputFilesVisitor
-            import org.gradle.api.internal.tasks.TaskPropertyUtils
-            import org.gradle.api.internal.tasks.properties.PropertyWalker
+            import ${GetInputFilesVisitor.name}
+            import ${TaskPropertyUtils.name}
+            import ${PropertyWalker.name}
+            import ${FileCollectionFactory.name}
 
             class CustomTask extends DefaultTask {
                 @Optional @$annotation.simpleName input
                 @TaskAction void doSomething() {
-                    GetInputFilesVisitor visitor = new GetInputFilesVisitor()
+                    def fileCollectionFactory = services.get(FileCollectionFactory)
+                    GetInputFilesVisitor visitor = new GetInputFilesVisitor("ownerName", fileCollectionFactory)
                     def walker = services.get(PropertyWalker)
                     TaskPropertyUtils.visitProperties(walker, this, visitor)
                     def inputFiles = visitor.fileProperties*.propertyFiles*.files.flatten()
@@ -49,18 +62,16 @@ class TaskInputFilePropertiesIntegrationTest extends AbstractIntegrationSpec {
         succeeds "customTask"
 
         where:
-        annotation << [ InputFile, InputDirectory, InputFiles ]
+        annotation << [InputFile, InputDirectory, InputFiles]
     }
 
-    @Unroll
-    @Issue("https://github.com/gradle/gradle/issues/3193")
-    def "TaskInputs.#method shows deprecation warning when used with complex input"() {
+    def "TaskInputs.#method shows error message when used with complex input"() {
         buildFile << """
             task dependencyTask {
             }
 
             task test {
-                inputs.$method(dependencyTask)
+                inputs.$method(dependencyTask).withPropertyName('input')
                 doFirst {
                     // Need a task action to not skip this task
                 }
@@ -68,13 +79,116 @@ class TaskInputFilePropertiesIntegrationTest extends AbstractIntegrationSpec {
         """
 
         expect:
-        executer.expectDeprecationWarning()
-        succeeds "test"
+        fails "test"
+        if (GradleContextualExecuter.configCache) {
+            failure.assertThatDescription(containsString("Task `:test` of type `org.gradle.api.DefaultTask`: cannot serialize object of type 'org.gradle.api.DefaultTask', " +
+                "a subtype of 'org.gradle.api.Task', as these are not supported with the configuration cache."))
+        }
+        failure.assertHasDescription("A problem was found with the configuration of task ':test' (type 'DefaultTask').")
 
-        output.contains "Using TaskInputs.$method() with something that doesn't resolve to a File object has been deprecated and is scheduled to be removed in Gradle 5.0. Use TaskInputs.files() instead."
+        and:
+        verifyAll(receivedProblem(0)) {
+            severity == Severity.ERROR
+            fqid == 'Gradle:Build Definition:Property has unsupported value'
+            definition.id.displayName == 'Property has unsupported value'
+            contextualLabel == 'Property \'input\' has unsupported value \'task \':dependencyTask\'\''
+            details == "Type 'DefaultTask' cannot be converted to a $targetType"
+            definition.documentationLink.url == "https://docs.gradle.org/${distribution.version.version}/userguide/validation_problems.html#unsupported_notation"
+            solutions == [
+                'Use a String or CharSequence path, for example \'src/main/java\' or \'/usr/include\'',
+                'Use a String or CharSequence URI, for example \'file:/usr/include\'',
+                'Use a File instance',
+                'Use a Path instance',
+                'Use a Directory instance',
+                'Use a RegularFile instance',
+                'Use a URI or URL instance of file',
+                'Use a TextResource instance',
+            ]
+            additionalData.asMap == [
+                'typeName': 'org.gradle.api.DefaultTask',
+                'propertyName': 'input',
+            ]
+        }
+        if (GradleContextualExecuter.configCache) {
+            verifyAll(receivedProblem(1)) {
+                severity == Severity.ERROR
+                fqid == "Gradle:Configuration Cache:Type unsupported for serialization"
+                contextualLabel == 'Cannot serialize object of type \'org.gradle.api.DefaultTask\', a subtype of \'org.gradle.api.Task\', as these are not supported with the configuration cache.'
+                originLocations == []
+            }
+        }
 
         where:
-        method << ["file", "dir"]
+        method | targetType
+        "dir"  | "directory"
+        "file" | "file"
+    }
+
+    def "#annotation.simpleName shows error message when used with complex input"() {
+        buildFile """
+            import org.gradle.api.internal.tasks.properties.GetInputFilesVisitor
+            import org.gradle.api.internal.tasks.TaskPropertyUtils
+            import org.gradle.internal.properties.bean.PropertyWalker
+
+            class CustomTask extends DefaultTask {
+                @Optional @${annotation.name} input
+                @TaskAction void doSomething() {
+                    println("Yay!")
+                }
+            }
+
+            task dependencyTask {
+            }
+
+            task customTask(type: CustomTask) {
+                input = dependencyTask
+            }
+        """
+
+        expect:
+        fails "customTask"
+        if(GradleContextualExecuter.configCache){
+            failure.assertThatDescription(containsString("Task `:customTask` of type `CustomTask`: cannot serialize object of type 'org.gradle.api.DefaultTask', " +
+                "a subtype of 'org.gradle.api.Task', as these are not supported with the configuration cache."))
+        }
+        failure.assertHasDescription("A problem was found with the configuration of task ':customTask' (type 'CustomTask').")
+
+        and:
+        verifyAll(receivedProblem(0)) {
+            severity == Severity.ERROR
+            fqid == 'Gradle:Build Definition:Property has unsupported value'
+            definition.id.displayName == 'Property has unsupported value'
+            contextualLabel == 'Type \'CustomTask\' property \'input\' has unsupported value \'task \':dependencyTask\'\''
+            details == "Type 'DefaultTask' cannot be converted to a $targetType"
+            definition.documentationLink.url == "https://docs.gradle.org/${distribution.version.version}/userguide/validation_problems.html#unsupported_notation"
+            solutions == [
+                'Use a String or CharSequence path, for example \'src/main/java\' or \'/usr/include\'',
+                'Use a String or CharSequence URI, for example \'file:/usr/include\'',
+                'Use a File instance',
+                'Use a Path instance',
+                'Use a Directory instance',
+                'Use a RegularFile instance',
+                'Use a URI or URL instance of file',
+                'Use a TextResource instance',
+            ]
+            additionalData.asMap == [
+                'typeName': 'CustomTask',
+                'propertyName': 'input',
+            ]
+        }
+        if (GradleContextualExecuter.configCache) {
+            verifyAll(receivedProblem(1)) {
+                severity == Severity.ERROR
+                fqid == "Gradle:Configuration Cache:Type unsupported for serialization"
+                contextualLabel == 'Cannot serialize object of type \'org.gradle.api.DefaultTask\', a subtype of \'org.gradle.api.Task\', as these are not supported with the configuration cache.'
+                originLocations == []
+            }
+        }
+
+        where:
+        annotation     | targetType
+        InputDirectory | "directory"
+        InputFile      | "file"
     }
 
     @Issue("https://github.com/gradle/gradle/issues/3792")
@@ -109,5 +223,87 @@ class TaskInputFilePropertiesIntegrationTest extends AbstractIntegrationSpec {
         run "bar"
         then:
         executed ":foo"
+    }
+
+    @Issue("https://github.com/gradle/gradle/issues/9674")
+    def "allows @InputFiles of task with no actions to be null"() {
+        buildFile << """
+            class FooTask extends DefaultTask {
+               @InputFiles
+               FileCollection bar
+            }
+
+            task foo(type: FooTask)
+        """
+
+        when:
+        run "foo"
+
+        then:
+        executed ":foo"
+    }
+
+    @Issue("https://github.com/gradle/gradle/issues/9674")
+    def "shows validation error when non-Optional @Input is null"() {
+        buildFile << """
+            class FooTask extends DefaultTask {
+               @InputFiles
+               FileCollection bar
+
+               @TaskAction
+               def go() {
+               }
+            }
+
+            task foo(type: FooTask)
+        """
+
+        when:
+        fails "foo"
+
+        then:
+        verifyAll(receivedProblem) {
+            severity == Severity.ERROR
+            fqid == 'Gradle:Build Definition:Value not set'
+            definition.id.displayName == 'Value not set'
+            details == 'This property isn\'t marked as optional and no value has been configured'
+            definition.documentationLink.url == "https://docs.gradle.org/${distribution.version.version}/userguide/validation_problems.html#value_not_set"
+            solutions == [
+                'Assign a value to \'bar\'',
+                'Mark property \'bar\' as optional',
+            ]
+            additionalData.asMap == [
+                'typeName': 'FooTask',
+                'propertyName': 'bar',
+            ]
+        }
+    }
+
+    @Issue("https://github.com/gradle/gradle/issues/35914")
+    def "build failure message does not contain duplicate information"() {
+        setup:
+        disableProblemsApiCheck()
+
+        buildFile << """
+            class FooTask extends DefaultTask {
+               @InputFiles
+               FileCollection bar
+
+               @TaskAction
+               def go() {
+               }
+            }
+
+            task foo(type: FooTask)
+        """
+
+        when:
+        fails "foo"
+
+        then:
+        // Failure summary is now a single line; per-problem details are rendered via the Problems API
+        // (build operation stream / problems report), not duplicated into the failure description.
+        output.count("Mark property 'bar' as optional") <= 1
+        errorOutput.count("Mark property 'bar' as optional") <= 1
     }
 }

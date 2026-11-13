@@ -18,20 +18,20 @@ package org.gradle.api.file
 import org.gradle.api.Project
 import org.gradle.test.fixtures.file.TestFile
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
+import org.gradle.test.precondition.Requires
+import org.gradle.test.preconditions.FileSystemTestPreconditions
+
 import org.gradle.testfixtures.ProjectBuilder
-import org.gradle.util.Requires
-import org.gradle.util.TestPrecondition
 import org.gradle.util.UsesNativeServices
 import org.junit.ClassRule
 import spock.lang.Shared
 import spock.lang.Specification
-import spock.lang.Unroll
 
-@Requires(TestPrecondition.SYMLINKS)
+@Requires(FileSystemTestPreconditions.Symlinks)
 @UsesNativeServices
 class FileCollectionSymlinkTest extends Specification {
-    @Shared Project project = new ProjectBuilder().build()
-    @Shared @ClassRule TestNameTestDirectoryProvider temporaryFolder = TestNameTestDirectoryProvider.newInstance()
+    @Shared Project project = ProjectBuilder.builder().build()
+    @Shared @ClassRule TestNameTestDirectoryProvider temporaryFolder = TestNameTestDirectoryProvider.newInstance(getClass())
     @Shared TestFile baseDir = temporaryFolder.createDir('baseDir')
     @Shared TestFile file = baseDir.file("file")
     @Shared TestFile symlink = baseDir.file("symlink")
@@ -43,7 +43,6 @@ class FileCollectionSymlinkTest extends Specification {
         symlink.createLink(symlinked)
     }
 
-    @Unroll
     def "#desc can handle symlinks"() {
         expect:
         fileCollection.contains(file)
@@ -51,11 +50,12 @@ class FileCollectionSymlinkTest extends Specification {
         fileCollection.contains(symlinked)
         fileCollection.files == [file, symlink, symlinked] as Set
 
-        (fileCollection - project.files(symlink)).files == [file, symlinked] as Set
+        (fileCollection - project.getLayout().files(symlink)).files == [file, symlinked] as Set
 
         where:
-        desc                 | fileCollection
-        "project.files()"    | project.files(file, symlink, symlinked)
-        "project.fileTree()" | project.fileTree(baseDir)
+        desc                                    | fileCollection
+        "project.files()"                       | project.files(file, symlink, symlinked)
+        "project.layout.files()"                | project.getLayout().files(file, symlink, symlinked)
+        "project.fileTree()"                    | project.fileTree(baseDir)
     }
 }

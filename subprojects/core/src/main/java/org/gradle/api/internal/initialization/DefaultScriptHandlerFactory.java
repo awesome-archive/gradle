@@ -16,39 +16,63 @@
 
 package org.gradle.api.internal.initialization;
 
-import org.gradle.api.internal.DomainObjectContext;
+import org.gradle.api.internal.artifacts.DependencyManagementParameters;
 import org.gradle.api.internal.artifacts.DependencyManagementServices;
 import org.gradle.api.internal.artifacts.DependencyResolutionServices;
-import org.gradle.api.internal.artifacts.configurations.DependencyMetaDataProvider;
-import org.gradle.api.internal.artifacts.dsl.dependencies.ProjectFinder;
-import org.gradle.api.internal.artifacts.dsl.dependencies.UnknownProjectFinder;
+import org.gradle.api.internal.file.FileCollectionFactory;
 import org.gradle.api.internal.file.FileResolver;
 import org.gradle.groovy.scripts.ScriptSource;
 
 public class DefaultScriptHandlerFactory implements ScriptHandlerFactory {
     private final DependencyManagementServices dependencyManagementServices;
-    private final DependencyMetaDataProvider dependencyMetaDataProvider;
-    private final ScriptClassPathResolver scriptClassPathResolver;
-    private final FileResolver fileResolver;
-    private final ProjectFinder projectFinder = new UnknownProjectFinder("Cannot use project dependencies in a script classpath definition.");
+    private final BuildLogicBuilder buildLogicBuilder;
 
-    public DefaultScriptHandlerFactory(DependencyManagementServices dependencyManagementServices,
-                                       FileResolver fileResolver,
-                                       DependencyMetaDataProvider dependencyMetaDataProvider,
-                                       ScriptClassPathResolver scriptClassPathResolver) {
+    public DefaultScriptHandlerFactory(
+        DependencyManagementServices dependencyManagementServices,
+        BuildLogicBuilder buildLogicBuilder
+    ) {
         this.dependencyManagementServices = dependencyManagementServices;
-        this.fileResolver = fileResolver;
-        this.dependencyMetaDataProvider = dependencyMetaDataProvider;
-        this.scriptClassPathResolver = scriptClassPathResolver;
+        this.buildLogicBuilder = buildLogicBuilder;
     }
 
-    public ScriptHandlerInternal create(ScriptSource scriptSource, ClassLoaderScope classLoaderScope) {
-        return create(scriptSource, classLoaderScope, RootScriptDomainObjectContext.INSTANCE);
+    @Override
+    public ScriptHandlerInternal create(
+        ScriptSource scriptSource,
+        ClassLoaderScope classLoaderScope
+    ) {
+        DependencyResolutionServices services = dependencyManagementServices.newDetachedResolver(
+            DependencyManagementParameters.forDetachedJvmEnvironment(scriptSource.getShortDisplayName(), "settings-")
+        );
+        return getDefaultScriptHandler(scriptSource, classLoaderScope, services);
     }
 
-    public ScriptHandlerInternal create(ScriptSource scriptSource, ClassLoaderScope classLoaderScope, DomainObjectContext context) {
-        DependencyResolutionServices services = dependencyManagementServices.create(fileResolver, dependencyMetaDataProvider, projectFinder, context);
-        return new DefaultScriptHandler(scriptSource, services, classLoaderScope, scriptClassPathResolver);
+    @Override
+    public ScriptHandlerInternal create(
+        ScriptSource scriptSource,
+        ClassLoaderScope classLoaderScope,
+        FileResolver fileResolver,
+        FileCollectionFactory fileCollectionFactory,
+        DependencyManagementParameters params
+    ) {
+        DependencyResolutionServices services = dependencyManagementServices.newDetachedResolver(
+            fileResolver,
+            fileCollectionFactory,
+            params
+        );
+        return getDefaultScriptHandler(scriptSource, classLoaderScope, services);
     }
 
+    private DefaultScriptHandler getDefaultScriptHandler(
+        ScriptSource scriptSource,
+        ClassLoaderScope classLoaderScope,
+        DependencyResolutionServices services
+    ) {
+        return services.getObjectFactory().newInstance(
+            DefaultScriptHandler.class,
+            scriptSource,
+            services,
+            classLoaderScope,
+            buildLogicBuilder
+        );
+    }
 }

@@ -16,37 +16,57 @@
 package org.gradle.api;
 
 import groovy.lang.Closure;
+import org.gradle.api.model.ManagedType;
 import org.gradle.api.specs.Spec;
+import org.gradle.declarative.dsl.model.annotations.HiddenInDefinition;
 
 import java.util.List;
 
 /**
- * <p>A specialisation of {@link org.gradle.api.NamedDomainObjectCollection} that also implements {@link java.util.List}.</p>
+ * <p>A specialization of {@link org.gradle.api.NamedDomainObjectCollection} that also implements {@link java.util.List}.</p>
  *
  * <p>All object equality is determined in terms of object names. That is, calling {@code remove()} with an object that is NOT equal to
  * an existing object in terms of {@code equals}, but IS in terms of name equality will result in the existing collection item with
  * the equal name being removed.</p>
  *
- * @param <T> The type of element in the set
+ * @param <T> The type of objects in the list
+ *
+ * @see ManagedType Create an instance of this as a managed property (preferred).
+ * @see org.gradle.api.model.ObjectFactory#namedDomainObjectList(Class) Create an instance of this manually.
+ * @since 1.0
  */
+@ManagedType
 public interface NamedDomainObjectList<T> extends NamedDomainObjectCollection<T>, List<T> {
     /**
      * {@inheritDoc}
      */
+    @Override
     <S extends T> NamedDomainObjectList<S> withType(Class<S> type);
 
     /**
      * {@inheritDoc}
      */
+    @Override
+    NamedDomainObjectList<T> named(Spec<String> nameFilter);
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    @HiddenInDefinition
     NamedDomainObjectList<T> matching(Spec<? super T> spec);
 
     /**
      * {@inheritDoc}
      */
+    @Override
+    @HiddenInDefinition
     NamedDomainObjectList<T> matching(Closure spec);
 
     /**
      * {@inheritDoc}
      */
+    @Override
+    @Deprecated
     List<T> findAll(Closure spec);
 }

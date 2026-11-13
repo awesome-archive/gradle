@@ -16,29 +16,28 @@
 
 package org.gradle.internal.cleanup
 
-import org.gradle.api.internal.file.IdentityFileResolver
-import org.gradle.api.internal.file.collections.SimpleFileCollection
-import org.gradle.util.UsesNativeServices
+import org.gradle.api.GradleException
+import org.gradle.api.internal.file.TestFiles
 import spock.lang.Specification
 
-@UsesNativeServices
 class DefaultBuildOutputCleanupRegistryTest extends Specification {
 
-    def fileResolver = new IdentityFileResolver()
-    def registry = new DefaultBuildOutputCleanupRegistry(fileResolver)
+    def fileCollectionFactory = TestFiles.fileCollectionFactory()
+    def registry = new DefaultBuildOutputCleanupRegistry(fileCollectionFactory)
 
     def "can register files, directories and file collections"() {
         given:
         def dir1 = file('dir1')
         File file1 = file('someDir/test1.txt')
         File outputFile = file('someDir/test2.txt')
-        def outputFiles = new SimpleFileCollection(outputFile)
+        def outputFiles = TestFiles.fixed(outputFile)
 
 
         when:
         registry.registerOutputs(dir1)
         registry.registerOutputs(file1)
         registry.registerOutputs(outputFiles)
+        registry.resolveOutputs()
 
         then:
         registry.isOutputOwnedByBuild(dir1)
@@ -50,6 +49,7 @@ class DefaultBuildOutputCleanupRegistryTest extends Specification {
         registry.registerOutputs(file('build/outputs'))
         registry.registerOutputs(file('build/outputs/other'))
         registry.registerOutputs(file('outputs'))
+        registry.resolveOutputs()
 
         expect:
         registry.isOutputOwnedByBuild(file('build/outputs'))
@@ -61,6 +61,26 @@ class DefaultBuildOutputCleanupRegistryTest extends Specification {
         !registry.isOutputOwnedByBuild(file('output'))
         !registry.isOutputOwnedByBuild(file('build/output'))
         !registry.isOutputOwnedByBuild(file('different-file/build/outputs'))
+    }
+
+    def "outputs registered after finalization are ignored"() {
+        given:
+        registry.resolveOutputs()
+
+        when:
+        registry.registerOutputs(file('build'))
+        then:
+        !registry.isOutputOwnedByBuild(file("build"))
+    }
+
+    def "cannot query outputs when they have not been resolved"() {
+        given:
+        registry.registerOutputs(file('build'))
+
+        when:
+        registry.isOutputOwnedByBuild(file('build'))
+        then:
+        thrown(GradleException)
     }
 
     File file(String fileName) {

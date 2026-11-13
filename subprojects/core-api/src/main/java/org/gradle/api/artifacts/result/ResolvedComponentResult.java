@@ -16,42 +16,27 @@
 
 package org.gradle.api.artifacts.result;
 
-import org.gradle.api.Incubating;
 import org.gradle.api.artifacts.ModuleVersionIdentifier;
-import org.gradle.api.artifacts.component.ComponentIdentifier;
+import org.gradle.internal.HasInternalProtocol;
 import org.gradle.internal.scan.UsedByScanPlugin;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
+import java.util.List;
 import java.util.Set;
 
 /**
  * Represents a component instance in the resolved dependency graph. Provides some basic identity and dependency information about the component.
+ * @since 1.10
  */
 @UsedByScanPlugin
-@Incubating
-// Should really be named ComponentGraphResult
-public interface ResolvedComponentResult {
-
-    /**
-     * <p>Returns the identifier of this component. This can be used to uniquely identify the component within the current build, but it is not necessarily unique between
-     * different builds.
-     *
-     * <p>The return type is declared as an opaque {@link ComponentIdentifier}, however the identifier may also implement one of the following interfaces:</p>
-     *
-     * <ul>
-     *     <li>{@link org.gradle.api.artifacts.component.ProjectComponentIdentifier} for those component instances which are produced by the current build.</li>
-     *     <li>{@link org.gradle.api.artifacts.component.ModuleComponentIdentifier} for those component instances which are found in some repository.</li>
-     * </ul>
-     *
-     * @return the identifier of this component
-     */
-    ComponentIdentifier getId();
+@HasInternalProtocol
+public interface ResolvedComponentResult extends ComponentResult {
 
     /**
      * <p>Returns the dependencies of this component. Includes resolved and unresolved dependencies (if any).
      *
      * <p>The elements of the returned collection are declared as {@link DependencyResult}, however the dependency instances will also implement one of the
-     * following instances:</p>
+     * following interfaces:</p>
      *
      * <ul>
      *     <li>{@link ResolvedDependencyResult} for dependencies which were successfully resolved.</li>
@@ -59,6 +44,7 @@ public interface ResolvedComponentResult {
      * </ul>
      *
      * @return the dependencies of this component
+     * @since 1.10
      */
     Set<? extends DependencyResult> getDependencies();
 
@@ -66,6 +52,7 @@ public interface ResolvedComponentResult {
      * Returns the incoming dependencies of this component.
      *
      * @return the dependents of this component
+     * @since 1.10
      */
     Set<? extends ResolvedDependencyResult> getDependents();
 
@@ -74,6 +61,7 @@ public interface ResolvedComponentResult {
      * Useful if multiple candidate components were found during dependency resolution.
      *
      * @return the reason for selecting the component
+     * @since 1.10
      */
     ComponentSelectionReason getSelectionReason();
 
@@ -82,17 +70,34 @@ public interface ResolvedComponentResult {
      * module version for the component has been declared, usually by declaring how the component should be published.
      *
      * @return the module version of the component, or {@code null} if this component has no associated module version.
+     * @since 1.10
      */
     @Nullable
     ModuleVersionIdentifier getModuleVersion();
 
     /**
-     * Returns the variant that was selected for this component. When Gradle metadata is not used, this usually only refers to the target
+     * Returns the variants that were selected for this component. When Gradle metadata is not used, this usually only refers to the target
      * "configuration" (for an Ivy dependency) or "scope" (for a Maven dependency).
      *
-     * @return the resolved variant for this component
+     * @return the resolved variants for this component
      *
-     * @since 4.6
+     * @since 5.2
      */
-    ResolvedVariantResult getVariant();
+    List<ResolvedVariantResult> getVariants();
+
+    /**
+     * Returns the dependencies of a specific variant. It is possible for a component to be selected multiple
+     * times with different variants (for example, the main component and its test fixtures). The dependencies
+     * of each variant are different, but the {@link #getDependencies() method} doesn't give access to each
+     * variant individual dependencies.
+     *
+     * <p>
+     * The variant must be a {@linkplain #getVariants() selected variant} of this component.
+     * </p>
+     *
+     * @param variant the variant to find the dependencies for
+     * @throws IllegalStateException if the variant is not a selected variant of this component
+     * @since 5.6
+     */
+    List<DependencyResult> getDependenciesForVariant(ResolvedVariantResult variant);
 }

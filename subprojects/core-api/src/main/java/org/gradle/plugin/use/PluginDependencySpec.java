@@ -16,9 +16,9 @@
 
 package org.gradle.plugin.use;
 
-import org.gradle.api.Incubating;
-
-import javax.annotation.Nullable;
+import org.gradle.api.provider.Provider;
+import org.gradle.declarative.dsl.model.annotations.Builder;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A mutable specification of a dependency on a plugin.
@@ -28,8 +28,8 @@ import javax.annotation.Nullable;
  * <p>
  * See {@link PluginDependenciesSpec} for more information about declaring plugin dependencies.
  * </p>
+ * @since 2.0
  */
-@Incubating
 public interface PluginDependencySpec {
 
     /**
@@ -48,8 +48,29 @@ public interface PluginDependencySpec {
      *
      * @param version the version string ({@code null} for no specified version, which is the default)
      * @return this
+     * @since 2.0
      */
+    @Builder
     PluginDependencySpec version(@Nullable String version);
+
+    /**
+     * Specify the version of the plugin to depend on.
+     *
+     * <pre>
+     * plugins {
+     *     id "org.company.myplugin" version libs.versions.myplugin
+     * }
+     * </pre>
+     *
+     * @param version the version provider, for example as found in a version catalog
+     * @return this
+     *
+     * @since 7.2
+     */
+    default PluginDependencySpec version(Provider<String> version) {
+        // providers used in plugins block are necessarily at configuration time
+        return this.version(version.get());
+    }
 
     /**
      * Specifies whether the plugin should be applied to the current project. Otherwise it is only put
@@ -71,7 +92,9 @@ public interface PluginDependencySpec {
      *
      * @param apply whether to apply the plugin to the current project or not. Defaults to true
      * @return this
+     * @since 3.0
      */
+    @Builder
     PluginDependencySpec apply(boolean apply);
 
 }

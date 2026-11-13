@@ -16,9 +16,15 @@
 package org.gradle.api.artifacts;
 
 import groovy.lang.Closure;
+import groovy.lang.DelegatesTo;
 import org.gradle.api.Action;
+import org.gradle.api.Incubating;
+import org.gradle.api.InvalidUserDataException;
 import org.gradle.api.NamedDomainObjectContainer;
+import org.gradle.api.NamedDomainObjectProvider;
 import org.gradle.internal.HasInternalProtocol;
+import org.gradle.internal.service.scopes.Scope;
+import org.gradle.internal.service.scopes.ServiceScope;
 
 /**
  * <p>A {@code ConfigurationContainer} is responsible for declaring and managing configurations. See also {@link Configuration}.</p>
@@ -49,55 +55,68 @@ import org.gradle.internal.HasInternalProtocol;
  * An example showing how to refer to a given configuration by name
  * in order to get hold of all dependencies (e.g. jars, but only)
  * <pre class='autoTested'>
- *   apply plugin: 'java' //so that I can use 'compile' configuration
+ *   plugins {
+ *       id 'java' //so that I can use 'implementation', 'compileClasspath' configuration
+ *   }
  *
- *   //copying all dependencies attached to 'compile' into a specific folder
+ *   dependencies {
+ *       implementation 'org.slf4j:slf4j-api:2.0.17'
+ *   }
+ *
+ *   //copying all dependencies attached to 'compileClasspath' into a specific folder
  *   task copyAllDependencies(type: Copy) {
- *     //referring to the 'compile' configuration
- *     from configurations.compile
+ *     //referring to the 'compileClasspath' configuration
+ *     from configurations.compileClasspath
  *     into 'allLibs'
  *   }
  * </pre>
  *
  * An example showing how to declare and configure configurations
  * <pre class='autoTested'>
- * apply plugin: 'java' //so that I can use 'compile', 'testCompile' configurations
+ * plugins {
+ *     id 'java' // so that I can use 'implementation', 'testImplementation' configurations
+ * }
  *
  * configurations {
  *   //adding a configuration:
  *   myConfiguration
  *
  *   //adding a configuration that extends existing configuration:
- *   //(testCompile was added by the java plugin)
- *   myIntegrationTestsCompile.extendsFrom(testCompile)
+ *   //(testImplementation was added by the java plugin)
+ *   myIntegrationTestsCompile.extendsFrom(testImplementation)
  *
  *   //configuring existing configurations not to put transitive dependencies on the compile classpath
  *   //this way you can avoid issues with implicit dependencies to transitive libraries
- *   compile.transitive = false
- *   testCompile.transitive = false
+ *   compileClasspath.transitive = false
+ *   testCompileClasspath.transitive = false
  * }
  * </pre>
  *
  * Examples on configuring the <b>resolution strategy</b> - see docs for {@link ResolutionStrategy}
  *
- * Please see <a href="https://docs.gradle.org/current/userguide/defining_and_using_configurations.html" target="_top">the Defining and Using Configurations User Guide chapter</a> for more information.
+ * Please see the <a href="https://docs.gradle.org/current/userguide/declaring_dependencies.html#sec:what-are-dependency-configurations" target="_top">Managing Dependency Configurations</a> User Manual chapter for more information.
+ * @since 0.7
  */
 @HasInternalProtocol
+@ServiceScope(Scope.Project.class)
 public interface ConfigurationContainer extends NamedDomainObjectContainer<Configuration> {
     /**
      * {@inheritDoc}
      */
+    @Override
     Configuration getByName(String name) throws UnknownConfigurationException;
 
     /**
      * {@inheritDoc}
      */
+    @Override
     Configuration getAt(String name) throws UnknownConfigurationException;
 
     /**
      * {@inheritDoc}
      */
-    Configuration getByName(String name, Closure configureClosure) throws UnknownConfigurationException;
+    @Override
+    Configuration getByName(String name, @DelegatesTo(Configuration.class) Closure configureClosure) throws UnknownConfigurationException;
 
     /**
      * {@inheritDoc}
@@ -110,6 +129,119 @@ public interface ConfigurationContainer extends NamedDomainObjectContainer<Confi
      *
      * @param dependencies The dependencies of the configuration.
      * @return The configuration.
+     * @since 0.7
      */
     Configuration detachedConfiguration(Dependency... dependencies);
+
+    /**
+     * Registers a {@link ResolvableConfiguration} with an immutable role. Resolvable configurations
+     * are meant to resolve dependency graphs and their artifacts.
+     * <p>
+     * This operation is lazy, the returned element is NOT realized.
+     * A {@link NamedDomainObjectProvider lazy wrapper} is returned, allowing to continue to use it with other lazy APIs.
+     *
+     * @param name The name of the configuration to register.
+     * @return A provider which creates a new resolvable configuration.
+     *
+     * @throws InvalidUserDataException If a configuration with the given {@code name} already exists in this container.
+     *
+     * @since 8.4
+     */
+    @Incubating
+    NamedDomainObjectProvider<ResolvableConfiguration> resolvable(String name);
+
+    /**
+     * Registers a {@link ResolvableConfiguration} via {@link #resolvable(String)} and then
+     * configures it with the provided action.
+     * <p>
+     * This operation is lazy, the returned element is NOT realized.
+     * A {@link NamedDomainObjectProvider lazy wrapper} is returned, allowing to continue to use it with other lazy APIs.
+     *
+     * @param name The name of the configuration to register.
+     * @param action The action to apply to the configuration.
+     *
+     * @return A provider which creates a new resolvable configuration.
+     *
+     * @throws InvalidUserDataException If a configuration with the given {@code name} already exists in this container.
+     *
+     * @since 8.4
+     */
+    @Incubating
+    NamedDomainObjectProvider<ResolvableConfiguration> resolvable(String name, Action<? super ResolvableConfiguration> action);
+
+    /**
+     * Registers a new {@link ConsumableConfiguration} with an immutable role. Consumable configurations
+     * are meant to act as a variant in the context of Dependency Management and Publishing.
+     * <p>
+     * This operation is lazy, the returned element is NOT realized.
+     * A {@link NamedDomainObjectProvider lazy wrapper} is returned, allowing to continue to use it with other lazy APIs.
+     *
+     * @param name The name of the configuration to register.
+     *
+     * @return A provider which creates a new consumable configuration.
+     *
+     * @throws InvalidUserDataException If a configuration with the given {@code name} already exists in this container.
+     *
+     * @since 8.4
+     */
+    @Incubating
+    NamedDomainObjectProvider<ConsumableConfiguration> consumable(String name);
+
+    /**
+     * Registers a {@link ConsumableConfiguration} via {@link #consumable(String)} and then
+     * configures it with the provided action.
+     * <p>
+     * This operation is lazy, the returned element is NOT realized.
+     * A {@link NamedDomainObjectProvider lazy wrapper} is returned, allowing to continue to use it with other lazy APIs.
+     *
+     * @param name The name of the configuration to register.
+     * @param action The action to apply to the configuration.
+     *
+     * @return A provider which creates a new consumable configuration.
+     *
+     * @throws InvalidUserDataException If a configuration with the given {@code name} already exists in this container.
+     *
+     * @since 8.4
+     */
+    @Incubating
+    NamedDomainObjectProvider<ConsumableConfiguration> consumable(String name, Action<? super ConsumableConfiguration> action);
+
+    /**
+     * Registers a new {@link DependencyScopeConfiguration} with an immutable role. Dependency scope configurations
+     * collect dependencies, dependency constraints, and exclude rules to be used by both resolvable
+     * and consumable configurations.
+     * <p>
+     * This operation is lazy, the returned element is NOT realized.
+     * A {@link NamedDomainObjectProvider lazy wrapper} is returned, allowing to continue to use it with other lazy APIs.
+     *
+     * @param name The name of the configuration to register.
+     *
+     * @return A provider which creates a new dependency scope configuration.
+     *
+     * @throws InvalidUserDataException If a configuration with the given {@code name} already exists in this container.
+     *
+     * @since 8.4
+     */
+    @Incubating
+    NamedDomainObjectProvider<DependencyScopeConfiguration> dependencyScope(String name);
+
+    /**
+     * Registers a {@link DependencyScopeConfiguration} via {@link #dependencyScope(String)} and then
+     * configures it with the provided action.
+     * <p>
+     * This operation is lazy, the returned element is NOT realized.
+     * A {@link NamedDomainObjectProvider lazy wrapper} is returned, allowing to continue to use it with other lazy APIs.
+     *
+     * @param name The name of the configuration to register.
+     * @param action The action to apply to the configuration.
+     *
+     * @return A provider which creates a new dependency scope configuration.
+     *
+     * @throws InvalidUserDataException If a configuration with the given {@code name} already exists in this container.
+     *
+     * @since 8.4
+     */
+    @Incubating
+    NamedDomainObjectProvider<DependencyScopeConfiguration> dependencyScope(String name, Action<? super DependencyScopeConfiguration> action);
+
 }

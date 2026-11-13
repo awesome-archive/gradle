@@ -16,12 +16,14 @@
 
 package org.gradle.api.component;
 
-import org.gradle.api.Incubating;
-import org.gradle.api.NamedDomainObjectSet;
+import org.gradle.api.ExtensiblePolymorphicDomainObjectContainer;
+import org.gradle.internal.service.scopes.Scope;
+import org.gradle.internal.service.scopes.ServiceScope;
 
 /**
  * A Container that contains all of the Software Components produced by a Project.
+ * @since 1.4
  */
-@Incubating
-public interface SoftwareComponentContainer extends NamedDomainObjectSet<SoftwareComponent> {
+@ServiceScope(Scope.Project.class)
+public interface SoftwareComponentContainer extends ExtensiblePolymorphicDomainObjectContainer<SoftwareComponent> {
 }

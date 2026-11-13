@@ -79,7 +79,7 @@ tasks.help {
     }
 
     def "can read property from configure closure outer scope"() {
-        buildFile << """
+        buildFile """
 ext.prop = "value"
 tasks.help {
     println "1: " + prop
@@ -96,7 +96,7 @@ tasks.help {
     }
 
     def "can set property in configure closure outer scope"() {
-        buildFile << """
+        buildFile """
 ext.prop = "value 1"
 tasks.help {
     assert prop == "value 1"
@@ -114,7 +114,7 @@ assert prop == "value 3"
     }
 
     def "can read static property from configure closure outer scope"() {
-        buildFile << """
+        buildFile """
 class MyPlugin implements Plugin<Project> {
     static String prop = "value"
 
@@ -211,8 +211,7 @@ assert repositories.empty
         succeeds()
     }
 
-    // NOTE: Documents actual behaviour, for backwards compatibility purposes, not desired behaviour
-    def "can reference script level configure method from named container configure closure when that closure would fail with MME if applied to a new element"() {
+    def "cannot reference script level configure method from named container configure closure when that closure would fail with MME if applied to a new element"() {
         buildFile << """
 configurations {
     ${mavenCentralRepository()}
@@ -225,7 +224,41 @@ assert repositories.size() == 1
 """
 
         expect:
-        succeeds()
+        fails "help"
+        errorOutput.contains("Could not find method maven() for arguments")
+    }
+
+    def "cannot reference script level configure method from async closure in named container configure closure when that closure would fail with MME if applied to a new element"() {
+        buildFile """
+plugins {
+    id 'distribution'
+}
+${mavenCentralRepository()}
+
+configurations {
+    conf.incoming.afterResolve {
+        distributions {
+            myDist {
+                contents {}
+            }
+        }
+    }
+}
+
+task resolve {
+    dependsOn(configurations.conf)
+    def files = configurations.conf.files
+    doFirst {
+        println files
+        println "Distributions: " + distributions*.name
+    }
+}
+"""
+
+        expect:
+        fails "resolve"
+        errorOutput.contains("Could not find method myDist() for arguments")
+        outputDoesNotContain("Distributions:")
     }
 
     def "reports missing method from inside configure closure"() {
@@ -239,7 +272,7 @@ configurations {
 
         expect:
         fails()
-        failure.assertHasCause("Could not find method noExist() for arguments [12] on configuration ':broken' of type org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.")
+        failure.assertHasCause("Could not find method noExist() for arguments [12] on configuration ':broken' of type org.gradle.api.internal.artifacts.configurations.DefaultLegacyConfiguration.")
     }
 
     def "reports set unknown property from polymorphic container configure closure"() {

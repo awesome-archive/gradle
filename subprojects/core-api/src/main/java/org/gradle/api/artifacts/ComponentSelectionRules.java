@@ -17,11 +17,11 @@
 package org.gradle.api.artifacts;
 
 import groovy.lang.Closure;
+import groovy.lang.DelegatesTo;
 import org.gradle.api.Action;
-import org.gradle.api.Incubating;
 import org.gradle.internal.HasInternalProtocol;
 
-/***
+/**
  * Represents a container for component selection rules.  Rules can be applied as part of the
  * resolutionStrategy of a configuration and individual components can be explicitly accepted
  * or rejected by rule.  Components that are neither accepted or rejected will be subject to
@@ -37,9 +37,9 @@ import org.gradle.internal.HasInternalProtocol;
  *                             selection.reject("bad version '1.1' for 'someModule'")
  *                         }
  *                     }
- *                     all { ComponentSelection selection, IvyModuleDescriptor descriptor, ComponentMetadata metadata -&gt;
- *                         if (selection.candidate.module == 'someModule' &amp;&amp; descriptor.branch == 'testing') {
- *                             if (metadata.status != 'milestone') {
+ *                     all { ComponentSelection selection -&gt;
+ *                         if (selection.candidate.module == 'someModule' &amp;&amp; selection.getDescriptor(IvyModuleDescriptor)?.branch == 'testing') {
+ *                             if (selection.metadata == null || selection.metadata.status != 'milestone') {
  *                                 selection.reject("only use milestones for someModule:testing")
  *                             }
  *                         }
@@ -54,9 +54,9 @@ import org.gradle.internal.HasInternalProtocol;
  *         }
  *     }
  * </pre>
+ * @since 2.2
  */
 @HasInternalProtocol
-@Incubating
 public interface ComponentSelectionRules {
     /**
      * Adds a simple component selection rule that will apply to all resolved components.
@@ -64,22 +64,20 @@ public interface ComponentSelectionRules {
      *
      * @param selectionAction the Action that implements a rule to be applied
      * @return this
+     * @since 2.2
      */
     ComponentSelectionRules all(Action<? super ComponentSelection> selectionAction);
 
     /**
      * Adds a component selection rule that will apply to all resolved components.
      *
-     * Each rule will receive a {@link ComponentSelection} object as an argument
-     * as well as any other arguments specified for the closure.
-     * Allowable closure arguments are {@link ComponentSelection} (required),
-     * {@link org.gradle.api.artifacts.ComponentMetadata} and/or
-     * {@link org.gradle.api.artifacts.ivy.IvyModuleDescriptor}.
+     * Each rule will receive a {@link ComponentSelection} object as an argument.
      *
      * @param closure the Closure that implements a rule to be applied
      * @return this
+     * @since 2.2
      */
-    ComponentSelectionRules all(Closure<?> closure);
+    ComponentSelectionRules all(@DelegatesTo(ComponentSelection.class) Closure<?> closure);
 
     /**
      * Adds a rule-source backed component selection rule that will apply to all resolved components.
@@ -89,13 +87,15 @@ public interface ComponentSelectionRules {
      * This rule method:
      * <ul>
      *     <li>must return void.</li>
-     *     <li>must have {@link org.gradle.api.artifacts.ComponentSelection} as the first parameter.</li>
-     *     <li>may have additional parameters of type {@link org.gradle.api.artifacts.ComponentMetadata} and/or {@link org.gradle.api.artifacts.ivy.IvyModuleDescriptor}.</li>
+     *     <li>must have {@link org.gradle.api.artifacts.ComponentSelection} as its parameter.</li>
      * </ul>
      *
      * @param ruleSource an instance providing a rule implementation
      * @return this
+     * @deprecated use {@link #all(Action)} instead.
+     * @since 2.2
      */
+    @Deprecated
     ComponentSelectionRules all(Object ruleSource);
 
     /**
@@ -105,23 +105,21 @@ public interface ComponentSelectionRules {
      * @param id the module to apply this rule to in "group:module" format or as a {@link org.gradle.api.artifacts.ModuleIdentifier}
      * @param selectionAction the Action that implements a rule to be applied
      * @return this
+     * @since 2.2
      */
     ComponentSelectionRules withModule(Object id, Action<? super ComponentSelection> selectionAction);
 
     /**
      * Adds a component selection rule that will apply to the specified module.
      *
-     * Each rule will receive a {@link ComponentSelection} object as an argument
-     * as well as any other arguments specified for the closure.
-     * Allowable closure arguments are {@link ComponentSelection} (required),
-     * {@link org.gradle.api.artifacts.ComponentMetadata} and/or
-     * {@link org.gradle.api.artifacts.ivy.IvyModuleDescriptor}.
+     * Each rule will receive a {@link ComponentSelection} object as an argument.
      *
      * @param id the module to apply this rule to in "group:module" format or as a {@link org.gradle.api.artifacts.ModuleIdentifier}
      * @param closure the Closure that implements a rule to be applied
      * @return this
+     * @since 2.2
      */
-    ComponentSelectionRules withModule(Object id, Closure<?> closure);
+    ComponentSelectionRules withModule(Object id, @DelegatesTo(ComponentSelection.class) Closure<?> closure);
 
     /**
      * Adds a rule-source backed component selection rule that will apply to the specified module.
@@ -131,13 +129,15 @@ public interface ComponentSelectionRules {
      * This rule method:
      * <ul>
      *     <li>must return void.</li>
-     *     <li>must have {@link org.gradle.api.artifacts.ComponentSelection} as the first parameter.</li>
-     *     <li>may have additional parameters of type {@link org.gradle.api.artifacts.ComponentMetadata} and/or {@link org.gradle.api.artifacts.ivy.IvyModuleDescriptor}.</li>
+     *     <li>must have {@link org.gradle.api.artifacts.ComponentSelection} as its parameter.</li>
      * </ul>
      *
      * @param id the module to apply this rule to in "group:module" format or as a {@link org.gradle.api.artifacts.ModuleIdentifier}
      * @param ruleSource an instance providing a rule implementation
      * @return this
+     * @deprecated use {@link #withModule(Object,Action)} instead.
+     * @since 2.2
      */
+    @Deprecated
     ComponentSelectionRules withModule(Object id, Object ruleSource);
 }

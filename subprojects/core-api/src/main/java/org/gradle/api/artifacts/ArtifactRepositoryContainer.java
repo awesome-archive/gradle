@@ -16,10 +16,11 @@
 package org.gradle.api.artifacts;
 
 import groovy.lang.Closure;
-
+import groovy.lang.DelegatesTo;
 import org.gradle.api.Action;
 import org.gradle.api.NamedDomainObjectList;
 import org.gradle.api.artifacts.repositories.ArtifactRepository;
+import org.gradle.declarative.dsl.model.annotations.HiddenInDefinition;
 import org.gradle.util.Configurable;
 
 /**
@@ -32,24 +33,46 @@ import org.gradle.util.Configurable;
  * resolver as the property name. For example:</p>
  *
  * <pre class='autoTested'>
- * repositories.maven { name 'myResolver' }
- * repositories.myResolver.url = 'some-url'
+ * repositories.maven { name = 'myResolver' }
+ * repositories.myResolver.url = uri('some-url')
  * </pre>
  *
  * <p>A dynamic method is added for each resolver which takes a configuration closure. This is equivalent to calling
  * {@link #getByName(String, groovy.lang.Closure)}. For example:</p>
  *
  * <pre class='autoTested'>
- * repositories.maven { name 'myResolver' }
+ * repositories.maven { name = 'myResolver' }
  * repositories.myResolver {
- *     url 'some-url'
+ *     url = uri('some-url')
  * }
  * </pre>
+ * @since 1.0
  */
+@HiddenInDefinition
 public interface ArtifactRepositoryContainer extends NamedDomainObjectList<ArtifactRepository>, Configurable<ArtifactRepositoryContainer> {
+    /**
+     * The default maven central repo name.
+     *
+     * @since 1.0
+     */
     String DEFAULT_MAVEN_CENTRAL_REPO_NAME = "MavenRepo";
+    /**
+     * The default maven local repo name.
+     *
+     * @since 1.0
+     */
     String DEFAULT_MAVEN_LOCAL_REPO_NAME = "MavenLocal";
+    /**
+     * The maven central url.
+     *
+     * @since 1.0
+     */
     String MAVEN_CENTRAL_URL = "https://repo.maven.apache.org/maven2/";
+    /**
+     * The google url.
+     *
+     * @since 4.0
+     */
     String GOOGLE_URL = "https://dl.google.com/dl/android/maven2/";
 
     /**
@@ -57,12 +80,14 @@ public interface ArtifactRepositoryContainer extends NamedDomainObjectList<Artif
      *
      * @param repository The repository to add.
      */
+    @Override
     boolean add(ArtifactRepository repository);
 
     /**
      * Adds a repository to this container, at the start of the repository sequence.
      *
      * @param repository The repository to add.
+     * @since 1.0
      */
     void addFirst(ArtifactRepository repository);
 
@@ -70,26 +95,31 @@ public interface ArtifactRepositoryContainer extends NamedDomainObjectList<Artif
      * Adds a repository to this container, at the end of the repository sequence.
      *
      * @param repository The repository to add.
+     * @since 1.0
      */
     void addLast(ArtifactRepository repository);
 
     /**
      * {@inheritDoc}
      */
+    @Override
     ArtifactRepository getByName(String name) throws UnknownRepositoryException;
 
     /**
      * {@inheritDoc}
      */
-    ArtifactRepository getByName(String name, Closure configureClosure) throws UnknownRepositoryException;
+    @Override
+    ArtifactRepository getByName(String name, @DelegatesTo(ArtifactRepository.class) Closure configureClosure) throws UnknownRepositoryException;
 
     /**
      * {@inheritDoc}
      */
+    @Override
     ArtifactRepository getByName(String name, Action<? super ArtifactRepository> configureAction) throws UnknownRepositoryException;
 
     /**
      * {@inheritDoc}
      */
+    @Override
     ArtifactRepository getAt(String name) throws UnknownRepositoryException;
 }

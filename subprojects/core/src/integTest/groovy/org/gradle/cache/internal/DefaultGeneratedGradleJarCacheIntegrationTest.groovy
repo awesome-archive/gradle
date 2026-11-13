@@ -17,7 +17,12 @@
 package org.gradle.cache.internal
 
 import org.gradle.api.Action
-import org.gradle.cache.CacheRepository
+import org.gradle.cache.internal.scopes.DefaultGlobalScopedCacheBuilderFactory
+import org.gradle.integtests.fixtures.executer.IntegrationTestBuildContext
+import org.gradle.internal.installation.CurrentGradleInstallation
+import org.gradle.internal.installation.GradleInstallation
+import org.gradle.internal.instrumentation.agent.AgentStatus
+import org.gradle.internal.logging.services.LoggingServiceRegistry
 import org.gradle.internal.service.DefaultServiceRegistry
 import org.gradle.internal.service.ServiceRegistryBuilder
 import org.gradle.internal.service.scopes.GlobalScopeServices
@@ -25,7 +30,7 @@ import org.gradle.test.fixtures.ConcurrentTestUtil
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
 import org.gradle.testfixtures.internal.NativeServicesTestFixture
 import org.gradle.util.GradleVersion
-import org.gradle.util.RedirectStdOutAndErr
+import org.gradle.util.internal.RedirectStdOutAndErr
 import org.junit.Rule
 import spock.lang.Specification
 
@@ -39,7 +44,7 @@ class DefaultGeneratedGradleJarCacheIntegrationTest extends Specification {
     private final static long JAR_GENERATION_TIME_MS = 2000L
 
     @Rule
-    TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider()
+    TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider(getClass())
 
     @Rule
     RedirectStdOutAndErr stdout = new RedirectStdOutAndErr()
@@ -47,16 +52,18 @@ class DefaultGeneratedGradleJarCacheIntegrationTest extends Specification {
     @Rule
     ConcurrentTestUtil concurrent = new ConcurrentTestUtil(8000)
 
-    def DefaultServiceRegistry services = (DefaultServiceRegistry) ServiceRegistryBuilder.builder()
+    def testInstallation = new CurrentGradleInstallation(new GradleInstallation(IntegrationTestBuildContext.INSTANCE.gradleHomeDir))
+    def services = (DefaultServiceRegistry) ServiceRegistryBuilder.builder()
             .parent(NativeServicesTestFixture.getInstance())
-            .provider(new GlobalScopeServices(false))
+            .provider(LoggingServiceRegistry.NO_OP)
+            .provider(new GlobalScopeServices(false, AgentStatus.disabled(), testInstallation))
             .build()
 
-    def CacheFactory factory = services.get(CacheFactory.class)
+    def factory = services.get(CacheFactory.class)
     def currentGradleVersion = GradleVersion.current()
-    def CacheScopeMapping scopeMapping = new DefaultCacheScopeMapping(tmpDir.testDirectory, null, currentGradleVersion)
-    def CacheRepository cacheRepository = new DefaultCacheRepository(scopeMapping, factory)
-    def defaultGeneratedGradleJarCache = new DefaultGeneratedGradleJarCache(cacheRepository, currentGradleVersion.getVersion())
+    def cacheRepository = new DefaultUnscopedCacheBuilderFactory(factory)
+    def globalScopedCache = new DefaultGlobalScopedCacheBuilderFactory(tmpDir.testDirectory, cacheRepository)
+    def defaultGeneratedGradleJarCache = new DefaultGeneratedGradleJarCache(globalScopedCache, currentGradleVersion.getVersion())
 
     def cleanup() {
         defaultGeneratedGradleJarCache.close()
@@ -102,7 +109,7 @@ class DefaultGeneratedGradleJarCacheIntegrationTest extends Specification {
     def "only generates single JAR in cache when invoked by concurrent threads"() {
         given:
         def jarGenerationInvocations = 10
-        def triggeredJarFileGeneration = new AtomicInteger(0)
+        def triggeredJarFileGeneration = new AtomicInteger()
         def jarFiles = Collections.synchronizedList(new ArrayList<File>())
 
         when:

@@ -16,9 +16,10 @@
 
 package org.gradle.integtests.composite
 
+
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 import org.gradle.integtests.fixtures.build.BuildTestFile
 import org.gradle.integtests.fixtures.resolve.ResolveTestFixture
-import spock.lang.Unroll
 
 /**
  * Tests for resolving dependency graph with substitution within a composite build.
@@ -30,46 +31,51 @@ class CompositeBuildMinimalConfigurationIntegrationTest extends AbstractComposit
     def buildArgs = []
 
     def setup() {
-        resolve = new ResolveTestFixture(buildA.buildFile).expectDefaultConfiguration("runtimeElements")
+        resolve = new ResolveTestFixture(buildA)
+        buildA.buildFile << """
+            ${resolve.configureProject("runtimeClasspath")}
+        """
         buildB = multiProjectBuild("buildB", ['b1', 'b2']) {
             buildFile << """
                 allprojects {
-                    apply plugin: 'java'
-                    version "2.0"
+                    apply plugin: 'java-library'
+                    version = "2.0"
                 }
-"""
+            """
         }
 
         buildC = singleProjectBuild("buildC") {
             buildFile << """
-                apply plugin: 'java'
-"""
+                apply plugin: 'java-library'
+            """
         }
     }
 
+    @ToBeFixedForIsolatedProjects(because = "cross-project / cross-build configuration")
     def "does not configure build with declared substitutions that is not required for dependency substitution"() {
         given:
         dependency "org.test:buildB:1.0"
 
         includeBuild buildB
         includeBuild buildC, """
-            substitute module("org.gradle:buildX") with project(":") // Not used
-"""
+            substitute module("org.gradle:buildX") using project(":") // Not used
+        """
 
         when:
         buildC.buildFile << """
             throw new RuntimeException('Configuration fails')
-"""
+        """
 
 
         then:
         resolvedGraph {
-            edge("org.test:buildB:1.0", "project :buildB", "org.test:buildB:2.0") {
+            edge("org.test:buildB:1.0", ":buildB", "org.test:buildB:2.0") {
                 compositeSubstitute()
             }
         }
     }
 
+    @ToBeFixedForIsolatedProjects(because = "cross-project / cross-build configuration")
     def "build with discovered substitutions that is not required for dependency substitution is configured only once"() {
         given:
         dependency "org.test:buildB:1.0"
@@ -80,12 +86,11 @@ class CompositeBuildMinimalConfigurationIntegrationTest extends AbstractComposit
         when:
         buildC.buildFile << """
             println 'Configured buildC'
-"""
-
+        """
 
         then:
         resolvedGraph {
-            edge("org.test:buildB:1.0", "project :buildB", "org.test:buildB:2.0") {
+            edge("org.test:buildB:1.0", ":buildB", "org.test:buildB:2.0") {
                 compositeSubstitute()
             }
         }
@@ -94,54 +99,77 @@ class CompositeBuildMinimalConfigurationIntegrationTest extends AbstractComposit
         output.count('Configured buildC') == 1
     }
 
-    @Unroll
-    def "configures included build only once when #action"() {
+    @ToBeFixedForIsolatedProjects(because = "cross-build configuration in composite build")
+    def "configures included build only once when building artifacts"() {
         given:
         dependency "org.test:buildB:1.0"
         dependency "org.test:buildC:1.0"
 
         includeBuild buildB
         includeBuild buildC, """
-            substitute module("org.test:buildC") with project(":")
-"""
+            substitute module("org.test:buildC") using project(":")
+        """
 
         when:
         buildB.buildFile << """
             println 'Configured buildB'
-"""
+        """
         buildC.buildFile << """
             println 'Configured buildC'
-"""
-
-        and:
-        if (!buildArtifacts) {
-            resolve.withoutBuildingArtifacts()
-        }
+        """
 
         then:
         resolvedGraph {
-            edge("org.test:buildB:1.0", "project :buildB", "org.test:buildB:2.0") {
+            edge("org.test:buildB:1.0", ":buildB", "org.test:buildB:2.0") {
                 compositeSubstitute()
             }
-            edge("org.test:buildC:1.0", "project :buildC", "org.test:buildC:1.0") {
+            edge("org.test:buildC:1.0", ":buildC", "org.test:buildC:1.0") {
                 compositeSubstitute()
             }
         }
 
         and:
-        if (buildArtifacts) {
-            executed(":buildB:jar", ":buildC:jar")
-        }
+        executed(":buildB:jar", ":buildC:jar")
         output.count('Configured buildB') == 1
         output.count('Configured buildC') == 1
-
-        where:
-        action      | buildArtifacts
-        "resolving" | false
-        "building"  | true
     }
 
-    @Unroll
+    @ToBeFixedForIsolatedProjects(because = "cross-build configuration in composite build")
+    def "configures included build only once when not building artifacts"() {
+        given:
+        dependency "org.test:buildB:1.0"
+        dependency "org.test:buildC:1.0"
+
+        includeBuild buildB
+        includeBuild buildC, """
+            substitute module("org.test:buildC") using project(":")
+        """
+
+        when:
+        buildA.buildFile << """
+            tasks.register("checkGraph") {
+                def rootComponent = configurations.runtimeClasspath.incoming.resolutionResult.rootComponent
+                doLast {
+                    rootComponent.get()
+                }
+            }
+        """
+        buildB.buildFile << """
+            println 'Configured buildB'
+        """
+        buildC.buildFile << """
+            println 'Configured buildC'
+        """
+
+        then:
+        execute(buildA, ":checkGraph", buildArgs)
+
+        and:
+        output.count('Configured buildB') == 1
+        output.count('Configured buildC') == 1
+    }
+
+    @ToBeFixedForIsolatedProjects(because = "cross-build configuration in composite build")
     def "when configuration fails included build with #name substitutions is configured only once "() {
         given:
         dependency "org.test:buildB:1.0"
@@ -150,15 +178,15 @@ class CompositeBuildMinimalConfigurationIntegrationTest extends AbstractComposit
             includeBuild buildB
         } else {
             includeBuild buildB, """
-                substitute module("org.test:buildB:") with project(":")
-    """
+                substitute module("org.test:buildB:") using project(":")
+            """
         }
 
         and:
         buildB.buildFile << """
             println 'Configured buildB'
             throw new RuntimeException('Configuration failed for buildB')
-"""
+        """
 
         when:
         fails(buildA, ":jar")
@@ -175,6 +203,7 @@ class CompositeBuildMinimalConfigurationIntegrationTest extends AbstractComposit
         name << ["discovered", "declared"]
     }
 
+    @ToBeFixedForIsolatedProjects(because = "cross-build configuration in composite build")
     def "configures included build only once when building multiple artifacts"() {
         given:
         dependency "org.test:buildB:1.0"
@@ -185,14 +214,14 @@ class CompositeBuildMinimalConfigurationIntegrationTest extends AbstractComposit
         when:
         buildB.buildFile << """
             println 'Configured buildB'
-"""
+        """
 
         then:
         resolvedGraph {
-            edge("org.test:buildB:1.0", "project :buildB", "org.test:buildB:2.0") {
+            edge("org.test:buildB:1.0", ":buildB", "org.test:buildB:2.0") {
                 compositeSubstitute()
             }
-            edge("org.test:b1:1.0", "project :buildB:b1", "org.test:b1:2.0") {
+            edge("org.test:b1:1.0", ":buildB:b1", "org.test:b1:2.0") {
                 compositeSubstitute()
             }
         }
@@ -202,6 +231,7 @@ class CompositeBuildMinimalConfigurationIntegrationTest extends AbstractComposit
         output.count('Configured buildB') == 1
     }
 
+    @ToBeFixedForIsolatedProjects(because = "cross-build configuration in composite build")
     def "configures included build only once when building multiple artifacts for a dependency of a referenced task"() {
         given:
         includeBuild buildB
@@ -212,13 +242,13 @@ class CompositeBuildMinimalConfigurationIntegrationTest extends AbstractComposit
 
         when:
         buildA.buildFile << """
-task run {
-    dependsOn gradle.includedBuild('buildC').task(':jar')
-}
-"""
+            task run {
+                dependsOn gradle.includedBuild('buildC').task(':jar')
+            }
+        """
         buildB.buildFile << """
             println 'Configured buildB'
-"""
+        """
 
         then:
         execute(buildA, ":run", buildArgs)
@@ -228,10 +258,10 @@ task run {
     }
 
     void resolvedGraph(@DelegatesTo(ResolveTestFixture.NodeBuilder) Closure closure) {
-        resolve.prepare()
         execute(buildA, ":checkDeps", buildArgs)
         resolve.expectGraph {
             root(":", "org.test:buildA:1.0", closure)
         }
     }
+
 }

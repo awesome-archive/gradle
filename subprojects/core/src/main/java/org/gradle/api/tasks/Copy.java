@@ -16,13 +16,15 @@
 
 package org.gradle.api.tasks;
 
+import org.gradle.api.Incubating;
 import org.gradle.api.InvalidUserDataException;
-import org.gradle.api.internal.file.FileResolver;
+import org.gradle.api.file.DirectoryProperty;
 import org.gradle.api.internal.file.copy.CopyAction;
 import org.gradle.api.internal.file.copy.CopySpecInternal;
 import org.gradle.api.internal.file.copy.DestinationRootCopySpec;
 import org.gradle.api.internal.file.copy.FileCopyAction;
-import org.gradle.internal.reflect.Instantiator;
+import org.gradle.internal.instrumentation.api.annotations.NotToBeReplacedByLazyProperty;
+import org.gradle.work.DisableCachingByDefault;
 
 import java.io.File;
 
@@ -66,8 +68,10 @@ import java.io.File;
  *     with dataContent
  * }
  * </pre>
+ * @since 0.7
  */
-public class Copy extends AbstractCopyTask {
+@DisableCachingByDefault(because = "Not worth caching")
+public abstract class Copy extends AbstractCopyTask {
 
     @Override
     protected CopyAction createCopyAction() {
@@ -80,23 +84,39 @@ public class Copy extends AbstractCopyTask {
 
     @Override
     protected CopySpecInternal createRootSpec() {
-        Instantiator instantiator = getInstantiator();
-        FileResolver fileResolver = getFileResolver();
-
-        return instantiator.newInstance(DestinationRootCopySpec.class, fileResolver, super.createRootSpec());
+        return getProject().getObjects().newInstance(DestinationRootCopySpec.class, super.createRootSpec());
     }
 
     @Override
+    @NotToBeReplacedByLazyProperty(because = "Read-only nested like property")
     public DestinationRootCopySpec getRootSpec() {
         return (DestinationRootCopySpec) super.getRootSpec();
+    }
+
+    /**
+     * The directory to copy files into.
+     * <p>
+     * Setting this property is equivalent to calling {@link #into(Object)} on this task, and reading it reflects
+     * the destination configured through {@link #into(Object)} or {@link #setDestinationDir(File)}.
+     *
+     * @return the destination directory property
+     * @since 9.8.0
+    */
+    @Incubating
+    @Optional
+    @OutputDirectory
+    public DirectoryProperty getDestinationDirectory() {
+        return getRootSpec().getDestinationDirectory();
     }
 
     /**
      * Returns the directory to copy files into.
      *
      * @return The destination dir.
+     * @since 0.7
      */
     @OutputDirectory
+    @NotToBeReplacedByLazyProperty(because = "Superseded by the lazy getDestinationDirectory() property", willBeDeprecated = true)
     public File getDestinationDir() {
         return getRootSpec().getDestinationDir();
     }
@@ -105,9 +125,9 @@ public class Copy extends AbstractCopyTask {
      * Sets the directory to copy files into. This is the same as calling {@link #into(Object)} on this task.
      *
      * @param destinationDir The destination directory. Must not be null.
+     * @since 0.7
      */
     public void setDestinationDir(File destinationDir) {
         into(destinationDir);
     }
-
 }

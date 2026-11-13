@@ -18,63 +18,80 @@ package org.gradle.api.internal.tasks.options;
 
 import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.ListMultimap;
+import com.google.common.reflect.TypeToken;
+import org.gradle.api.provider.Provider;
 import org.gradle.api.tasks.options.Option;
 import org.gradle.api.tasks.options.OptionValues;
 import org.gradle.internal.reflect.JavaMethod;
 import org.gradle.internal.reflect.JavaReflectionUtil;
-import org.gradle.util.CollectionUtils;
-import org.gradle.util.SingleMessageLogger;
+import org.gradle.internal.service.scopes.Scope;
+import org.gradle.internal.service.scopes.ServiceScope;
+import org.gradle.util.internal.CollectionUtils;
+import org.jspecify.annotations.Nullable;
 
-import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.lang.reflect.Type;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
+@ServiceScope(Scope.Build.class)
 public class OptionReader {
     private final ListMultimap<Class<?>, OptionElement> cachedOptionElements = ArrayListMultimap.create();
-    private final Map<OptionElement, JavaMethod<Object, Collection>> cachedOptionValueMethods = new HashMap<OptionElement, JavaMethod<Object, Collection>>();
+    private final Map<OptionElement, JavaMethod<Object, ?>> cachedOptionValueMethods = new HashMap<>();
     private final OptionValueNotationParserFactory optionValueNotationParserFactory = new OptionValueNotationParserFactory();
 
-    public List<OptionDescriptor> getOptions(Object target) {
+
+    public Map<String, OptionDescriptor> getOptions(Object target) {
         final Class<?> targetClass = target.getClass();
         Map<String, OptionDescriptor> options = new HashMap<String, OptionDescriptor>();
         if (!cachedOptionElements.containsKey(targetClass)) {
             loadClassDescriptorInCache(target);
         }
         for (OptionElement optionElement : cachedOptionElements.get(targetClass)) {
-            JavaMethod<Object, Collection> optionValueMethod = cachedOptionValueMethods.get(optionElement);
+            JavaMethod<Object, ?> optionValueMethod = cachedOptionValueMethods.get(optionElement);
             options.put(optionElement.getOptionName(), new InstanceOptionDescriptor(target, optionElement, optionValueMethod));
         }
-        return CollectionUtils.sort(options.values());
+        return options;
     }
 
     private void loadClassDescriptorInCache(Object target) {
-        final Collection<OptionElement> optionElements = getOptionElements(target);
-        List<JavaMethod<Object, Collection>> optionValueMethods = loadValueMethodForOption(target.getClass());
-        Set<String> processedOptionElements = new HashSet<String>();
-        for (OptionElement optionElement : optionElements) {
-            if (processedOptionElements.contains(optionElement.getOptionName())) {
-                throw new OptionValidationException(String.format("@Option '%s' linked to multiple elements in class '%s'.",
+        final Collection<OptionElementAndSignature> optionElements = getOptionElements(target);
+        List<JavaMethod<Object, ?>> optionValueMethods = loadValueMethodForOption(target.getClass());
+        Map<String, MethodSignature> processedOptionElements = new HashMap<>();
+        for (OptionElementAndSignature optionElementAndSignature : optionElements) {
+            OptionElement optionElement = optionElementAndSignature.element;
+            MethodSignature signature = optionElementAndSignature.signature;
+
+            if (processedOptionElements.containsKey(optionElement.getOptionName())) {
+                MethodSignature existingSignature = processedOptionElements.get(optionElement.getOptionName());
+                if (!Objects.equals(signature, existingSignature)) {
+                    throw new OptionValidationException(String.format("@Option '%s' linked to multiple elements in class '%s'.",
                         optionElement.getOptionName(), target.getClass().getName()));
+                }
+                continue;
             }
-            processedOptionElements.add(optionElement.getOptionName());
-            JavaMethod<Object, Collection> optionValueMethodForOption = getOptionValueMethodForOption(optionValueMethods, optionElement);
+            processedOptionElements.put(optionElement.getOptionName(), signature);
+            JavaMethod<Object, ?> optionValueMethodForOption = getOptionValueMethodForOption(optionValueMethods, optionElement);
 
             cachedOptionElements.put(target.getClass(), optionElement);
             cachedOptionValueMethods.put(optionElement, optionValueMethodForOption);
         }
     }
 
-    private static JavaMethod<Object, Collection> getOptionValueMethodForOption(List<JavaMethod<Object, Collection>> optionValueMethods, OptionElement optionElement) {
-        JavaMethod<Object, Collection> valueMethod = null;
-        for (JavaMethod<Object, Collection> optionValueMethod : optionValueMethods) {
+    private static JavaMethod<Object, ?> getOptionValueMethodForOption(List<JavaMethod<Object, ?>> optionValueMethods, OptionElement optionElement) {
+        JavaMethod<Object, ?> valueMethod = null;
+        for (JavaMethod<Object, ?> optionValueMethod : optionValueMethods) {
             String[] optionNames = getOptionNames(optionValueMethod);
             if (CollectionUtils.toList(optionNames).contains(optionElement.getOptionName())) {
                 if (valueMethod == null) {
@@ -90,19 +107,46 @@ public class OptionReader {
         return valueMethod;
     }
 
-    private static String[] getOptionNames(JavaMethod<Object, Collection> optionValueMethod) {
+    private static String[] getOptionNames(JavaMethod<Object, ?> optionValueMethod) {
         OptionValues optionValues = optionValueMethod.getMethod().getAnnotation(OptionValues.class);
-        if (optionValues != null) {
-            return optionValues.value();
-        }
-        return optionValueMethod.getMethod().getAnnotation(org.gradle.api.internal.tasks.options.OptionValues.class).value();
+        return optionValues.value();
     }
 
-    private Collection<OptionElement> getOptionElements(Object target) {
-        List<OptionElement> allOptionElements = new ArrayList<OptionElement>();
+    private static final class OptionElementAndSignature {
+        final OptionElement element;
+        @Nullable
+        final MethodSignature signature;
+
+        OptionElementAndSignature(OptionElement element, @Nullable MethodSignature signature) {
+            this.element = element;
+            this.signature = signature;
+        }
+    }
+
+    private Collection<OptionElementAndSignature> getOptionElements(Object target) {
+        List<OptionElementAndSignature> allOptionElements = new ArrayList<>();
+        Set<Class<?>> visitedInterfaces = new HashSet<>();
+        Deque<Class<?>> interfacesToCheck = new ArrayDeque<>();
+
         for (Class<?> type = target.getClass(); type != Object.class && type != null; type = type.getSuperclass()) {
+            interfacesToCheck.addAll(Arrays.asList(type.getInterfaces()));
+
             allOptionElements.addAll(getMethodAnnotations(type));
-            allOptionElements.addAll(getFieldAnnotations(type));
+            for (OptionElement element : getFieldAnnotations(type)) {
+                allOptionElements.add(new OptionElementAndSignature(element, null));
+            }
+        }
+
+        while (interfacesToCheck.size() > 0) {
+            Class<?> type = interfacesToCheck.pop();
+
+            if (!visitedInterfaces.add(type)) {
+                continue;
+            }
+
+            interfacesToCheck.addAll(Arrays.asList(type.getInterfaces()));
+
+            allOptionElements.addAll(getMethodAnnotations(type));
         }
 
         return allOptionElements;
@@ -111,22 +155,16 @@ public class OptionReader {
     private List<OptionElement> getFieldAnnotations(Class<?> type) {
         List<OptionElement> fieldOptionElements = new ArrayList<OptionElement>();
         for (Field field : type.getDeclaredFields()) {
-            Option option = findOption(field, Option.class);
+            Option option = findOption(field);
             if (option != null) {
                 fieldOptionElements.add(FieldOptionElement.create(option, field, optionValueNotationParserFactory));
-            } else {
-                org.gradle.api.internal.tasks.options.Option internalOption = findOption(field, org.gradle.api.internal.tasks.options.Option.class);
-                if (internalOption != null) {
-                    SingleMessageLogger.nagUserOfDeprecated("org.gradle.api.internal.tasks.options.Option", "Use org.gradle.api.tasks.options.Option instead");
-                    fieldOptionElements.add(FieldOptionElement.create(internalOption, field, optionValueNotationParserFactory));
-                }
             }
         }
         return fieldOptionElements;
     }
 
-    private <T extends Annotation> T findOption(Field field, Class<T> optionType) {
-        T option = field.getAnnotation(optionType);
+    private Option findOption(Field field) {
+        Option option = field.getAnnotation(Option.class);
         if (option != null) {
             if (Modifier.isStatic(field.getModifiers())) {
                 throw new OptionValidationException(String.format("@Option on static field '%s' not supported in class '%s'.",
@@ -136,27 +174,21 @@ public class OptionReader {
         return option;
     }
 
-    private List<OptionElement> getMethodAnnotations(Class<?> type) {
-        List<OptionElement> methodOptionElements = new ArrayList<OptionElement>();
+    private List<OptionElementAndSignature> getMethodAnnotations(Class<?> type) {
+        List<OptionElementAndSignature> methodOptionElements = new ArrayList<>();
         for (Method method : type.getDeclaredMethods()) {
-            Option option = findOption(method, Option.class);
+            Option option = findOption(method);
             if (option != null) {
                 OptionElement methodOptionDescriptor = MethodOptionElement.create(option, method,
                     optionValueNotationParserFactory);
-                methodOptionElements.add(methodOptionDescriptor);
-            }  else {
-                org.gradle.api.internal.tasks.options.Option internalOption = findOption(method, org.gradle.api.internal.tasks.options.Option.class);
-                if (internalOption != null) {
-                    SingleMessageLogger.nagUserOfDeprecated("org.gradle.api.internal.tasks.options.Option", "Use org.gradle.api.tasks.options.Option instead");
-                    methodOptionElements.add(MethodOptionElement.create(internalOption, method, optionValueNotationParserFactory));
-                }
+                methodOptionElements.add(new OptionElementAndSignature(methodOptionDescriptor, MethodSignature.from(method)));
             }
         }
         return methodOptionElements;
     }
 
-    private <T extends Annotation> T findOption(Method method, Class<T> optionType) {
-        T option = method.getAnnotation(optionType);
+    private Option findOption(Method method) {
+        Option option = method.getAnnotation(Option.class);
         if (option != null) {
             if (Modifier.isStatic(method.getModifiers())) {
                 throw new OptionValidationException(String.format("@Option on static method '%s' not supported in class '%s'.",
@@ -166,41 +198,46 @@ public class OptionReader {
         return option;
     }
 
-    private static List<JavaMethod<Object, Collection>> loadValueMethodForOption(Class<?> declaredClass) {
-        List<JavaMethod<Object, Collection>> methods = new ArrayList<JavaMethod<Object, Collection>>();
+    private static List<JavaMethod<Object, ?>> loadValueMethodForOption(Class<?> declaredClass) {
+        List<JavaMethod<Object, ?>> methods = new ArrayList<>();
         for (Class<?> type = declaredClass; type != Object.class && type != null; type = type.getSuperclass()) {
             for (Method method : type.getDeclaredMethods()) {
-                JavaMethod<Object, Collection> optionValuesMethod = getAsOptionValuesMethod(type, method, OptionValues.class);
+                JavaMethod<Object, ?> optionValuesMethod = getAsOptionValuesMethod(type, method);
                 if (optionValuesMethod != null) {
                     methods.add(optionValuesMethod);
-                } else {
-                    optionValuesMethod = getAsOptionValuesMethod(type, method, org.gradle.api.internal.tasks.options.OptionValues.class);
-                    if (optionValuesMethod != null) {
-                        SingleMessageLogger.nagUserOfDeprecated("org.gradle.api.internal.tasks.options.OptionValues", "Use org.gradle.api.tasks.options.OptionValues instead");
-                        methods.add(optionValuesMethod);
-                    }
                 }
-
             }
         }
         return methods;
     }
 
-    private static <T extends Annotation> JavaMethod<Object, Collection> getAsOptionValuesMethod(Class<?> type, Method method, Class<T> optionValuesType) {
-        T optionValues = method.getAnnotation(optionValuesType);
+    private static JavaMethod<Object, ?> getAsOptionValuesMethod(Class<?> type, Method method) {
+        OptionValues optionValues = method.getAnnotation(OptionValues.class);
         if (optionValues == null) {
             return null;
         }
-        if (Collection.class.isAssignableFrom(method.getReturnType())
-            && method.getParameterTypes().length == 0
-            && !Modifier.isStatic(method.getModifiers())) {
-            return JavaReflectionUtil.method(Collection.class, method);
-        } else {
-            throw new OptionValidationException(
-                String.format("@OptionValues annotation not supported on method '%s' in class '%s'. Supported method must be non-static, return a Collection<String> and take no parameters.",
-                    method.getName(),
-                    type.getName()));
+        if (method.getParameterTypes().length == 0 && !Modifier.isStatic(method.getModifiers())) {
+            if (Collection.class.isAssignableFrom(method.getReturnType())) {
+                return JavaMethod.of(Collection.class, method);
+            } else if (Provider.class.equals(method.getReturnType())
+                && Collection.class.isAssignableFrom(getProviderNestedRawType(method.getGenericReturnType()))) {
+                return JavaMethod.of(Provider.class, method);
+            }
         }
+        throw new OptionValidationException(
+            String.format("@OptionValues annotation not supported on method '%s' in class '%s'. " +
+                    "Supported method must be non-static, return a Collection<String> or Provider<Collection<String>> and take no parameters.",
+                method.getName(),
+                type.getName())
+        );
     }
 
+    /**
+     * Returns Provider's nested raw type.
+     */
+    @SuppressWarnings("unchecked")
+    private static Class<?> getProviderNestedRawType(Type providerType) {
+        TypeToken<Provider<?>> typeToken = (TypeToken<Provider<?>>) TypeToken.of(providerType);
+        return JavaReflectionUtil.extractNestedType(typeToken, Provider.class, 0).getRawType();
+    }
 }

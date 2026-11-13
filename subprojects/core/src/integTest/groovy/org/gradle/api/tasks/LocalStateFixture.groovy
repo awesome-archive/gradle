@@ -19,14 +19,14 @@ package org.gradle.api.tasks
 class LocalStateFixture {
     static String defineTaskWithLocalState(boolean useRuntimeApi, localStateFile = 'file("local-state.json")') {
         def action = """
-            if (project.hasProperty("assertLocalState")) {
+            if (System.getProperty("assertLocalState")) {
                 assert localStateFile.isFile()
             }
-            if (project.hasProperty("assertNoLocalState")) {
+            if (System.getProperty("assertNoLocalState")) {
                 assert !localStateFile.exists()
             }
-            project.file("build/output.txt").text = "Output"
-            localStateFile = org.gradle.util.DeferredUtil.unpack(localStateFile)
+            new File("build/output.txt").text = "Output"
+            localStateFile = org.gradle.util.internal.DeferredUtil.unpackOrNull(localStateFile)
             if (localStateFile != null) {
                 localStateFile.text = "['Some internal state']"
             }
@@ -51,7 +51,7 @@ class LocalStateFixture {
                         $action
                     }
                 }
-                
+
                 task customTask(type: CustomTask) {
                     outputDir = file("build")
                     localStateFile = $localStateFile

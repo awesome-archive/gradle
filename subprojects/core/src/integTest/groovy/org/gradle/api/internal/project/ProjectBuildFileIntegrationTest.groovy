@@ -25,6 +25,7 @@ class ProjectBuildFileIntegrationTest extends AbstractIntegrationSpec {
         !buildFile.exists()
 
         when:
+        createDirs("child")
         settingsFile << "include 'child'"
         def initScript = file("init.gradle") << """
             rootProject { 
@@ -42,7 +43,7 @@ class ProjectBuildFileIntegrationTest extends AbstractIntegrationSpec {
     def "buildSrc project.buildFile is non null when does not exist"() {
         given:
         executer.requireOwnGradleUserHomeDir()
-        file("buildSrc").mkdirs()
+        file("buildSrc/settings.gradle").createFile()
 
         expect:
         !buildFile.exists()

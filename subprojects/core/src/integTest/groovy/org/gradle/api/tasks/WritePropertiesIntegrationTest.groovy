@@ -17,19 +17,20 @@
 package org.gradle.api.tasks
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import spock.lang.Unroll
+
+import static org.gradle.util.internal.GUtil.loadProperties
 
 class WritePropertiesIntegrationTest extends AbstractIntegrationSpec {
     def "empty properties are written properly"() {
         given:
         buildFile << """
             task props(type: WriteProperties) {
-                outputFile = file("output.properties")
+                destinationFile = file("output.properties")
             }
         """
 
         when:
-        succeeds "props"
+        runProps()
         then:
         file("output.properties").text == ""
     }
@@ -39,40 +40,44 @@ class WritePropertiesIntegrationTest extends AbstractIntegrationSpec {
         buildFile << """
             task props(type: WriteProperties) {
                 comment = "Line comment"
-                outputFile = file("output.properties")
+                destinationFile = file("output.properties")
             }
         """
 
         when:
-        succeeds "props"
+        runProps()
         then:
         file("output.properties").text == normalize("""
             #Line comment
-        """)
+            """)
     }
 
-    def "simple properties are written sorted alphabetically"() {
+    private runProps() {
+        succeeds "props"
+    }
+    def "simple properties are written sorted alphabetically with #outputProprertyName"() {
         given:
         buildFile << """
             task props(type: WriteProperties) {
                 properties = [one: "1", two: "2", three: "three"]
                 comment = "Line comment"
-                outputFile = file("output.properties")
+                destinationFile = file("destinationFile.properties")
             }
         """
 
         when:
-        succeeds "props"
+
+        runProps()
+
         then:
-        file("output.properties").text == normalize("""
+        file("destinationFile.properties").text == normalize("""
             #Line comment
             one=1
             three=three
             two=2
-        """)
+            """)
     }
 
-    @Unroll
     def "unicode characters are escaped when #description"() {
         given:
         buildFile << """
@@ -80,17 +85,17 @@ class WritePropertiesIntegrationTest extends AbstractIntegrationSpec {
                 properties = [név: "Rezső"]
                 comment = "Eső leső"
                 $encoding
-                outputFile = file("output.properties")
+                destinationFile = file("output.properties")
             }
         """
 
         when:
-        succeeds "props"
+        runProps()
         then:
         file("output.properties").text == normalize("""
             #Es\\u0151 les\\u0151
             n\\u00E9v=Rezs\\u0151
-        """)
+            """)
 
         where:
         encoding              | description
@@ -105,18 +110,18 @@ class WritePropertiesIntegrationTest extends AbstractIntegrationSpec {
                 properties = [név: "Rezső"]
                 encoding = "utf-8"
                 comment = "Eső leső"
-                outputFile = file("output.properties")
+                destinationFile = file("output.properties")
             }
         """
 
         when:
-        succeeds "props"
+        runProps()
         then:
         // Note Properties always escape Unicode in comments for some reason
         file("output.properties").getText("utf-8") == normalize("""
             #Es\\u0151 les\\u0151
             név=Rezső
-        """)
+            """)
     }
 
     def "specified line separator is used"() {
@@ -126,36 +131,97 @@ class WritePropertiesIntegrationTest extends AbstractIntegrationSpec {
                 properties = [one: "1", two: "2", three: "three"]
                 comment = "Line comment"
                 lineSeparator = "EOL"
-                outputFile = file("output.properties")
+                destinationFile = file("output.properties")
             }
         """
 
         when:
-        succeeds "props"
+        runProps()
         then:
         file("output.properties").text == normalize("""
             #Line comment
             one=1
             three=three
             two=2
-        """).split("\n", -1).join("EOL")
+            """).split("\n", -1).join("EOL")
     }
 
-    @Unroll
     def "value cannot be '#propValue'"() {
         given:
         buildFile << """
             task props(type: WriteProperties) {
                 property "someProp", $propValue
-                outputFile = file("output.properties")
+                destinationFile = file("output.properties")
             }
         """
         when:
         fails "props"
         then:
-        result.error.contains("Property 'someProp' is not allowed to have a null value.")
+        failure.assertHasCause("Property 'someProp' is not allowed to have a null value.")
         where:
         propValue << [ "null", "{ null }" ]
+    }
+
+    def "value can be provided"() {
+        given:
+        buildFile << """
+            task props(type: WriteProperties) {
+                property "provided", provider { "42" }
+                destinationFile = file("output.properties")
+            }
+        """
+        when:
+        runProps()
+        then:
+        loadProperties(file('output.properties'))['provided'] == '42'
+    }
+
+    def "provided value overrides existing value and vice versa"() {
+        given:
+        buildFile << """
+            task props(type: WriteProperties) {
+                property "provided", "47"
+                property "provided", provider { "42" }
+                property "literal", provider { "99" }
+                property "literal", "100"
+                destinationFile = file("output.properties")
+            }
+        """
+        when:
+        runProps()
+        then:
+        def props = loadProperties(file('output.properties'))
+        props['provided'] == '42'
+        props['literal'] == '100'
+    }
+
+    def "setProperties overrides all properties"() {
+        given:
+        buildFile << """
+            task props(type: WriteProperties) {
+               property "provided", provider { "42" }
+               property "old-provided", provider { "foo" }
+               property "literal", "pew"
+               property "old-literal", "bar"
+               setProperties([
+                  provided: provider { "99" },
+                  literal: "pewpew",
+                  newProp: "newValue",
+                  newProvided: provider { "newProvidedValue" }
+               ])
+               destinationFile = file("output.properties")
+            }
+        """
+        when:
+        runProps()
+        then:
+        def props = loadProperties(file('output.properties'))
+        props['provided'] == '99'
+        props['old-provided'] == null
+        props['literal'] == 'pewpew'
+        props['old-literal'] == null
+        props['newProp'] == 'newValue'
+        props['newProvided'] == 'newProvidedValue'
     }
 
     private static String normalize(String text) {

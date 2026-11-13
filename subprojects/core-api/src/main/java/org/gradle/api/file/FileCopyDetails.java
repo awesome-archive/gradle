@@ -15,9 +15,11 @@
  */
 package org.gradle.api.file;
 
-import org.gradle.api.Incubating;
+import org.gradle.api.Action;
+import org.gradle.api.Describable;
 import org.gradle.api.NonExtensible;
 import org.gradle.internal.HasInternalProtocol;
+import org.gradle.internal.instrumentation.api.annotations.NotToBeMigratedToLazy;
 
 /**
  * <p>Provides details about a file or directory about to be copied, and allows some aspects of the destination file to
@@ -29,12 +31,15 @@ import org.gradle.internal.HasInternalProtocol;
  * <p>Access to the source file itself after any filters have been added is not a supported operation.
  * </p>
  *
+ * @since 0.9
  */
-@HasInternalProtocol
 @NonExtensible
-public interface FileCopyDetails extends FileTreeElement, ContentFilterable {
+@HasInternalProtocol
+@NotToBeMigratedToLazy
+public interface FileCopyDetails extends FileTreeElement, ContentFilterable, Describable {
     /**
      * Excludes this file from the copy.
+     * @since 0.9
      */
     void exclude();
 
@@ -42,6 +47,7 @@ public interface FileCopyDetails extends FileTreeElement, ContentFilterable {
      * Sets the destination name of this file.
      *
      * @param name The destination name of this file.
+     * @since 0.9
      */
     void setName(String name);
 
@@ -49,6 +55,7 @@ public interface FileCopyDetails extends FileTreeElement, ContentFilterable {
      * Sets the destination path of this file.
      *
      * @param path The path of this file.
+     * @since 0.9
      */
     void setPath(String path);
 
@@ -56,31 +63,42 @@ public interface FileCopyDetails extends FileTreeElement, ContentFilterable {
      * Sets the destination path of this file.
      *
      * @param path the new path for this file.
+     * @since 0.9
      */
     void setRelativePath(RelativePath path);
 
     /**
-     * Sets the Unix permissions of this file.
+     * Configuration action for specifying file and directory access permissions.
+     * For details see {@link ConfigurableFilePermissions}.
      *
-     * @param mode the Unix permissions, e.g. {@code 0644}.
+     * @since 8.3
      */
-    void setMode(int mode);
+    void permissions(Action<? super ConfigurableFilePermissions> configureAction);
+
+    /**
+     * Set file and directory access permissions based on an externally
+     * provided permission instance.
+     * For details see {@link ConfigurableFilePermissions}.
+     *
+     * @since 8.3
+     */
+    void setPermissions(FilePermissions permissions);
 
     /**
      * The strategy to use if there is already a file at this file's destination.
+     * @since 1.7
      */
-    @Incubating
     void setDuplicatesStrategy(DuplicatesStrategy strategy);
 
     /**
      * The strategy to use if there is already a file at this file's destination.
      * <p>
-     * The value can be set with a case insensitive string of the enum value (e.g. {@code 'exclude'} for {@link DuplicatesStrategy#EXCLUDE}).
+     * The value can be set with a case-insensitive string of the enum value (e.g. {@code 'exclude'} for {@link DuplicatesStrategy#EXCLUDE}).
      *
      * @see DuplicatesStrategy
      * @return the strategy to use for this file.
+     * @since 1.7
      */
-    @Incubating
     DuplicatesStrategy getDuplicatesStrategy();
 
     /**
@@ -88,6 +106,7 @@ public interface FileCopyDetails extends FileTreeElement, ContentFilterable {
      *
      * @return The destination name. Never returns null.
      */
+    @Override
     String getName();
 
     /**
@@ -98,6 +117,7 @@ public interface FileCopyDetails extends FileTreeElement, ContentFilterable {
      *
      * @return The path, relative to the root of the copy destination. Never returns null.
      */
+    @Override
     String getPath();
 
     /**
@@ -105,12 +125,14 @@ public interface FileCopyDetails extends FileTreeElement, ContentFilterable {
      *
      * @return The path, relative to the root of the copy destination. Never returns null.
      */
+    @Override
     RelativePath getRelativePath();
 
     /**
      * Returns the base name of this file at the copy source.
      *
      * @return The source name. Never returns null.
+     * @since 2.2
      */
     String getSourceName();
 
@@ -121,6 +143,7 @@ public interface FileCopyDetails extends FileTreeElement, ContentFilterable {
      * Same as calling <code>getRelativeSourcePath().getPathString()</code>.
      *
      * @return The path, relative to the root of the containing file tree. Never returns null.
+     * @since 2.2
      */
     String getSourcePath();
 
@@ -128,6 +151,7 @@ public interface FileCopyDetails extends FileTreeElement, ContentFilterable {
      * Returns the path of this file, relative to the root of the containing file tree.
      *
      * @return The path, relative to the root of the containing file tree. Never returns null.
+     * @since 2.2
      */
     RelativePath getRelativeSourcePath();
 

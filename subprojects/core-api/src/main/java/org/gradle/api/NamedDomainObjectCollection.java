@@ -16,16 +16,20 @@
 package org.gradle.api;
 
 import groovy.lang.Closure;
+import org.gradle.api.internal.GeneratedSubclasses;
+import org.gradle.api.provider.Provider;
 import org.gradle.api.specs.Spec;
+import org.gradle.api.tasks.Internal;
+import org.gradle.declarative.dsl.model.annotations.HiddenInDefinition;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.util.Collection;
 import java.util.List;
 import java.util.SortedMap;
 import java.util.SortedSet;
 
 /**
- * <p>A {@code NamedDomainObjectCollection} represents a collection of domain objects that have an inherent, constant, name.</p>
+ * <p>A {@code NamedDomainObjectCollection} represents a collection of objects that have an inherent, constant, name.</p>
  *
  * <p>Objects to be added to a named domain object collection must implement {@code equals()} in such a way that no two objects
  * with different names are considered equal. That is, all equality tests <strong>must</strong> consider the name as an
@@ -61,16 +65,18 @@ import java.util.SortedSet;
  * </pre>
  *
  * <p>{@link Rule} objects can be attached to the collection in order to respond to requests for objects by name
- * where no object with name exists in the collection. This mechanism can be used to create objects on demand. 
+ * where no object with name exists in the collection. This mechanism can be used to create objects on demand.
  * For example: </p>
- * 
+ *
  * <pre>
  * books.addRule('create any') { books.add(new Book(name: "gradle", title: null)) }
  * books.gradle.name == "gradle"
  * </pre>
- * 
- * @param <T> The type of domain objects in this collection.
+ *
+ * @param <T> The type of objects in this collection.
+ * @since 0.9
  */
+@HiddenInDefinition
 public interface NamedDomainObjectCollection<T> extends DomainObjectCollection<T> {
 
     /**
@@ -79,6 +85,7 @@ public interface NamedDomainObjectCollection<T> extends DomainObjectCollection<T
      * @param e the item to add to the collection
      * @return {@code true} if the item was added, or {@code} false if an item with the same name already exists.
      */
+    @Override
     boolean add(T e);
 
     /**
@@ -87,65 +94,84 @@ public interface NamedDomainObjectCollection<T> extends DomainObjectCollection<T
      * @param c the items to add to the collection
      * @return {@code true} if any item was added, or {@code} false if all items have non unique names within this collection.
      */
+    @Override
     boolean addAll(Collection<? extends T> c);
 
     /**
      * An object that represents the naming strategy used to name objects of this collection.
      *
      * @return Object representing the naming strategy.
+     * @since 1.0
      */
     Namer<T> getNamer();
 
     /**
-     * <p>Returns the objects in this collection, as a map from object name to object instance.</p>
-     *
-     * <p>The map is ordered by the <em>natural ordering</em> of the object names (i.e. keys).</p>
+     * Returns the objects in this collection, as a map from object name to object instance.
+     * <p>
+     * The map is ordered by the <em>natural ordering</em> of the object names (i.e. keys).
+     * <p>
+     * This operation is eager and will cause all elements of the collection to be realized.
      *
      * @return The objects. Returns an empty map if this collection is empty.
+     * @since 0.9
      */
     SortedMap<String, T> getAsMap();
 
     /**
-     * <p>Returns the names of the objects in this collection as a Set of Strings.</p>
-     *
-     * <p>The set of names is in <em>natural ordering</em>.</p>
+     * Returns the names of the objects in this collection as a Set of Strings.
+     * <p>
+     * The set of names is in <em>natural ordering</em>.
+     * <p>
+     * This operation is lazy and pending elements of this collection will not be realized.
      *
      * @return The names. Returns an empty set if this collection is empty.
+     * @since 1.8
      */
     SortedSet<String> getNames();
 
     /**
      * Locates an object by name, returning null if there is no such object.
+     * <p>
+     * This operation is eager and will cause the returned element, if any, to be realized.
      *
      * @param name The object name
      * @return The object with the given name, or null if there is no such object in this collection.
+     * @since 0.9
      */
     @Nullable
     T findByName(String name);
 
     /**
      * Locates an object by name, failing if there is no such object.
+     * <p>
+     * This operation is eager and will cause the returned element to be realized.
      *
      * @param name The object name
      * @return The object with the given name. Never returns null.
      * @throws UnknownDomainObjectException when there is no such object in this collection.
+     * @since 0.9
      */
     T getByName(String name) throws UnknownDomainObjectException;
 
     /**
      * Locates an object by name, failing if there is no such object. The given configure closure is executed against
      * the object before it is returned from this method. The object is passed to the closure as its delegate.
+     * <p>
+     * This operation is eager and will cause the returned element to be realized.
      *
      * @param name The object name
      * @param configureClosure The closure to use to configure the object.
      * @return The object with the given name, after the configure closure has been applied to it. Never returns null.
      * @throws UnknownDomainObjectException when there is no such object in this collection.
+     * @since 0.9
      */
     T getByName(String name, Closure configureClosure) throws UnknownDomainObjectException;
 
     /**
      * Locates an object by name, failing if there is no such object. The given configure action is executed against
      * the object before it is returned from this method.
+     * <p>
+     * This operation is eager and will cause the returned element to be realized.
      *
      * @param name The object name
      * @param configureAction The action to use to configure the object.
@@ -156,12 +182,15 @@ public interface NamedDomainObjectCollection<T> extends DomainObjectCollection<T
     T getByName(String name, Action<? super T> configureAction) throws UnknownDomainObjectException;
 
     /**
-     * Locates an object by name, failing if there is no such task. This method is identical to {@link
+     * Locates an object by name, failing if there is no such object. This method is identical to {@link
      * #getByName(String)}. You can call this method in your build script by using the groovy {@code []} operator.
+     * <p>
+     * This operation is eager and will cause the returned element to be realized.
      *
      * @param name The object name
      * @return The object with the given name. Never returns null.
      * @throws UnknownDomainObjectException when there is no such object in this collection.
+     * @since 0.9
      */
     T getAt(String name) throws UnknownDomainObjectException;
 
@@ -170,6 +199,7 @@ public interface NamedDomainObjectCollection<T> extends DomainObjectCollection<T
      *
      * @param rule The rule to add.
      * @return The added rule.
+     * @since 1.0
      */
     Rule addRule(Rule rule);
 
@@ -180,6 +210,7 @@ public interface NamedDomainObjectCollection<T> extends DomainObjectCollection<T
      * @param description The description of the rule.
      * @param ruleAction The closure to execute to apply the rule.
      * @return The added rule.
+     * @since 1.0
      */
     Rule addRule(String description, Closure ruleAction);
 
@@ -198,22 +229,104 @@ public interface NamedDomainObjectCollection<T> extends DomainObjectCollection<T
      * Returns the rules used by this collection.
      *
      * @return The rules, in the order they will be applied.
+     * @since 1.0
      */
     List<Rule> getRules();
 
     /**
      * {@inheritDoc}
      */
+    @Override
     <S extends T> NamedDomainObjectCollection<S> withType(Class<S> type);
+
+    /**
+     * Returns a collection containing the objects with names matching the provided filter.
+     * The returned collection is live, so that when matching objects are added to this collection,
+     * they are also visible in the filtered collection.
+     * <p>
+     * This method is an intermediate operation. It does not change the realized/unrealized state of the elements in the collection.
+     *
+     * @param nameFilter The specification to test names against.
+     * @return The collection of objects with names satisfying the filter. Returns an empty collection if there are no such objects in this collection.
+     *
+     * @since 8.6
+     */
+    @Incubating
+    default NamedDomainObjectCollection<T> named(Spec<String> nameFilter) {
+        // default implementation is a workaround for plugins having their own custom collection implementation, based on an older interface (i.e. missing an implementation for this method)
+        throw new UnsupportedOperationException("Method not implemented by " + GeneratedSubclasses.unpack(this.getClass()).getName());
+    }
 
     /**
      * {@inheritDoc}
      */
+    @Override
     NamedDomainObjectCollection<T> matching(Spec<? super T> spec);
 
     /**
      * {@inheritDoc}
      */
+    @Override
     NamedDomainObjectCollection<T> matching(Closure spec);
 
+    /**
+     * Locates a object by name, failing if there is no such object.
+     * <p>
+     * This method is lazy and will not cause the returned element to be realized.
+     *
+     * @param name The object's name
+     * @return A {@link Provider} that will return the object when queried. The object may be created and configured at this point, if not already.
+     * @throws UnknownDomainObjectException If a object with the given name is not defined.
+     * @since 4.10
+     */
+    NamedDomainObjectProvider<T> named(String name) throws UnknownDomainObjectException;
+
+    /**
+     * Locates a object by name, failing if there is no such object.
+     * The given configure action is executed against the object before it is returned from the provider.
+     * <p>
+     * This method is lazy and will not cause the returned element to be realized.
+     *
+     * @param name The object's name
+     * @return A {@link Provider} that will return the object when queried. The object may be created and configured at this point, if not already.
+     * @throws UnknownDomainObjectException If an object with the given name is not defined.
+     * @since 5.0
+     */
+    NamedDomainObjectProvider<T> named(String name, Action<? super T> configurationAction) throws UnknownDomainObjectException;
+
+    /**
+     * Locates a object by name and type, failing if there is no such object.
+     * <p>
+     * This method is lazy and will not cause the returned element to be realized.
+     *
+     * @param name The object's name
+     * @param type The object's type
+     * @return A {@link Provider} that will return the object when queried. The object may be created and configured at this point, if not already.
+     * @throws UnknownDomainObjectException If an object with the given name is not defined.
+     * @since 5.0
+     */
+    <S extends T> NamedDomainObjectProvider<S> named(String name, Class<S> type) throws UnknownDomainObjectException;
+
+    /**
+     * Locates a object by name and type, failing if there is no such object.
+     * The given configure action is executed against the object before it is returned from the provider.
+     * <p>
+     * This method is lazy and will not cause the returned element to be realized.
+     *
+     * @param name The object's name
+     * @param type The object's type
+     * @param configurationAction The action to use to configure the object.
+     * @return A {@link Provider} that will return the object when queried. The object may be created and configured at this point, if not already.
+     * @throws UnknownDomainObjectException If an object with the given name is not defined.
+     * @since 5.0
+     */
+    <S extends T> NamedDomainObjectProvider<S> named(String name, Class<S> type, Action<? super S> configurationAction) throws UnknownDomainObjectException;
+
+    /**
+     * Provides access to the schema of all created or registered named domain objects in this collection.
+     *
+     * @since 4.10
+     */
+    @Internal
+    NamedDomainObjectCollectionSchema getCollectionSchema();
 }

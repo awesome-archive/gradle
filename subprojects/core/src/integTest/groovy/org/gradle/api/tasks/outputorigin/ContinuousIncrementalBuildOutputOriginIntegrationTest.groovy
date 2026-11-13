@@ -17,12 +17,11 @@
 package org.gradle.api.tasks.outputorigin
 
 import org.gradle.api.Action
-import org.gradle.api.internal.ClosureBackedAction
-import org.gradle.integtests.fixtures.ScopeIdsFixture
-import org.gradle.integtests.fixtures.TaskOutputOriginFixture
-import org.gradle.integtests.fixtures.executer.GradleExecuter
-import org.gradle.internal.id.UniqueId
 import org.gradle.integtests.fixtures.AbstractContinuousIntegrationTest
+import org.gradle.integtests.fixtures.OriginFixture
+import org.gradle.integtests.fixtures.ScopeIdsFixture
+import org.gradle.integtests.fixtures.executer.GradleExecuter
+import org.gradle.util.internal.ClosureBackedAction
 import org.junit.Rule
 
 class ContinuousIncrementalBuildOutputOriginIntegrationTest extends AbstractContinuousIntegrationTest {
@@ -37,20 +36,19 @@ class ContinuousIncrementalBuildOutputOriginIntegrationTest extends AbstractCont
         void afterExecute(Closure action) {
             afterExecute << new ClosureBackedAction<GradleExecuter>(action)
         }
-
     }
 
     @Rule
     public final ScopeIdsFixture scopeIds = new ScopeIdsFixture(delegatingExecuter, temporaryFolder)
 
     @Rule
-    public final TaskOutputOriginFixture originBuildInvocationIdFixture = new TaskOutputOriginFixture(delegatingExecuter, temporaryFolder)
+    public final OriginFixture originBuildInvocationIdFixture = new OriginFixture(delegatingExecuter, temporaryFolder)
 
-    UniqueId getBuildInvocationId() {
-        scopeIds.buildInvocationId
+    String getBuildInvocationId() {
+        scopeIds.buildInvocationId.asString()
     }
 
-    UniqueId originBuildInvocationId(String taskPath) {
+    String originBuildInvocationId(String taskPath) {
         originBuildInvocationIdFixture.originId(taskPath)
     }
 
@@ -69,8 +67,8 @@ class ContinuousIncrementalBuildOutputOriginIntegrationTest extends AbstractCont
 
         buildFile << """
             task t1 {
-                def o = file("o1")
                 def i = file("i1")
+                def o = file("o1")
                 inputs.files i
                 outputs.files o
                 doLast {
@@ -79,8 +77,8 @@ class ContinuousIncrementalBuildOutputOriginIntegrationTest extends AbstractCont
                 }
             }
             task t2 {
-                def o = file("o2")
                 def i = file("i2")
+                def o = file("o2")
                 inputs.files i
                 outputs.files o
                 doLast {
@@ -102,18 +100,18 @@ class ContinuousIncrementalBuildOutputOriginIntegrationTest extends AbstractCont
         update(i1, "2")
 
         then:
-        succeeds()
+        succeeds("t")
         afterBuild()
         originBuildInvocationId(":t1") == null
-        originBuildInvocationId(":t2") == scopeIds.buildInvocationIds[0]
+        originBuildInvocationId(":t2") == scopeIds.buildInvocationIds[0].asString()
 
         when:
         update(i2, "2")
 
         then:
-        succeeds()
+        succeeds("t")
         afterBuild()
-        originBuildInvocationId(":t1") == scopeIds.buildInvocationIds[1]
+        originBuildInvocationId(":t1") == scopeIds.buildInvocationIds[1].asString()
         originBuildInvocationId(":t2") == null
 
         and:

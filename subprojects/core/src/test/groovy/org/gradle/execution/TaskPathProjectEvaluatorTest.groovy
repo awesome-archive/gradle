@@ -1,5 +1,5 @@
 /*
- * Copyright 2012 the original author or authors.
+ * Copyright 2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,48 +16,49 @@
 
 package org.gradle.execution
 
-import org.gradle.api.BuildCancelledException
-import org.gradle.api.internal.project.ProjectInternal
+import org.gradle.api.internal.project.ProjectState
 import org.gradle.initialization.BuildCancellationToken
+import org.gradle.internal.buildoption.DefaultInternalOptions
+import org.gradle.internal.operations.TestBuildOperationExecutor
+import org.gradle.internal.work.WorkerLimits
 import spock.lang.Specification
 
 class TaskPathProjectEvaluatorTest extends Specification {
-    private cancellationToken = Mock(BuildCancellationToken)
-    private project = Mock(ProjectInternal)
-    private evaluator = new TaskPathProjectEvaluator(cancellationToken)
 
-    def "project configuration fails when cancelled"() {
-        given:
-        cancellationToken.cancellationRequested >> true
-
-        when:
-        evaluator.configure(project)
-
-        then:
-        thrown(BuildCancelledException)
-
-        and:
-        0 * project._
+    def buildOperationExecutor = new TestBuildOperationExecutor()
+    def workerLimits = Stub(WorkerLimits) {
+        getMaxWorkerCount() >> 2
     }
+    def evaluator = new TaskPathProjectEvaluator(
+        Stub(BuildCancellationToken),
+        buildOperationExecutor,
+        workerLimits,
+        new DefaultInternalOptions(["org.gradle.internal.isolated-projects.scheduler": "jit"])
+    )
 
-    def "project hierarchy configuration fails when cancelled"() {
-        def child1 = Mock(ProjectInternal)
-        def child2 = Mock(ProjectInternal)
-        def subprojects = [child1, child2]
-
+    def "just-in-time traversal does not configure descendants of a project that failed to configure"() {
         given:
-        project.subprojects >> subprojects
-        cancellationToken.cancellationRequested >>> [false, false, true]
+        def failure = new RuntimeException("root failed")
+        def grandchild = Mock(ProjectState)
+        def child = Mock(ProjectState) {
+            getUnorderedChildProjects() >> [grandchild]
+        }
+        def root = Mock(ProjectState) {
+            isRootProject() >> true
+            hasChildren() >> true
+            getUnorderedChildProjects() >> [child]
+        }
 
         when:
-        evaluator.configureHierarchy(project)
+        evaluator.configureHierarchyInParallel(root)
 
         then:
-        BuildCancelledException e = thrown()
+        1 * root.ensureSelfConfigured() >> { throw failure }
+        0 * child.ensureSelfConfigured()
+        0 * grandchild.ensureSelfConfigured()
 
         and:
-        1 * project.evaluate()
-        1 * child1.evaluate()
-        0 * child2._
+        def e = thrown(RuntimeException)
+        e.is(failure)
     }
 }

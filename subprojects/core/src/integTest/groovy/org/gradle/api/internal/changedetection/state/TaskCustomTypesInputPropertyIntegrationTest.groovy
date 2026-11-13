@@ -18,23 +18,22 @@ package org.gradle.api.internal.changedetection.state
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.internal.Actions
-import spock.lang.Unroll
 
 class TaskCustomTypesInputPropertyIntegrationTest extends AbstractIntegrationSpec {
     String customSerializableType() {
         """
 import java.io.Serializable;
 
-public class CustomType implements Serializable { 
+public class CustomType implements Serializable {
     public String value;
-    
+
     public CustomType(String value) { this.value = value; }
-    
+
     public boolean equals(Object o) {
         CustomType other = (CustomType)o;
         return other.value.equals(value);
     }
-    
+
     public int hashCode() { return value.hashCode(); }
 }
 """
@@ -46,16 +45,16 @@ public class CustomType implements Serializable {
         """
 import java.io.Serializable;
 
-public class CustomType implements Serializable { 
+public class CustomType implements Serializable {
     public String value;
-    
+
     public CustomType(String value) { this.value = value; }
-    
+
     public boolean equals(Object o) {
         CustomType other = (CustomType)o;
         return other.value.startsWith(value) || value.startsWith(other.value);
     }
-    
+
     public int hashCode() { return 1; }
 }
 """
@@ -78,7 +77,7 @@ public class SomeTask extends DefaultTask {
     public File f;
     @OutputDirectory
     public File getF() { return f; }
-    
+
     @TaskAction
     public void go() { }
 }
@@ -165,7 +164,7 @@ someTask.inputs.property "someValue", new CustomType("value1")
 
 ${customSerializableType()}
 """
-        buildFile << """
+        buildFile """
 task someTask {
     def f = file("build/e1")
     outputs.dir f
@@ -305,7 +304,7 @@ task someTask(type: SomeTask) {
         skipped(":someTask")
     }
 
-    def "can use custom type with non-deterministic serialized form"() {
+    def "using a custom type with non-deterministic serialized form causes to be out of date"() {
         file("buildSrc/src/main/java/CustomType.java") << customSerializableTypeWithNonDeterministicSerializedForm()
         buildFile << """
 task someTask {
@@ -331,7 +330,7 @@ task someTask {
         run "someTask"
 
         then:
-        skipped(":someTask")
+        executedAndNotSkipped(":someTask")
 
         // Change to different value
         when:
@@ -350,31 +349,30 @@ task someTask {
         skipped(":someTask")
     }
 
-    @Unroll
-    def "task can take as input a collection of custom types from various sources"() {
+    def "task can take as input a collection of custom types from various sources (#type)"() {
         def buildSrcType = file("buildSrc/src/main/java/CustomType.java")
         buildSrcType << customSerializableType()
         def otherScript = file("other.gradle")
         otherScript << """
-class ScriptPluginType extends CustomType {
-    ScriptPluginType(String value) { super(value) }
-}
-ext.pluginValue = new ScriptPluginType("abc")
-"""
+            class ScriptPluginType extends CustomType {
+                ScriptPluginType(String value) { super(value) }
+            }
+            ext.pluginValue = new ScriptPluginType("abc")
+        """
 
         buildFile << """
-class ScriptType extends CustomType {
-    ScriptType(String value) { super(value) }
-}
-
-apply from: 'other.gradle'
-
-task someTask {
-    inputs.property("v", [new CustomType('123'), new ScriptType('abc'), pluginValue] as $type)
-    outputs.file file("build/out")
-    doLast ${Actions.name}.doNothing()
-}
-"""
+            class ScriptType extends CustomType {
+                ScriptType(String value) { super(value) }
+            }
+            
+            apply from: 'other.gradle'
+            
+            task someTask {
+                inputs.property("v", ${typeConvert("[new CustomType('123'), new ScriptType('abc'), pluginValue]")})
+                outputs.file file("build/out")
+                doLast ${Actions.name}.doNothing()
+            }
+        """
 
         given:
         run "someTask"
@@ -387,7 +385,7 @@ task someTask {
 
         // Change the values of the property
         when:
-        buildFile.replace("[new CustomType('123'), new ScriptType('abc'), pluginValue] as $type", "[new CustomType('abc'), new ScriptType('123'), pluginValue] as $type")
+        buildFile.replace("[new CustomType('123'), new ScriptType('abc'), pluginValue]", "[new CustomType('abc'), new ScriptType('123'), pluginValue]")
 
         and:
         executer.withArgument("-i")
@@ -422,12 +420,12 @@ task someTask {
         skipped(":someTask")
 
         where:
-        type           | _
-        "List"         | _
-        "Set"          | _
-        "Map"          | _
-        "Object[]"     | _
-        "CustomType[]" | _
+        type           | typeConvert
+        "List"         | { "$it as List" }
+        "Set"          | { "$it as Set" }
+        "Map"          | { "${it}.collectEntries { [it, it] }" }
+        "Object[]"     | { "$it as Object[]" }
+        "CustomType[]" | { "$it as CustomType[]" }
     }
 
 }

@@ -19,12 +19,11 @@ package org.gradle.api.internal.changedetection.state
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.internal.Actions
 import spock.lang.Issue
-import spock.lang.Unroll
 
 class TaskEnumTypesInputPropertyIntegrationTest extends AbstractIntegrationSpec {
     @Issue("GRADLE-3018")
     def "task can take an input with enum type and task action defined in the build script"() {
-        buildFile << """
+        buildFile """
 task someTask {
     inputs.property "someEnum", SomeEnum.E1
     def f = file("build/e1")
@@ -83,7 +82,7 @@ task someOtherTask
     }
 
     def "task can take an input with enum type and task type defined in the build script"() {
-        buildFile << """
+        buildFile """
 class SomeTask extends DefaultTask {
     @Input
     SomeEnum e
@@ -223,7 +222,7 @@ public class SomeTask extends DefaultTask {
     public void go() { }
 }
 """
-        buildFile << """
+        buildFile """
 task someTask(type: SomeTask) {
     inputs.property "someEnum", SomeEnum.E1
     def f = file("build/e1")
@@ -294,7 +293,7 @@ public class SomeTask extends DefaultTask {
     public File f;
     @OutputDirectory
     public File getF() { return f; }
-    
+
     @TaskAction
     public void go() { }
 }
@@ -347,7 +346,6 @@ public enum SomeEnum {
         skipped(":someTask")
     }
 
-    @Unroll
     def "task can take as input a collection of enum type from various sources"() {
         def buildSrcEnum = file("buildSrc/src/main/java/BuildSrcEnum.java")
         buildSrcEnum << """
@@ -371,7 +369,7 @@ enum ScriptEnum {
 apply from: 'other.gradle'
 
 task someTask {
-    inputs.property("v", [BuildSrcEnum.E1, ScriptEnum.E1, pluginValue] as $type)
+    inputs.property("v", ${typeConvert("[BuildSrcEnum.E1, ScriptEnum.E1, pluginValue]")})
     outputs.file file("build/out")
     doLast ${Actions.name}.doNothing()
 }
@@ -388,7 +386,7 @@ task someTask {
 
         // Change the values of the property
         when:
-        buildFile.replace("[BuildSrcEnum.E1, ScriptEnum.E1, pluginValue] as $type", "[BuildSrcEnum.E2, pluginValue] as $type")
+        buildFile.replace("[BuildSrcEnum.E1, ScriptEnum.E1, pluginValue]", "[BuildSrcEnum.E2, pluginValue]")
 
         and:
         executer.withArgument("-i")
@@ -423,11 +421,11 @@ task someTask {
         skipped(":someTask")
 
         where:
-        type       | _
-        "List"     | _
-        "Set"      | _
-        "Map"      | _
-        "Object[]" | _
-        "Enum[]"   | _
+        type       | typeConvert
+        "List"     | { "$it as List" }
+        "Set"      | { "$it as Set" }
+        "Map"      | { "${it}.collectEntries { [it, it] }" }
+        "Object[]" | { "$it as Object[]" }
+        "Enum[]"   | { "$it as Enum[]" }
     }
 }

@@ -19,9 +19,13 @@ package org.gradle.configuration;
 import org.gradle.api.internal.GradleInternal;
 import org.gradle.api.internal.SettingsInternal;
 import org.gradle.api.internal.plugins.PluginAwareInternal;
-import org.gradle.api.internal.project.ProjectInternal;
+import org.gradle.api.internal.project.ProjectIdentity;
+import org.gradle.internal.service.scopes.Scope;
+import org.gradle.internal.service.scopes.ServiceScope;
+import org.gradle.util.Path;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
+import java.util.Locale;
 
 /**
  * Uniquely identifies the target of some configuration.
@@ -29,6 +33,7 @@ import javax.annotation.Nullable;
  * This is primarily used to support
  * {@code ApplyScriptPluginBuildOperationType.Details} and {@code ApplyPluginBuildOperationType.Details}.
  */
+@ServiceScope({Scope.Build.class, Scope.Settings.class, Scope.Project.class})
 public abstract class ConfigurationTargetIdentifier {
 
     private ConfigurationTargetIdentifier() {
@@ -39,7 +44,7 @@ public abstract class ConfigurationTargetIdentifier {
         SETTINGS,
         PROJECT;
 
-        public final String label = name().toLowerCase();
+        public final String label = name().toLowerCase(Locale.ROOT);
     }
 
     public abstract Type getTargetType();
@@ -56,7 +61,7 @@ public abstract class ConfigurationTargetIdentifier {
     /**
      * Returns null if the thing is of an unknown type.
      * This can happen with {@code apply(from: "foo", to: someTask)},
-     * where “to” can be absolutely anything.
+     * where "to" can be absolutely anything.
      */
     @Nullable
     public static ConfigurationTargetIdentifier of(Object any) {
@@ -67,27 +72,27 @@ public abstract class ConfigurationTargetIdentifier {
         }
     }
 
-    public static ConfigurationTargetIdentifier of(final ProjectInternal project) {
+    public static ConfigurationTargetIdentifier of(ProjectIdentity projectIdentity) {
         return new ConfigurationTargetIdentifier() {
             @Override
             public Type getTargetType() {
                 return Type.PROJECT;
             }
 
-            @Nullable
             @Override
             public String getTargetPath() {
-                return project.getProjectPath().getPath();
+                return projectIdentity.getProjectPath().asString();
             }
 
             @Override
             public String getBuildPath() {
-                return project.getGradle().getIdentityPath().getPath();
+                return projectIdentity.getBuildPath().asString();
             }
         };
     }
 
     public static ConfigurationTargetIdentifier of(final SettingsInternal settings) {
+        Path buildPath = settings.getGradle().getOwner().getIdentityPath();
         return new ConfigurationTargetIdentifier() {
             @Override
             public Type getTargetType() {
@@ -102,12 +107,13 @@ public abstract class ConfigurationTargetIdentifier {
 
             @Override
             public String getBuildPath() {
-                return settings.getGradle().getIdentityPath().getPath();
+                return buildPath.asString();
             }
         };
     }
 
     public static ConfigurationTargetIdentifier of(final GradleInternal gradle) {
+        Path buildPath = gradle.getOwner().getIdentityPath();
         return new ConfigurationTargetIdentifier() {
             @Override
             public Type getTargetType() {
@@ -122,7 +128,7 @@ public abstract class ConfigurationTargetIdentifier {
 
             @Override
             public String getBuildPath() {
-                return gradle.getIdentityPath().getPath();
+                return buildPath.asString();
             }
         };
     }

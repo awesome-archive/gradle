@@ -15,8 +15,6 @@
  */
 package org.gradle.api.tasks;
 
-import org.gradle.api.Incubating;
-
 import java.lang.annotation.Documented;
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -27,6 +25,8 @@ import java.lang.annotation.Target;
  * <p>Marks a property as specifying local state for a task.</p>
  *
  * <p>This annotation should be attached to the getter method in Java or the property in Groovy.
+ * In Kotlin, use the {@code get:} use-site target to attach it to the property getter, for example {@code @get:LocalState}.
+ * This also works on abstract properties, where the annotation without a use-site target does not compile.
  * Annotations on setters or just the field in Java are ignored.</p>
  *
  * <p>Local state is removed when the task is loaded from cache.</p>
@@ -36,6 +36,5 @@ import java.lang.annotation.Target;
 @Documented
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.METHOD, ElementType.FIELD})
-@Incubating
 public @interface LocalState {
 }

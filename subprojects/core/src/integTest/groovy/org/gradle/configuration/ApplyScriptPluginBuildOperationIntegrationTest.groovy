@@ -22,9 +22,13 @@ import org.gradle.integtests.fixtures.BuildOperationsFixture
 import org.gradle.test.fixtures.server.http.HttpServer
 import org.junit.Rule
 
-import static org.gradle.util.TextUtil.normaliseFileSeparators
+import static org.gradle.util.internal.TextUtil.normaliseFileSeparators
 
 class ApplyScriptPluginBuildOperationIntegrationTest extends AbstractIntegrationSpec {
+
+    def setup() {
+        executer.beforeExecute { withoutExtraRepositories() }
+    }
 
     def operations = new BuildOperationsFixture(executer, temporaryFolder)
 
@@ -143,7 +147,7 @@ class ApplyScriptPluginBuildOperationIntegrationTest extends AbstractIntegration
     def "captures for arbitrary targets"() {
         given:
         def script = file("script.gradle") << ""
-        buildScript """
+        buildFile """
             apply from: "${normaliseFileSeparators(script.absolutePath)}", to: new Object() {}
         """
 
@@ -170,7 +174,7 @@ class ApplyScriptPluginBuildOperationIntegrationTest extends AbstractIntegration
         httpServer.start()
         def script = file("script.gradle") << ""
         httpServer.allowGetOrHead("/script.gradle", script)
-        buildScript """
+        buildFile """
             apply from: "${httpServer.uri}/script.gradle"
         """
 

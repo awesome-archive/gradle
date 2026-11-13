@@ -18,19 +18,24 @@ package org.gradle.internal.resource.local;
 
 import org.apache.commons.io.FileUtils;
 import org.gradle.api.Action;
-import org.gradle.api.NonNullApi;
 import org.gradle.api.file.EmptyFileVisitor;
 import org.gradle.api.file.FileVisitDetails;
 import org.gradle.api.internal.file.collections.MinimalFileTree;
 import org.gradle.api.internal.file.collections.SingleIncludePatternFileTree;
 import org.gradle.internal.UncheckedException;
-import org.gradle.util.GFileUtils;
-import org.gradle.util.RelativePathUtil;
+import org.gradle.internal.file.PathTraversalChecker;
+import org.gradle.internal.hash.ChecksumService;
+import org.gradle.util.internal.GFileUtils;
+import org.gradle.util.internal.RelativePathUtil;
+import org.jspecify.annotations.NullMarked;
 
 import java.io.File;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 import static org.gradle.internal.FileUtils.hasExtension;
 
@@ -47,8 +52,10 @@ import static org.gradle.internal.FileUtils.hasExtension;
  * <p>
  * This file store also provides searching via relative ant path patterns.
  */
-@NonNullApi
+@NullMarked
 public class DefaultPathKeyFileStore implements PathKeyFileStore {
+
+    private final ChecksumService checksumService;
 
     /*
         When writing a file into the filestore a marker file with this suffix is written alongside,
@@ -59,7 +66,8 @@ public class DefaultPathKeyFileStore implements PathKeyFileStore {
 
     private File baseDir;
 
-    public DefaultPathKeyFileStore(File baseDir) {
+    public DefaultPathKeyFileStore(ChecksumService checksumService, File baseDir) {
+        this.checksumService = checksumService;
         this.baseDir = baseDir;
     }
 
@@ -67,11 +75,21 @@ public class DefaultPathKeyFileStore implements PathKeyFileStore {
         return baseDir;
     }
 
-    private File getFile(String path) {
-        return new File(baseDir, path);
+    private File getFile(String... path) {
+        String composedPath;
+        if (path.length == 1) {
+            composedPath = path[0];
+        } else {
+            // We need to ignore empty Strings as this is what "new File(parent, path)" was doing for "path" empty.
+            composedPath = Arrays.stream(path)
+                .filter(((Predicate<String>) String::isEmpty).negate())
+                .collect(Collectors.joining(File.separator));
+        }
+        return new File(baseDir, PathTraversalChecker.safePathName(trimLeadingSlash(composedPath)));
     }
 
-    private File getFileWhileCleaningInProgress(String path) {
+
+    private File getFileWhileCleaningInProgress(String... path) {
         File file = getFile(path);
         File markerFile = getInProgressMarkerFile(file);
         if (markerFile.exists()) {
@@ -109,6 +127,7 @@ public class DefaultPathKeyFileStore implements PathKeyFileStore {
 
         try {
             return doAdd(path, new Action<File>() {
+                @Override
                 public void execute(File file) {
                     if (source.isDirectory()) {
                         GFileUtils.moveExistingDirectory(source, file);
@@ -151,6 +170,7 @@ public class DefaultPathKeyFileStore implements PathKeyFileStore {
 
         final Set<LocallyAvailableResource> entries = new HashSet<LocallyAvailableResource>();
         findFiles(pattern).visit(new EmptyFileVisitor() {
+            @Override
             public void visitFile(FileVisitDetails fileDetails) {
                 final File file = fileDetails.getFile();
                 // We cannot clean in progress markers, or in progress files here because
@@ -185,14 +205,14 @@ public class DefaultPathKeyFileStore implements PathKeyFileStore {
     }
 
     protected LocallyAvailableResource entryAt(final String path) {
-        return new DefaultLocallyAvailableResource(getFile(path));
+        return new DefaultLocallyAvailableResource(getFile(path), checksumService);
     }
 
     @Override
-    public LocallyAvailableResource get(String key) {
-        final File file = getFileWhileCleaningInProgress(key);
+    public LocallyAvailableResource get(String... path) {
+        final File file = getFileWhileCleaningInProgress(path);
         if (file.exists()) {
-            return new DefaultLocallyAvailableResource(getFile(key));
+            return new DefaultLocallyAvailableResource(getFile(path), checksumService);
         } else {
             return null;
         }
@@ -202,4 +222,10 @@ public class DefaultPathKeyFileStore implements PathKeyFileStore {
     private static void deleteFileQuietly(File file) {
         file.delete();
     }
-}
+
+    private static String trimLeadingSlash(String composedPath) {
+        if (!composedPath.isEmpty() && composedPath.charAt(0) == '/') {
+            return composedPath.substring(1);
+        }
+        return composedPath;
+    }}

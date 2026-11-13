@@ -38,11 +38,11 @@ class CompositeBuildContinueOnSingleFailureIntegrationTest extends AbstractCompo
                     }
                 }
                 task succeeds {
-                    shouldRunAfter fails
                 }
                 task checkContinueFlag {
+                    def continueFlag = gradle.startParameter.continueOnFailure
                     doLast {
-                        println "continueOnFailure = " + gradle.startParameter.continueOnFailure
+                        println "continueOnFailure = " + continueFlag
                     }
                 }
 """
@@ -63,12 +63,17 @@ class CompositeBuildContinueOnSingleFailureIntegrationTest extends AbstractCompo
         dependsOn gradle.includedBuild('buildB').task(':succeeds')
     }
 """
-
+        buildB.buildFile << """
+    // force sequential execution
+    tasks.succeeds.mustRunAfter tasks.fails
+"""
         fails(buildA, ":delegate")
 
         then:
+        failure.assertHasFailures(1)
         assertTaskExecuted(":buildB", ":fails")
         assertTaskNotExecuted(":buildB", ":succeeds")
+        assertTaskNotExecuted(":", ":delegate")
     }
 
     def "attempts all dependencies when run with --continue when one delegated task dependency fails"() {
@@ -84,9 +89,11 @@ class CompositeBuildContinueOnSingleFailureIntegrationTest extends AbstractCompo
         fails(buildA, ":delegate")
 
         then:
+        failure.assertHasFailures(1)
         assertTaskExecutedOnce(":buildB", ":fails")
         assertTaskExecutedOnce(":buildC", ":succeeds")
         assertTaskExecutedOnce(":buildB", ":succeeds")
+        assertTaskNotExecuted(":", ":delegate")
     }
 
     @Issue("https://github.com/gradle/gradle/issues/2520")
@@ -107,11 +114,11 @@ class CompositeBuildContinueOnSingleFailureIntegrationTest extends AbstractCompo
         fails(buildA, ":delegate")
 
         then:
-        // We attach the single failure in 'buildB' to every delegated task, so ':buildB:succeeds' appears to have failed
-        // Thus ":delegateWithSuccess" is never executed.
+        failure.assertHasFailures(1)
         assertTaskExecutedOnce(":buildB", ":fails")
         assertTaskExecutedOnce(":buildB", ":succeeds")
         assertTaskExecutedOnce(":", ":delegateWithSuccess")
+        assertTaskNotExecuted(":", ":delegateWithFailure")
     }
 
     def "executes delegate task with --continue"() {
@@ -132,16 +139,19 @@ class CompositeBuildContinueOnSingleFailureIntegrationTest extends AbstractCompo
         then:
         outputContains("continueOnFailure = true")
 
+        failure.assertHasFailures(1)
         assertTaskExecutedOnce(":buildB", ":checkContinueFlag")
         assertTaskExecutedOnce(":buildB", ":fails")
         assertTaskExecutedOnce(":buildB", ":succeeds")
+        assertTaskNotExecuted(":buildB", ":included")
+        assertTaskNotExecuted(":", ":delegate")
     }
 
     def "passes continueOnFailure flag when building dependency artifact"() {
         when:
         buildB.buildFile << """
             apply plugin: 'java'
-            
+
             jar.dependsOn 'checkContinueFlag'
 """
         dependency "org.test:buildB:1.0"

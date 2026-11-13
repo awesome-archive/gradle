@@ -16,21 +16,26 @@
 
 package org.gradle.api.internal.project;
 
-import com.google.common.collect.Lists;
-import net.jcip.annotations.NotThreadSafe;
 import org.gradle.api.Project;
+import org.gradle.internal.service.scopes.Scope;
+import org.gradle.internal.service.scopes.ServiceScope;
+import org.jspecify.annotations.Nullable;
 
+import javax.annotation.concurrent.NotThreadSafe;
+import java.util.LinkedList;
 import java.util.List;
 
+@ServiceScope(Scope.Project.class)
 @NotThreadSafe
 public class DeferredProjectConfiguration {
 
     private final static String TRACE = "org.gradle.trace.deferred.project.configuration";
 
     private final Project project;
-    private final List<Runnable> configuration = Lists.newLinkedList();
+    private final List<Runnable> configuration = new LinkedList<>();
     private boolean fired;
 
+    @Nullable
     private Throwable firedSentinel;
 
     public DeferredProjectConfiguration(Project project) {

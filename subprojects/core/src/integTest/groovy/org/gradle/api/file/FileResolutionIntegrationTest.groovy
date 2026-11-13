@@ -20,7 +20,7 @@ import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 
 class FileResolutionIntegrationTest extends AbstractIntegrationSpec {
     def "file conversion works with java.nio.file.Path"() {
-        buildFile << """
+        buildFile """
 java.nio.file.Path fAsPath = buildDir.toPath().resolve('testdir').toAbsolutePath()
 def f = file(fAsPath)
 assert f == fAsPath.toFile()
@@ -48,7 +48,7 @@ assert f == file("testdir")
     }
 
     def "gives reasonable error message when value cannot be converted to file"() {
-        buildFile << """
+        buildFile """
 def f = file(12)
 """
 
@@ -56,7 +56,7 @@ def f = file(12)
         fails()
 
         then:
-        failure.assertHasCause("""Cannot convert the provided notation to a File or URI: 12.
+        failure.assertHasCause("""Cannot convert the provided notation to a File: 12.
 The following types/formats are supported:
   - A String or CharSequence path, for example 'src/main/java' or '/usr/include'.
   - A String or CharSequence URI, for example 'file:/usr/include'.
@@ -64,11 +64,51 @@ The following types/formats are supported:
   - A Path instance.
   - A Directory instance.
   - A RegularFile instance.
-  - A URI or URL instance.""")
+  - A URI or URL instance of file.
+  - A TextResource instance.""")
+    }
+
+    def "throws error for relative file URLs"() {
+        buildFile """
+def f = file("file:testdir")
+assert f == project.layout.projectDirectory.dir("testdir").asFile
+"""
+
+        when:
+        fails()
+
+        then:
+        failureHasCause(~/Cannot convert URI '.*' to a file./)
+    }
+
+    def "throws error for invalid URLs"() {
+        buildFile """
+def originalFile = layout.projectDirectory.dir("test% dir").asFile
+def fileURI = layout.projectDirectory.dir("test% dir").asFile.toURI().toString().replaceFirst("%25", "%")
+def f = file(fileURI)
+assert f == originalFile
+"""
+        when:
+        fails()
+
+        then:
+        failureHasCause(~/Cannot convert URI '.*' to a file./)
+    }
+
+    def "produces no error for valid URLs"() {
+        buildFile """
+def originalFile = layout.projectDirectory.dir("test% dir").asFile
+def fileURI = layout.projectDirectory.dir("test% dir").asFile.toURI().toString()
+def f = file(fileURI)
+assert f == originalFile
+"""
+
+        expect:
+        succeeds()
     }
 
     def "can construct file collection using java.nio.file.Path"() {
-        buildFile << """
+        buildFile """
 java.nio.file.Path fAsPath = buildDir.toPath().resolve('testdir').toAbsolutePath()
 def f = files(fAsPath)
 assert f.files as List == [fAsPath.toFile()]
@@ -95,8 +135,8 @@ assert f.files as List == [file("testdir")]
         "'testdir'"                       | _
     }
 
-    def "gives reasonable error message when value cannot be converted to file collection"() {
-        buildFile << """
+    def "gives reasonable error message when resolving file collection that contains unsupported element"() {
+        buildFile """
 def f = files({[12]})
 f.files.each { println it }
 """
@@ -105,7 +145,7 @@ f.files.each { println it }
         fails()
 
         then:
-        failure.assertHasCause("""Cannot convert the provided notation to a File or URI: 12.
+        failure.assertHasCause("""Cannot convert the provided notation to a File: 12.
 The following types/formats are supported:
   - A String or CharSequence path, for example 'src/main/java' or '/usr/include'.
   - A String or CharSequence URI, for example 'file:/usr/include'.
@@ -113,6 +153,7 @@ The following types/formats are supported:
   - A Path instance.
   - A Directory instance.
   - A RegularFile instance.
-  - A URI or URL instance.""")
+  - A URI or URL instance of file.
+  - A TextResource instance.""")
     }
 }

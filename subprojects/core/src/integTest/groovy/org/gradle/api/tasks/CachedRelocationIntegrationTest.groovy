@@ -50,7 +50,7 @@ class CachedRelocationIntegrationTest extends AbstractIntegrationSpec implements
         withBuildCache().run "jar", "customTask"
 
         then:
-        nonSkippedTasks.containsAll ":compileJava", ":jar", ":customTask"
+        executedAndNotSkipped ":compileJava", ":jar", ":customTask"
 
         when:
         executer.usingProjectDirectory(originalLocation)
@@ -58,8 +58,8 @@ class CachedRelocationIntegrationTest extends AbstractIntegrationSpec implements
         withBuildCache().run "jar", "customTask"
 
         then:
-        skippedTasks.containsAll ":compileJava"
-        nonSkippedTasks.contains ":customTask"
+        skipped ":compileJava"
+        executedAndNotSkipped ":customTask"
 
         when:
         executer.usingProjectDirectory(originalLocation)
@@ -71,7 +71,7 @@ class CachedRelocationIntegrationTest extends AbstractIntegrationSpec implements
         withBuildCache().run "jar", "customTask"
 
         then:
-        skippedTasks.containsAll ":compileJava", ":customTask"
+        skipped ":compileJava", ":customTask"
 
         when:
         executer.usingProjectDirectory(originalLocation)
@@ -81,7 +81,7 @@ class CachedRelocationIntegrationTest extends AbstractIntegrationSpec implements
         withBuildCache().run "jar", "customTask"
 
         then:
-        skippedTasks.containsAll ":compileJava", ":customTask"
+        skipped ":compileJava", ":customTask"
 
         when:
         def movedLocation = temporaryFolder.file("moved-location")
@@ -94,9 +94,9 @@ class CachedRelocationIntegrationTest extends AbstractIntegrationSpec implements
 
         then:
         // Built-in tasks are loaded from cache
-        skippedTasks.containsAll ":compileJava"
+        skipped ":compileJava"
         // Custom tasks are also loaded from cache
-        skippedTasks.contains ":customTask"
+        skipped ":customTask"
     }
 
     static String externalTaskDef(String suffix = "") {
@@ -118,18 +118,6 @@ class CachedRelocationIntegrationTest extends AbstractIntegrationSpec implements
             task customTask(type: CustomTask) {
                 inputFile = file "input.txt"
                 outputFile = file "build/output.txt"
-                doFirst {
-                    printScriptOrigin("Action", owner)
-                }
-            }
-            
-            def printScriptOrigin(def title, def o) {
-                // need to get through reflection to bypass the Groovy MOP on closures, which would cause calling the method on the owner instead of the closure itself
-                def type = o.getClass()
-                def originalClassName = type.getMethod('getOriginalClassName').invoke(o)
-                def contentHash = type.getMethod('getContentHash').invoke(o)
-                println "\${title} class name: \${originalClassName} (remapped: \${type.name})"
-                println "\${title} class hash: \${contentHash}"
             }
         """
     }

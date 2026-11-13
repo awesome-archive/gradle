@@ -16,11 +16,16 @@
 
 package org.gradle.api.internal.tasks.properties;
 
-import org.gradle.api.internal.tasks.TaskDestroyablePropertySpec;
-import org.gradle.api.internal.tasks.TaskInputFilePropertySpec;
-import org.gradle.api.internal.tasks.TaskInputPropertySpec;
-import org.gradle.api.internal.tasks.TaskLocalStatePropertySpec;
-import org.gradle.api.internal.tasks.TaskOutputFilePropertySpec;
+import org.gradle.api.services.BuildService;
+import org.gradle.internal.fingerprint.DirectorySensitivity;
+import org.gradle.internal.fingerprint.FileNormalizer;
+import org.gradle.internal.fingerprint.LineEndingSensitivity;
+import org.gradle.internal.properties.InputBehavior;
+import org.gradle.internal.properties.InputFilePropertyType;
+import org.gradle.internal.properties.OutputFilePropertyType;
+import org.gradle.internal.properties.PropertyValue;
+import org.gradle.internal.properties.PropertyVisitor;
+import org.jspecify.annotations.Nullable;
 
 public class CompositePropertyVisitor implements PropertyVisitor {
     private final PropertyVisitor[] visitors;
@@ -30,37 +35,62 @@ public class CompositePropertyVisitor implements PropertyVisitor {
     }
 
     @Override
-    public void visitInputFileProperty(TaskInputFilePropertySpec inputFileProperty) {
+    public void visitInputFileProperty(
+        String propertyName,
+        boolean optional,
+        InputBehavior behavior,
+        DirectorySensitivity directorySensitivity,
+        LineEndingSensitivity lineEndingSensitivity,
+        @Nullable FileNormalizer fileNormalizer,
+        PropertyValue value,
+        InputFilePropertyType filePropertyType
+    ) {
         for (PropertyVisitor visitor : visitors) {
-            visitor.visitInputFileProperty(inputFileProperty);
+            visitor.visitInputFileProperty(
+                propertyName,
+                optional,
+                behavior,
+                directorySensitivity,
+                lineEndingSensitivity,
+                fileNormalizer,
+                value,
+                filePropertyType
+            );
         }
     }
 
     @Override
-    public void visitInputProperty(TaskInputPropertySpec inputProperty) {
+    public void visitInputProperty(String propertyName, PropertyValue value, boolean optional) {
         for (PropertyVisitor visitor : visitors) {
-            visitor.visitInputProperty(inputProperty);
+            visitor.visitInputProperty(propertyName, value, optional);
         }
     }
 
     @Override
-    public void visitOutputFileProperty(TaskOutputFilePropertySpec outputFileProperty) {
+    public void visitOutputFileProperty(String propertyName, boolean optional, PropertyValue value, OutputFilePropertyType filePropertyType) {
         for (PropertyVisitor visitor : visitors) {
-            visitor.visitOutputFileProperty(outputFileProperty);
+            visitor.visitOutputFileProperty(propertyName, optional, value, filePropertyType);
         }
     }
 
     @Override
-    public void visitDestroyableProperty(TaskDestroyablePropertySpec destroyableProperty) {
+    public void visitDestroyableProperty(Object value) {
         for (PropertyVisitor visitor : visitors) {
-            visitor.visitDestroyableProperty(destroyableProperty);
+            visitor.visitDestroyableProperty(value);
         }
     }
 
     @Override
-    public void visitLocalStateProperty(TaskLocalStatePropertySpec localStateProperty) {
+    public void visitLocalStateProperty(Object value) {
         for (PropertyVisitor visitor : visitors) {
-            visitor.visitLocalStateProperty(localStateProperty);
+            visitor.visitLocalStateProperty(value);
+        }
+    }
+
+    @Override
+    public void visitServiceReference(String propertyName, boolean optional, PropertyValue value, @Nullable String serviceName, Class<? extends BuildService<?>> buildServiceType) {
+        for (PropertyVisitor visitor : visitors) {
+            visitor.visitServiceReference(propertyName, optional, value, serviceName, buildServiceType);
         }
     }
 }

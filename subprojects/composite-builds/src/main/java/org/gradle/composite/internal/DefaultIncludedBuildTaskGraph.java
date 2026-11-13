@@ -15,77 +15,253 @@
  */
 package org.gradle.composite.internal;
 
-import com.google.common.collect.LinkedHashMultimap;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Multimap;
-import org.gradle.api.artifacts.component.BuildIdentifier;
-import org.gradle.api.artifacts.component.ProjectComponentSelector;
-import org.gradle.internal.component.local.model.DefaultProjectComponentSelector;
-import org.gradle.internal.resolve.ModuleVersionResolveException;
+import com.google.common.annotations.VisibleForTesting;
+import org.gradle.api.Task;
+import org.gradle.api.internal.TaskInternal;
+import org.gradle.api.specs.Spec;
+import org.gradle.execution.EntryTaskSelector;
+import org.gradle.execution.plan.Node;
+import org.gradle.execution.plan.PlanExecutor;
+import org.gradle.execution.plan.QueryableExecutionPlan;
+import org.gradle.execution.plan.TaskNode;
+import org.gradle.internal.build.BuildLifecycleController;
+import org.gradle.internal.build.BuildState;
+import org.gradle.internal.build.BuildStateRegistry;
+import org.gradle.internal.build.ExecutionResult;
+import org.gradle.internal.buildtree.BuildTreeWorkGraph;
+import org.gradle.internal.buildtree.BuildTreeWorkGraphPreparer;
+import org.gradle.internal.concurrent.CompositeStoppable;
+import org.gradle.internal.concurrent.ExecutorFactory;
+import org.gradle.internal.concurrent.ManagedExecutor;
+import org.gradle.internal.operations.BuildOperationContext;
+import org.gradle.internal.operations.BuildOperationDescriptor;
+import org.gradle.internal.operations.BuildOperationRunner;
+import org.gradle.internal.operations.RunnableBuildOperation;
+import org.gradle.internal.taskgraph.CalculateTreeTaskGraphBuildOperationType;
+import org.gradle.internal.work.WorkerLeaseService;
 import org.gradle.util.Path;
 
-import java.util.List;
+import javax.inject.Inject;
+import java.io.Closeable;
+import java.io.IOException;
+import java.util.Collection;
+import java.util.concurrent.TimeUnit;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
-public class DefaultIncludedBuildTaskGraph implements IncludedBuildTaskGraph {
-    private final Multimap<BuildIdentifier, BuildIdentifier> buildDependencies = LinkedHashMultimap.create();
-    private final IncludedBuildControllers includedBuilds;
 
-    public DefaultIncludedBuildTaskGraph(IncludedBuildControllers includedBuilds) {
-            this.includedBuilds = includedBuilds;
-        }
+@SuppressWarnings("SameNameButDifferent")
+public class DefaultIncludedBuildTaskGraph implements BuildTreeWorkGraphController, Closeable {
+    private enum State {
+        NotPrepared, Preparing, ReadyToRun, Running, Finished
+    }
 
-    @Override
-    public synchronized void addTask(BuildIdentifier requestingBuild, BuildIdentifier targetBuild, String taskPath) {
-        boolean newBuildDependency = buildDependencies.put(requestingBuild, targetBuild);
-        if (newBuildDependency) {
-            List<BuildIdentifier> candidateCycle = Lists.newArrayList();
-            checkNoCycles(requestingBuild, targetBuild, candidateCycle);
-        }
+    private static final int MONITORING_POLL_TIME = 30;
+    private final BuildOperationRunner buildOperationRunner;
+    private final BuildStateRegistry buildRegistry;
+    private final WorkerLeaseService workerLeaseService;
+    private final PlanExecutor planExecutor;
+    private final BuildTreeWorkGraphPreparer workGraphPreparer;
+    private final int monitoringPollTime;
+    private final TimeUnit monitoringPollTimeUnit;
+    private final ManagedExecutor executorService;
+    @SuppressWarnings("ThreadLocalUsage") //TODO: evaluate errorprone suppression (https://github.com/gradle/gradle/issues/35864)
+    private final ThreadLocal<DefaultBuildTreeWorkGraph> current = new ThreadLocal<>();
 
-        getBuildController(targetBuild).queueForExecution(taskPath);
+    @Inject
+    public DefaultIncludedBuildTaskGraph(
+        ExecutorFactory executorFactory,
+        BuildOperationRunner buildOperationRunner,
+        BuildStateRegistry buildRegistry,
+        WorkerLeaseService workerLeaseService,
+        PlanExecutor planExecutor,
+        BuildTreeWorkGraphPreparer workGraphPreparer
+    ) {
+        this(executorFactory, buildOperationRunner, buildRegistry, workerLeaseService, planExecutor, workGraphPreparer, MONITORING_POLL_TIME, TimeUnit.SECONDS);
+    }
+
+    @VisibleForTesting
+    DefaultIncludedBuildTaskGraph(
+        ExecutorFactory executorFactory,
+        BuildOperationRunner buildOperationRunner,
+        BuildStateRegistry buildRegistry,
+        WorkerLeaseService workerLeaseService,
+        PlanExecutor planExecutor,
+        BuildTreeWorkGraphPreparer workGraphPreparer,
+        int monitoringPollTime,
+        TimeUnit monitoringPollTimeUnit
+    ) {
+        this.buildOperationRunner = buildOperationRunner;
+        this.buildRegistry = buildRegistry;
+        this.executorService = executorFactory.create("included builds");
+        this.workerLeaseService = workerLeaseService;
+        this.planExecutor = planExecutor;
+        this.workGraphPreparer = workGraphPreparer;
+        this.monitoringPollTime = monitoringPollTime;
+        this.monitoringPollTimeUnit = monitoringPollTimeUnit;
+    }
+
+    private DefaultBuildControllers createControllers() {
+        return new DefaultBuildControllers(executorService, workerLeaseService, planExecutor, monitoringPollTime, monitoringPollTimeUnit);
     }
 
     @Override
-    public void awaitCompletion(BuildIdentifier targetBuild, String taskPath) {
-        // Start task execution if necessary: this is required for building plugin artifacts,
-        // since these are built on-demand prior to the regular start signal for included builds.
-        includedBuilds.startTaskExecution();
-
-        getBuildController(targetBuild).awaitCompletion(taskPath);
-    }
-
-    public boolean isComplete(BuildIdentifier targetBuild, String taskPath) {
-        IncludedBuildController controller = getBuildController(targetBuild);
-        return controller.isComplete(taskPath);
-    }
-
-    private IncludedBuildController getBuildController(BuildIdentifier buildId) {
-        return includedBuilds.getBuildController(buildId);
-    }
-
-    private void checkNoCycles(BuildIdentifier sourceBuild, BuildIdentifier targetBuild, List<BuildIdentifier> candidateCycle) {
-        candidateCycle.add(targetBuild);
-        for (BuildIdentifier nextTarget : buildDependencies.get(targetBuild)) {
-            if (sourceBuild.equals(nextTarget)) {
-                candidateCycle.add(nextTarget);
-                ProjectComponentSelector selector = DefaultProjectComponentSelector.newSelector(candidateCycle.get(0), Path.ROOT.getPath());
-                throw new ModuleVersionResolveException(selector, "Included build dependency cycle: " + reportCycle(candidateCycle));
+    public <T> T withNewWorkGraph(Function<? super BuildTreeWorkGraph, T> action) {
+        DefaultBuildTreeWorkGraph previous = current.get();
+        DefaultBuildTreeWorkGraph workGraph = new DefaultBuildTreeWorkGraph(createControllers());
+        current.set(workGraph);
+        try {
+            try {
+                return action.apply(workGraph);
+            } finally {
+                workGraph.close();
             }
-
-            checkNoCycles(sourceBuild, nextTarget, candidateCycle);
-
+        } finally {
+            current.set(previous);
         }
-        candidateCycle.remove(targetBuild);
     }
 
-
-    private String reportCycle(List<BuildIdentifier> cycle) {
-        StringBuilder cycleReport = new StringBuilder();
-        for (BuildIdentifier buildIdentifier : cycle) {
-            cycleReport.append(buildIdentifier);
-            cycleReport.append(" -> ");
-        }
-        cycleReport.append(cycle.get(0));
-        return cycleReport.toString();
+    @Override
+    public void queueForExecution(BuildState targetBuild, Node node) {
+        withState(workGraph -> {
+            workGraph.queueForExecution(targetBuild, node);
+            return null;
+        });
     }
+
+    @Override
+    public void close() throws IOException {
+        CompositeStoppable.stoppable(executorService).stop();
+    }
+
+    private <T> T withState(Function<DefaultBuildTreeWorkGraph, T> action) {
+        DefaultBuildTreeWorkGraph workGraph = current.get();
+        if (workGraph == null) {
+            throw new IllegalStateException("No work graph available for this thread.");
+        }
+        workGraph.assertIsOwner();
+        return action.apply(workGraph);
+    }
+
+    private class DefaultBuildTreeWorkGraphBuilder implements BuildTreeWorkGraph.Builder {
+        private final DefaultBuildTreeWorkGraph owner;
+
+        public DefaultBuildTreeWorkGraphBuilder(DefaultBuildTreeWorkGraph owner) {
+            this.owner = owner;
+        }
+
+        @Override
+        public void withWorkGraph(BuildState target, Consumer<? super BuildLifecycleController.WorkGraphBuilder> action) {
+            buildControllerOf(target).populateWorkGraph(action);
+        }
+
+        @Override
+        public void addFilter(BuildState target, Spec<Task> filter) {
+            buildControllerOf(target).addFilter(filter);
+        }
+
+        @Override
+        public void addFinalization(BuildState target, BiConsumer<EntryTaskSelector.Context, QueryableExecutionPlan> finalization) {
+            buildControllerOf(target).addFinalization(finalization);
+        }
+
+        @Override
+        public void queueTasks(Collection<TaskInternal> tasksToBuild) {
+            for (TaskInternal task : tasksToBuild) {
+                // This check should live lower down, and should have some kind of synchronization around it, as other threads may be
+                // running tasks at the same time
+                if (task.getState().getExecuted()) {
+                    continue;
+                }
+                Path buildPath = task.getTaskIdentity().getProjectIdentity().getBuildPath();
+                BuildState targetBuild = buildRegistry.getBuild(buildPath);
+                TaskNode node = targetBuild.getWorkGraph().locateTaskNode(task);
+                queueForExecution(targetBuild, node);
+            }
+        }
+
+        private BuildController buildControllerOf(BuildState target) {
+            return owner.controllers.getBuildController(target);
+        }
+    }
+
+    private class DefaultBuildTreeWorkGraph implements BuildTreeWorkGraph, BuildTreeWorkGraph.FinalizedGraph, AutoCloseable {
+        private final Thread owner;
+        private final BuildControllers controllers;
+        private State state = State.NotPrepared;
+
+        public DefaultBuildTreeWorkGraph(DefaultBuildControllers controllers) {
+            this.owner = Thread.currentThread();
+            this.controllers = controllers;
+        }
+
+        public void queueForExecution(BuildState build, Node node) {
+            assertIsOwner();
+            assertCanQueueTask();
+            controllers.getBuildController(build).queueForExecution(node);
+        }
+
+        @Override
+        public FinalizedGraph scheduleWork(Consumer<? super Builder> action) {
+            assertIsOwner();
+            expectInState(State.NotPrepared);
+            state = State.Preparing;
+            buildOperationRunner.run(new RunnableBuildOperation() {
+                @Override
+                public void run(BuildOperationContext context) {
+                    DefaultBuildTreeWorkGraphBuilder graphBuilder = new DefaultBuildTreeWorkGraphBuilder(DefaultBuildTreeWorkGraph.this);
+                    workGraphPreparer.prepareToScheduleTasks(graphBuilder);
+                    action.accept(graphBuilder);
+                    controllers.populateWorkGraphs();
+                    context.setResult(new CalculateTreeTaskGraphBuildOperationType.Result() {
+                    });
+                }
+
+                @Override
+                public BuildOperationDescriptor.Builder description() {
+                    return BuildOperationDescriptor.displayName("Calculate build tree task graph")
+                        .details(new CalculateTreeTaskGraphBuildOperationType.Details() {
+                        });
+                }
+            });
+            state = State.ReadyToRun;
+            return this;
+        }
+
+        @Override
+        public ExecutionResult<Void> runWork() {
+            assertIsOwner();
+            expectInState(State.ReadyToRun);
+            state = State.Running;
+            try {
+                return controllers.execute();
+            } finally {
+                state = State.Finished;
+            }
+        }
+
+        @Override
+        public void close() {
+            assertIsOwner();
+            controllers.close();
+        }
+
+        private void assertCanQueueTask() {
+            expectInState(State.Preparing);
+        }
+
+        private void expectInState(State expectedState) {
+            if (state != expectedState) {
+                throw new IllegalStateException("Work graph is in an unexpected state: " + state + ", expected: " + expectedState);
+            }
+        }
+
+        private void assertIsOwner() {
+            if (Thread.currentThread() != owner) {
+                throw new IllegalStateException("Current thread is not the owner of this work graph.");
+            }
+        }
+    }
+
 }

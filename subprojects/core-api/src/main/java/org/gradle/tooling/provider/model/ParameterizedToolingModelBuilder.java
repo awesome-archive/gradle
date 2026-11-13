@@ -16,11 +16,14 @@
 
 package org.gradle.tooling.provider.model;
 
-import org.gradle.api.Incubating;
 import org.gradle.api.Project;
+import org.jspecify.annotations.Nullable;
 
 /**
- * A {@link ToolingModelBuilder} which can be parametrized by the client.
+ * A {@link ToolingModelBuilder} which can be parameterized by the client.
+ *
+ * <p>The parameter type {@code T} must be an interface and must follow a contract described in {@link #getParameterType()}.
+ * </p>
  *
  * <p>The parameter type {@code T} does not need to implement the interface defined in the client side, but it does need to have the same structure.
  * The Tooling API will create a view from the client side parameter type to the one defined in this model builder, and deal automatically with
@@ -33,16 +36,52 @@ import org.gradle.api.Project;
  * </p>
  *
  * @param <T> The type of parameter used by this model builder.
- * @since 4.4
  * @see ToolingModelBuilder
+ * @since 4.4
  */
-@Incubating
 public interface ParameterizedToolingModelBuilder<T> extends ToolingModelBuilder {
+
     /**
      * Returns the expected type of the parameter.
-     * It should be an interface with only getters and setters.
+     * <p>
+     * <b>Contract</b>
+     * <p>
+     * The parameter type must conform to the following rules:
+     * <ul>
+     *     <li>It must be an interface.</li>
+     *     <li>It must contain only getter-like and setter-like methods.</li>
+     *     <li>There must be one getter corresponding to exactly one setter, with matching value types.</li>
+     * </ul>
+     * <p>
+     * For each getter-like method:
+     * <ul>
+     *     <li>The name must start with {@code "get"} or {@code "is"}, followed by an uppercase letter.</li>
+     *     <li>It must have no parameters.</li>
+     *     <li>The return type must not be {@code void}.</li>
+     * </ul>
+     * <p>
+     * For each setter-like method:
+     * <ul>
+     *     <li>The name must start with {@code "set"}, followed by an uppercase letter.</li>
+     *     <li>It must have exactly one parameter.</li>
+     *     <li>The return type must be {@code void}.</li>
+     * </ul>
+     * <p>
+     * <b>Example</b>
+     * <p>
+     * Here is an example of a valid parameter type declaration:
+     * <pre>{@code
+     * public interface MyParameter {
+     *     String getValue();
+     *     void setValue(String value);
+     *
+     *     boolean isFlag();
+     *     void setFlag(boolean value);
+     * }
+     * }</pre>
      *
      * @return The type of the parameter.
+     * @since 4.4
      */
     Class<T> getParameterType();
 
@@ -52,7 +91,9 @@ public interface ParameterizedToolingModelBuilder<T> extends ToolingModelBuilder
      * @param modelName The model name, usually the same as the name of the Java interface used by the client.
      * @param parameter The parameter received from the client.
      * @param project The project to create the model for.
-     * @return The model.
+     * @return The model, or null if not available.
+     * @since 4.4
      */
+    @Nullable
     Object buildAll(String modelName, T parameter, Project project);
 }

@@ -16,8 +16,8 @@
 
 package org.gradle.integtests.composite
 
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 import org.gradle.integtests.fixtures.build.BuildTestFile
-import spock.lang.Unroll
 
 /**
  * Tests for composite build delegating to tasks in an included build.
@@ -30,8 +30,10 @@ class CompositeBuildTaskDependencyIntegrationTest extends AbstractCompositeBuild
             buildFile << """
                 allprojects {
                     task logProject {
+                        def rootProjectName = project.rootProject.name
+                        def projectPath = project.path
                         doLast {
-                            println "Executing build '" + project.rootProject.name + "' project '" + project.path + "' task '" + path + "'"
+                            println "Executing build '" + rootProjectName + "' project '" + projectPath + "' task '" + path + "'"
                         }
                     }
                 }
@@ -40,6 +42,7 @@ class CompositeBuildTaskDependencyIntegrationTest extends AbstractCompositeBuild
         includedBuilds << buildB
     }
 
+    @ToBeFixedForIsolatedProjects(because = "cross-project / cross-build configuration")
     def "can depend on task in root project of included build"() {
         when:
         buildA.buildFile << """
@@ -55,6 +58,7 @@ class CompositeBuildTaskDependencyIntegrationTest extends AbstractCompositeBuild
         output.contains("Executing build 'buildB' project ':' task ':logProject'")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "cross-build configuration in composite build")
     def "can depend on task in subproject of included build"() {
         when:
         buildA.buildFile << """
@@ -70,6 +74,7 @@ class CompositeBuildTaskDependencyIntegrationTest extends AbstractCompositeBuild
         output.contains("Executing build 'buildB' project ':b1' task ':b1:logProject'")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "cross-build configuration in composite build")
     def "can depend on multiple tasks of included build"() {
         when:
         buildA.buildFile << """
@@ -96,6 +101,7 @@ class CompositeBuildTaskDependencyIntegrationTest extends AbstractCompositeBuild
         output.contains("Executing build 'buildB' project ':b1' task ':b1:logProject'")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "cross-build configuration in composite build")
     def "executes tasks only once for included build"() {
         when:
         buildA.buildFile << """
@@ -119,8 +125,10 @@ class CompositeBuildTaskDependencyIntegrationTest extends AbstractCompositeBuild
         output.contains("Executing build 'buildB' project ':b1' task ':b1:logProject'")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "cross-build configuration in composite build")
     def "can depend on task from subproject of composing build"() {
         given:
+        createDirs("buildA", "buildA/a1")
         buildA.settingsFile << """
     include 'a1'
 """
@@ -151,6 +159,7 @@ class CompositeBuildTaskDependencyIntegrationTest extends AbstractCompositeBuild
         output.contains("Executing build 'buildB' project ':' task ':logProject'")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "cross-build configuration in composite build")
     def "can depend on task with name in all included builds"() {
         when:
         BuildTestFile buildC = singleProjectBuild("buildC") {
@@ -172,6 +181,7 @@ class CompositeBuildTaskDependencyIntegrationTest extends AbstractCompositeBuild
         output.contains("Executing build 'buildC' project ':' task ':logProject'")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "cross-build configuration in composite build")
     def "substitutes dependency of included build when executed via task dependency"() {
         given:
         buildA.buildFile << """
@@ -185,7 +195,7 @@ class CompositeBuildTaskDependencyIntegrationTest extends AbstractCompositeBuild
     }
 
     dependencies {
-        compile "org.test:b1:1.0"
+        implementation "org.test:b1:1.0"
     }
 """
 
@@ -196,6 +206,7 @@ class CompositeBuildTaskDependencyIntegrationTest extends AbstractCompositeBuild
         executed ":buildB:b1:jar", ":buildB:jar"
     }
 
+    @ToBeFixedForIsolatedProjects(because = "cross-project / cross-build configuration")
     def "reports failure when included build does not exist for composite"() {
         when:
         buildA.buildFile << """
@@ -209,9 +220,10 @@ class CompositeBuildTaskDependencyIntegrationTest extends AbstractCompositeBuild
 
         then:
         failure.assertHasDescription("A problem occurred evaluating root project 'buildA'.")
-        failure.assertHasCause("Included build 'does-not-exist' not found.")
+        failure.assertHasCause("Included build 'does-not-exist' not found in build ':'.")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "cross-project / cross-build configuration")
     def "reports failure when task does not exist for included build"() {
         when:
         buildA.buildFile << """
@@ -224,9 +236,11 @@ class CompositeBuildTaskDependencyIntegrationTest extends AbstractCompositeBuild
         fails(buildA, ":delegate")
 
         then:
-        failure.assertHasDescription("Task 'does-not-exist' not found in project ':buildB'.")
+        failure.assertHasDescription("Could not determine the dependencies of task ':delegate'.")
+        failure.assertHasCause("Task with name 'does-not-exist' not found in project ':buildB'.")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "cross-build configuration in composite build")
     def "reports failure when task path is not qualified for included build"() {
         when:
         buildA.buildFile << """
@@ -243,6 +257,7 @@ class CompositeBuildTaskDependencyIntegrationTest extends AbstractCompositeBuild
         failure.assertHasCause("Task path 'logProject' is not a qualified task path (e.g. ':task' or ':project:task')")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "cross-build configuration in composite build")
     def "reports failure when task path is substring of task in included build"() {
         given:
         buildA.buildFile << """
@@ -258,15 +273,18 @@ class CompositeBuildTaskDependencyIntegrationTest extends AbstractCompositeBuild
         fails(buildA, ":delegate")
 
         then:
-        failure.assertHasDescription("Task ':logP' not found in build 'buildB'.")
+        failure.assertHasDescription("Could not determine the dependencies of task ':delegate'.")
+        failure.assertHasCause("Task with name 'logP' not found in project ':buildB'.")
 
         when:
         fails(buildA, ":subDelegate")
 
         then:
-        failure.assertHasDescription("Task ':b1:logP' not found in build 'buildB'.")
+        failure.assertHasDescription("Could not determine the dependencies of task ':subDelegate'.")
+        failure.assertHasCause("Task with name 'logP' not found in project ':buildB:b1'.")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "cross-build configuration in composite build")
     def "reports failure when attempting to access included build when build is not a composite"() {
         when:
         buildB.buildFile << """
@@ -280,27 +298,10 @@ class CompositeBuildTaskDependencyIntegrationTest extends AbstractCompositeBuild
 
         then:
         failure.assertHasDescription("A problem occurred evaluating root project 'buildB'.")
-        failure.assertHasCause("Included build 'does-not-exist' not found.")
+        failure.assertHasCause("Included build 'does-not-exist' not found in build ':'.")
     }
 
-    def "reports failure when delegating to included build when composing build defines a task with the same name as the included build"() {
-        when:
-        buildA.buildFile << """
-    task _buildB_logProject // Just a regular old task instance
-    task delegate {
-        dependsOn gradle.includedBuild('buildB').task(':logProject')
-    }
-"""
-
-        and:
-        fails(buildA, ":delegate")
-
-        then:
-        failure.assertHasDescription("Could not determine the dependencies of task ':delegate'.")
-        failure.assertHasCause("Cannot create delegating task '_buildB_logProject' as task with same name already exists.")
-    }
-
-    @Unroll
+    @ToBeFixedForIsolatedProjects(because = "cross-build configuration in composite build")
     def "included build cannot reference tasks in #scenario"() {
         when:
         BuildTestFile buildC = singleProjectBuild("buildC") {
@@ -324,7 +325,7 @@ class CompositeBuildTaskDependencyIntegrationTest extends AbstractCompositeBuild
 
         and:
         failure.assertHasDescription("A problem occurred evaluating project ':buildC'.")
-        failure.assertHasCause("Included build '${buildName}' not found.")
+        failure.assertHasCause("Included build '${buildName}' not found in build ':buildC'.")
 
         where:
         scenario  | buildName

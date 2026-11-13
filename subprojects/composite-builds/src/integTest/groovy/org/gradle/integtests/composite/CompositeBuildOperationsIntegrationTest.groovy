@@ -16,15 +16,23 @@
 
 package org.gradle.integtests.composite
 
+import org.gradle.api.internal.tasks.execution.ExecuteTaskBuildOperationType
+import org.gradle.execution.taskgraph.NotifyTaskGraphWhenReadyBuildOperationType
+import org.gradle.initialization.BuildIdentifiedProgressDetails
 import org.gradle.initialization.ConfigureBuildBuildOperationType
 import org.gradle.initialization.LoadBuildBuildOperationType
 import org.gradle.integtests.fixtures.build.BuildTestFile
-import org.gradle.internal.execution.ExecuteTaskBuildOperationType
-import org.gradle.internal.operations.trace.BuildOperationRecord
+import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
+import org.gradle.integtests.fixtures.modes.UnsupportedWithConfigurationCache
 import org.gradle.internal.taskgraph.CalculateTaskGraphBuildOperationType
-import org.gradle.util.CollectionUtils
+import org.gradle.internal.taskgraph.CalculateTreeTaskGraphBuildOperationType
+import org.gradle.launcher.exec.RunBuildBuildOperationType
+import org.gradle.operations.lifecycle.FinishRootBuildTreeBuildOperationType
+import org.gradle.operations.lifecycle.RunRequestedWorkBuildOperationType
 
-import java.util.regex.Pattern
+import static org.gradle.integtests.fixtures.TestableBuildOperationRecord.buildOp
+import static org.gradle.util.internal.TextUtil.getPlatformLineSeparator
 
 class CompositeBuildOperationsIntegrationTest extends AbstractCompositeBuildIntegrationTest {
     BuildTestFile buildB
@@ -40,80 +48,450 @@ class CompositeBuildOperationsIntegrationTest extends AbstractCompositeBuildInte
         includedBuilds << buildB
     }
 
+    @ToBeFixedForIsolatedProjects(because = "cross-build configuration in composite build")
     def "generates build operations for tasks in included builds"() {
         given:
         dependency 'org.test:buildB:1.0'
 
         when:
-        execute(buildA, ":jar", [])
+        execute(buildA, ":jar")
 
         then:
         executed ":buildB:jar"
 
         and:
-        List<BuildOperationRecord> allOps = operations.all(ExecuteTaskBuildOperationType)
+        def allOps = operations.all(ExecuteTaskBuildOperationType)
 
         allOps.find { it.details.buildPath == ":buildB" && it.details.taskPath == ":jar" }
         allOps.find { it.details.buildPath == ":" && it.details.taskPath == ":jar" }
 
-        for (BuildOperationRecord operationRecord : allOps) {
-            assertChildrenNotIn(operationRecord, operationRecord, allOps)
+        allOps.each {
+            assert operations.search(it, ExecuteTaskBuildOperationType).isEmpty()
         }
     }
 
-    def "generates configure, task graph and run tasks operations for included builds"() {
+    @ToBeFixedForIsolatedProjects(because = "cross-project / cross-build configuration")
+    def "generates build lifecycle operations for included builds with #display"() {
         given:
-        dependency 'org.test:buildB:1.0'
+        dependency "org.test:${dependencyName}:1.0"
+
+        buildB.settingsFile << settings << "\n"
 
         when:
-        execute(buildA, ":jar", [])
+        execute(buildA, ":jar")
 
         then:
         executed ":buildB:jar"
 
         and:
-        def root = CollectionUtils.single(operations.roots())
+        def root = operations.root(RunBuildBuildOperationType)
 
         def loadOps = operations.all(LoadBuildBuildOperationType)
-        loadOps.size() == 2
-        loadOps[0].displayName == "Load build"
-        loadOps[0].details.buildPath == ":"
-        loadOps[0].parentId == root.id
-        loadOps[1].displayName == "Load build (buildB)"
-        loadOps[1].details.buildPath == ":buildB"
-        loadOps[1].parentId == root.id
+        loadOps == [
+            buildOp(displayName: "Load build", parent: root, details: [buildPath: ":"]),
+            buildOp(displayName: "Load build (:buildB)", parent: loadOps[0], details: [buildPath: ":buildB"])
+        ]
+
+        def buildIdentifiedEvents = operations.progress(BuildIdentifiedProgressDetails)
+        buildIdentifiedEvents*.details.buildPath == [':', ":buildB"]
 
         def configureOps = operations.all(ConfigureBuildBuildOperationType)
-        configureOps.size() == 2
-        configureOps[0].displayName == "Configure build (buildB)"
-        configureOps[0].details.buildPath == ":buildB"
-        configureOps[0].parentId == root.id
-        configureOps[1].displayName == "Configure build"
-        configureOps[1].details.buildPath == ":"
-        configureOps[1].parentId == root.id
+        configureOps == [
+            buildOp(displayName: "Configure build", parent: root, details: [buildPath: ":"]),
+            buildOp(displayName: "Configure build (:buildB)", parent: configureOps[0], details: [buildPath: ":buildB"])
+        ]
+
+        def treeTaskGraphOps = operations.all(CalculateTreeTaskGraphBuildOperationType)
+        def expectedTreeTaskGraphOps = [
+            buildOp(displayName: "Calculate build tree task graph", parent: root),
+        ]
+        if (GradleContextualExecuter.configCache) {
+            expectedTreeTaskGraphOps << buildOp(displayName: "Calculate build tree task graph", parent: operations.only("Load configuration cache state"))
+        }
+        treeTaskGraphOps == expectedTreeTaskGraphOps
 
         def taskGraphOps = operations.all(CalculateTaskGraphBuildOperationType)
-        taskGraphOps.size() == 2
-        taskGraphOps[0].displayName == "Calculate task graph"
-        taskGraphOps[0].details.buildPath == ":"
-        taskGraphOps[0].parentId == root.id
-        taskGraphOps[1].displayName == "Calculate task graph (:buildB)"
-        taskGraphOps[1].details.buildPath == ":buildB"
-        taskGraphOps[1].parentId == root.id
+        def expectedTaskGraphOps = [
+            buildOp(displayName: "Calculate task graph", parent: treeTaskGraphOps[0], details: ["buildPath": ":"]),
+            buildOp(displayName: "Calculate task graph (:buildB)", parent: treeTaskGraphOps[0], details: ["buildPath": ":buildB"])
+        ]
+        if (GradleContextualExecuter.configCache) {
+            expectedTaskGraphOps += [
+                buildOp(displayName: "Calculate task graph", parent: treeTaskGraphOps[1], details: ["buildPath": ":"]),
+                buildOp(displayName: "Calculate task graph (:buildB)", parent: treeTaskGraphOps[1], details: ["buildPath": ":buildB"])
+            ]
+        }
+        taskGraphOps == expectedTaskGraphOps
 
-        def runTasksOps = operations.all(Pattern.compile("Run tasks.*"))
-        runTasksOps.size() == 2
-        runTasksOps[0].displayName == "Run tasks"
-        runTasksOps[0].parentId == root.id
-        runTasksOps[1].displayName == "Run tasks (:buildB)"
-        runTasksOps[1].parentId == root.id
+        def runMainTasks = operations.only(RunRequestedWorkBuildOperationType)
+        runMainTasks.parentId == root.id
+
+        def runTasksOps = operations.matchingRegex("Run tasks.*")
+        // Build operations are run in parallel, so can appear in either order
+        runTasksOps.sort { it.displayName } == [
+            buildOp(displayName: "Run tasks", parent: runMainTasks),
+            buildOp(displayName: "Run tasks (:buildB)", parent: runMainTasks)
+        ]
+
+        def graphNotifyOps = operations.all(NotifyTaskGraphWhenReadyBuildOperationType)
+        graphNotifyOps == [
+            buildOp(displayName: "Notify task graph whenReady listeners (:buildB)", parent: treeTaskGraphOps[0], details: [buildPath: ":buildB"]),
+            buildOp(displayName: "Notify task graph whenReady listeners", parent: treeTaskGraphOps[0], details: [buildPath: ":"])
+        ]
+
+        where:
+        settings                     | dependencyName | display
+        ""                           | "buildB"       | "default root project name"
+        "rootProject.name='someLib'" | "someLib"      | "configured root project name"
     }
 
-    def assertChildrenNotIn(BuildOperationRecord origin, BuildOperationRecord op, List<BuildOperationRecord> allOps) {
-        for (BuildOperationRecord child : op.children) {
-            assert !allOps.contains(child) : "Task operation $origin has child $child which is also a task operation"
-            assertChildrenNotIn(origin, child, allOps)
+    @ToBeFixedForIsolatedProjects(because = "cross-build configuration in composite build")
+    def "generates build lifecycle operations for multiple included builds"() {
+        given:
+        def buildC = multiProjectBuild("buildC", ["someLib"]) {
+            buildFile << """
+                allprojects {
+                    apply plugin: 'java'
+                }
+            """
         }
+        includedBuilds << buildC
+        dependency "org.test:buildB:1.0"
+        dependency "org.test:buildC:1.0"
+        dependency buildB, "org.test:buildC:1.0"
+
+        when:
+        execute(buildA, ":jar")
+
+        then:
+        executed ":buildB:jar", ":buildC:jar"
+
+        and:
+        def root = operations.root(RunBuildBuildOperationType)
+
+        def treeTaskGraphOps = operations.all(CalculateTreeTaskGraphBuildOperationType)
+        def expectedTreeTaskGraphOps = [
+            buildOp(displayName: "Calculate build tree task graph", parent: root),
+        ]
+        if (GradleContextualExecuter.configCache) {
+            expectedTreeTaskGraphOps << buildOp(displayName: "Calculate build tree task graph", parent: operations.only("Load configuration cache state"))
+        }
+        treeTaskGraphOps == expectedTreeTaskGraphOps
+
+        def taskGraphOps = operations.all(CalculateTaskGraphBuildOperationType)
+        def expectedTaskGraphOps = [
+            buildOp(displayName: "Calculate task graph", parent: treeTaskGraphOps[0], details: ["buildPath": ":"]),
+            buildOp(displayName: "Calculate task graph (:buildB)", parent: treeTaskGraphOps[0], details: ["buildPath": ":buildB"]),
+            buildOp(displayName: "Calculate task graph (:buildC)", parent: treeTaskGraphOps[0], details: ["buildPath": ":buildC"])
+        ]
+        if (GradleContextualExecuter.configCache) {
+            expectedTaskGraphOps += [
+                buildOp(displayName: "Calculate task graph", parent: treeTaskGraphOps[1], details: ["buildPath": ":"]),
+                buildOp(displayName: "Calculate task graph (:buildB)", parent: treeTaskGraphOps[1], details: ["buildPath": ":buildB"]),
+                buildOp(displayName: "Calculate task graph (:buildC)", parent: treeTaskGraphOps[1], details: ["buildPath": ":buildC"])
+            ]
+        }
+        taskGraphOps == expectedTaskGraphOps
+
+        def graphNotifyOps = operations.all(NotifyTaskGraphWhenReadyBuildOperationType)
+        graphNotifyOps == [
+            buildOp(displayName: "Notify task graph whenReady listeners (:buildB)", parent: treeTaskGraphOps[0], details: [buildPath: ":buildB"]),
+            buildOp(displayName: "Notify task graph whenReady listeners (:buildC)", parent: treeTaskGraphOps[0], details: [buildPath: ":buildC"]),
+            buildOp(displayName: "Notify task graph whenReady listeners", parent: treeTaskGraphOps[0], details: [buildPath: ":"])
+        ]
+    }
+
+    @ToBeFixedForIsolatedProjects(because = "cross-build configuration in composite build")
+    def "generates build lifecycle operations for multiple included builds used as buildscript dependencies"() {
+        given:
+        def buildC = multiProjectBuild("buildC", ["someLib"]) {
+            buildFile << """
+                allprojects {
+                    apply plugin: 'java'
+                }
+            """
+        }
+        includedBuilds << buildC
+        buildA.buildFile.prepend("""
+            buildscript {
+                dependencies {
+                    classpath 'org.test:buildB:1.0'
+                    classpath 'org.test:buildC:1.0'
+                }
+            }
+        """)
+        dependency buildB, "org.test:buildC:1.0"
+
+        when:
+        execute(buildA, ":jar")
+
+        then:
+        executed ":buildB:jar", ":buildC:jar"
+
+        and:
+        def root = operations.root(RunBuildBuildOperationType)
+
+        def treeTaskGraphOps = operations.all(CalculateTreeTaskGraphBuildOperationType)
+        def expectedTreeTaskGraphOps = [
+            buildOp(displayName: "Calculate build tree task graph", parent: operations.first("Run included build logic build for build ':'")),
+            buildOp(displayName: "Calculate build tree task graph", parent: root),
+        ]
+        if (GradleContextualExecuter.configCache) {
+            expectedTreeTaskGraphOps << buildOp(displayName: "Calculate build tree task graph", parent: operations.only("Load configuration cache state"))
+        }
+        treeTaskGraphOps == expectedTreeTaskGraphOps
+
+        def applyRootProjectBuildScript = operations.first("Apply build file 'build.gradle' to root project 'buildA'")
+        applyRootProjectBuildScript in operations.parentsOf(treeTaskGraphOps[0])
+
+        def taskGraphOps = operations.all(CalculateTaskGraphBuildOperationType)
+        def expectedTaskGraphOps = [
+            buildOp(displayName: "Calculate task graph (:buildB)", parent: treeTaskGraphOps[0], details: ["buildPath": ":buildB"]),
+            buildOp(displayName: "Calculate task graph (:buildC)", parent: treeTaskGraphOps[0], details: ["buildPath": ":buildC"]),
+            buildOp(displayName: "Calculate task graph", parent: treeTaskGraphOps[1], details: ["buildPath": ":"]),
+        ]
+        if (GradleContextualExecuter.configCache) {
+            expectedTaskGraphOps += [
+                buildOp(displayName: "Calculate task graph", parent: treeTaskGraphOps[2], details: ["buildPath": ":"]),
+            ]
+        }
+        taskGraphOps == expectedTaskGraphOps
+
+        def graphNotifyOps = operations.all(NotifyTaskGraphWhenReadyBuildOperationType)
+        graphNotifyOps == [
+            buildOp(displayName: "Notify task graph whenReady listeners (:buildB)", parent: treeTaskGraphOps[0], details: [buildPath: ":buildB"]),
+            buildOp(displayName: "Notify task graph whenReady listeners (:buildC)", parent: treeTaskGraphOps[0], details: [buildPath: ":buildC"]),
+            buildOp(displayName: "Notify task graph whenReady listeners", parent: treeTaskGraphOps[1], details: [buildPath: ":"])
+        ]
+    }
+
+    @ToBeFixedForIsolatedProjects(because = "cross-project / cross-build configuration")
+    def "generates build lifecycle operations for included build used as buildscript and production dependency"() {
+        given:
+        buildA.buildFile.prepend("""
+            buildscript {
+                dependencies {
+                    classpath 'org.test:b1:1.0'
+                }
+            }
+        """)
+        dependency "org.test:b2:1.0"
+
+        when:
+        execute(buildA, ":jar")
+
+        then:
+        executed ":buildB:b1:jar", ":buildB:b2:jar"
+
+        and:
+        def root = operations.root(RunBuildBuildOperationType)
+
+        def loadOps = operations.all(LoadBuildBuildOperationType)
+        loadOps == [
+            buildOp(displayName: "Load build", parent: root, details: [buildPath: ":"]),
+            buildOp(displayName: "Load build (:buildB)", parent: loadOps[0], details: [buildPath: ":buildB"])
+        ]
+
+        def buildIdentifiedEvents = operations.progress(BuildIdentifiedProgressDetails)
+        buildIdentifiedEvents*.details.buildPath == [':', ":buildB"]
+
+        def configureOps = operations.all(ConfigureBuildBuildOperationType)
+        configureOps == [
+            buildOp(displayName: "Configure build", parent: root, details: [buildPath: ":"]),
+            buildOp(displayName: "Configure build (:buildB)", parent: configureOps[0], details: [buildPath: ":buildB"])
+        ]
+
+        def treeTaskGraphOps = operations.all(CalculateTreeTaskGraphBuildOperationType)
+        def expectedTreeTaskGraphOps = [
+            buildOp(displayName: "Calculate build tree task graph", parent: operations.first("Run included build logic build for build ':'")),
+            buildOp(displayName: "Calculate build tree task graph", parent: root),
+        ]
+        if (GradleContextualExecuter.configCache) {
+            expectedTreeTaskGraphOps << buildOp(displayName: "Calculate build tree task graph", parent: operations.only("Load configuration cache state"))
+        }
+        treeTaskGraphOps == expectedTreeTaskGraphOps
+
+        def applyRootProjectBuildScript = operations.first("Apply build file 'build.gradle' to root project 'buildA'")
+        applyRootProjectBuildScript in operations.parentsOf(treeTaskGraphOps[0])
+
+        def taskGraphOps = operations.all(CalculateTaskGraphBuildOperationType)
+        def expectedTaskGraphOps = [
+            buildOp(displayName: "Calculate task graph (:buildB)", parent: treeTaskGraphOps[0], details: ["buildPath": ":buildB"]),
+            buildOp(displayName: "Calculate task graph", parent: treeTaskGraphOps[1], details: ["buildPath": ":"]),
+            buildOp(displayName: "Calculate task graph (:buildB)", parent: treeTaskGraphOps[1], details: ["buildPath": ":buildB"]),
+        ]
+        if (GradleContextualExecuter.configCache) {
+            expectedTaskGraphOps += [
+                buildOp(displayName: "Calculate task graph", parent: treeTaskGraphOps[2], details: ["buildPath": ":"]),
+                buildOp(displayName: "Calculate task graph (:buildB)", parent: treeTaskGraphOps[2], details: ["buildPath": ":buildB"]),
+            ]
+        }
+        taskGraphOps == expectedTaskGraphOps
+
+        def runMainTasks = operations.only(RunRequestedWorkBuildOperationType)
+        runMainTasks.parentId == root.id
+
+        // Tasks are run for buildB multiple times, once for buildscript dependency and again for production dependency
+        def runTasksOps = operations.matchingRegex("Run tasks.*")
+        runTasksOps.size() == 3
+        runTasksOps[0] == buildOp(displayName: "Run tasks (:buildB)", parent: operations.first("Run included build logic build for build ':'"))
+        applyRootProjectBuildScript in operations.parentsOf(runTasksOps[0])
+        // Build operations are run in parallel, so can appear in either order
+        runTasksOps.takeRight(2).sort { it.displayName } == [
+            buildOp(displayName: "Run tasks", parent: runMainTasks),
+            buildOp(displayName: "Run tasks (:buildB)", parent: runMainTasks)
+        ]
+
+        // Task graph ready event sent only once
+        def graphNotifyOps = operations.all(NotifyTaskGraphWhenReadyBuildOperationType)
+        graphNotifyOps == [
+            buildOp(displayName: "Notify task graph whenReady listeners (:buildB)", parent: treeTaskGraphOps[0], details: [buildPath: ":buildB"]),
+            buildOp(displayName: "Notify task graph whenReady listeners", parent: treeTaskGraphOps[1], details: [buildPath: ":"])
+        ]
+    }
+
+    @ToBeFixedForIsolatedProjects(because = "cross-build configuration in composite build")
+    def "generates finish build tree lifecycle operation for included builds without build finished operations"() {
+        given:
+        def buildC = multiProjectBuild("buildC", ["someLib"]) {
+            buildFile << """
+                allprojects {
+                    apply plugin: 'java'
+                }
+            """
+        }
+        includedBuilds << buildC
+        buildA.buildFile.prepend("""
+            buildscript {
+                dependencies {
+                    classpath 'org.test:buildB:1.0'
+                    classpath 'org.test:buildC:1.0'
+                }
+            }
+        """)
+        dependency buildB, "org.test:buildC:1.0"
+
+        when:
+        execute(buildA, ":jar")
+
+        then:
+        executed ":buildB:jar", ":buildC:jar"
+
+        and:
+        operations.only(FinishRootBuildTreeBuildOperationType)
+    }
+
+    @UnsupportedWithConfigurationCache(because = "buildFinished", iterationMatchers = ".*with buildFinished.*")
+    @ToBeFixedForIsolatedProjects(because = "cross-build configuration in composite build")
+    def "generates finish build tree lifecycle operation for included builds with #description"() {
+        given:
+        def buildC = multiProjectBuild("buildC", ["someLib"]) {
+            buildFile << """
+                allprojects {
+                    apply plugin: 'java'
+                }
+            """ << registration("buildC")
+        }
+        includedBuilds << buildC
+        buildA.buildFile.prepend("""
+            buildscript {
+                dependencies {
+                    classpath 'org.test:buildB:1.0'
+                    classpath 'org.test:buildC:1.0'
+                }
+            }
+        """)
+        buildA.buildFile << registration("buildA")
+        dependency buildB, "org.test:buildC:1.0"
+        buildB.buildFile << registration("buildB")
+
+        when:
+        execute(buildA, ":jar")
+
+        then:
+        executed ":buildB:jar", ":buildC:jar"
+
+        and:
+        def buildFinished = operations.only(FinishRootBuildTreeBuildOperationType)
+        def withOutput = ([buildFinished] + operations.search(buildFinished)).findAll { it.progress }
+        withOutput.displayName ==~ outputOperations
+        def output = withOutput.collectMany { it.progress }
+        output.size() == 3
+        output.details.spans.text.flatten() ==~ ["buildA", "buildB", "buildC"].collect { "$message $it${getPlatformLineSeparator()}".toString() }
+
+        where:
+        description     | registration                                                          | message              | outputOperations
+        "buildFinished" | CompositeBuildOperationsIntegrationTest.&buildFinishedRegistrationFor | "buildFinished from" | ["Finish root build tree"]
+        "flow actions"  | CompositeBuildOperationsIntegrationTest.&flowActionRegistrationFor    | "flowAction from"    | ["Run flow action LogBuild", "Run flow action LogBuild (:buildB)", "Run flow action LogBuild (:buildC)"]
+    }
+
+    @ToBeFixedForIsolatedProjects(because = "cross-build configuration in composite build")
+    def "build tree finished operation happens even when configuration fails"() {
+        buildA.buildFile.text = """
+            buildscript {
+                dependencies {
+                    classpath 'org.test:buildB:1.0'
+                }
+            }
+        """ + buildA.buildFile.text
+        buildB.file("src/main/java/Broken.java").text = "class Does not compile {}"
+        when:
+        fails(buildA, ":jar")
+
+        then:
+        executed ":buildB:compileJava"
+
+        operations.none(RunRequestedWorkBuildOperationType)
+        operations.only(FinishRootBuildTreeBuildOperationType)
+    }
+
+    def "generates finish build tree lifecycle operation for empty project"() {
+        given:
+        includedBuilds.clear()
+        buildA.buildFile.text = ""
+
+        when:
+        execute(buildA, "help")
+
+        then:
+        executed ":help"
+
+        and:
+        operations.only(FinishRootBuildTreeBuildOperationType)
+    }
+
+    static String getFlowActionClass() {
+        """
+            abstract class LogBuild implements FlowAction<LogBuild.Parameters> {
+                interface Parameters extends FlowParameters {
+                    @Input
+                    Property<String> getBuildName()
+                }
+
+                @Override
+                void execute(Parameters parameters) {
+                    println "flowAction from \${parameters.buildName.get()}"
+                }
+            }
+        """
+    }
+
+    static String buildFinishedRegistrationFor(String buildName) {
+        """
+            gradle.buildFinished {
+                println "buildFinished from $buildName"
+            }
+        """
+    }
+
+    static String flowActionRegistrationFor(String buildName) {
+        flowActionClass + """
+            def flowScope = gradle.services.get(FlowScope)
+            def flowProviders = gradle.services.get(FlowProviders)
+            flowScope.always(LogBuild) {
+                parameters.buildName = flowProviders.buildWorkResult.map { result -> "$buildName" }
+            }
+        """
     }
 
 }

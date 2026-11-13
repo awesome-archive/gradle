@@ -16,8 +16,10 @@
 
 package org.gradle.integtests.composite
 
+import org.gradle.api.internal.project.ProjectInternal
 import org.gradle.integtests.fixtures.build.BuildTestFile
 import org.gradle.integtests.resolve.AbstractProjectDependencyConflictResolutionIntegrationSpec
+import org.gradle.internal.build.BuildState
 import org.gradle.test.fixtures.file.TestFile
 
 /**
@@ -35,14 +37,12 @@ class CompositeBuildIncludesMultiProjectProjectDependencyConflictResolutionInteg
 
     def setup() {
         buildTestFixture.withBuildInSubDir()
-        multiProject = buildTestFixture.populate('multiProject') {
-            buildFile << checkHelper(buildId, projectPath)
-        }
+        multiProject = buildTestFixture.populate('multiProject')
         super.settingsFile << "includeBuild 'multiProject'\n";
     }
 
     @Override
-    protected TestFile getSettingsFile() {
+    TestFile getSettingsFile() {
         return multiProject.settingsFile;
     }
 
@@ -53,7 +53,7 @@ class CompositeBuildIncludesMultiProjectProjectDependencyConflictResolutionInteg
 
     @Override
     String getBuildId() {
-        "((org.gradle.api.internal.project.ProjectInternal) project).getServices().get(org.gradle.initialization.BuildIdentity.class).getCurrentBuild()"
+        "((${ProjectInternal.name}) project).getServices().get(${BuildState.name}.class).getIdentityPath()"
     }
 
     @Override
@@ -78,13 +78,12 @@ class CompositeBuildIncludesMultiProjectProjectDependencyConflictResolutionInteg
 
     @Override
     void moduleDefinition(String name, String definition) {
-        multiProject.buildFile << "project(':$name') {"
-        multiProject.buildFile << definition
-        multiProject.buildFile << "}"
+        multiProject.project(name).buildFile(definition)
     }
 
     @Override
     boolean isAutoDependencySubstitution() {
         true
     }
+
 }

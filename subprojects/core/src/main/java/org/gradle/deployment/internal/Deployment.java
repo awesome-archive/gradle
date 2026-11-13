@@ -16,8 +16,8 @@
 
 package org.gradle.deployment.internal;
 
-import org.gradle.api.Incubating;
 import org.gradle.internal.HasInternalProtocol;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A deployed application.
@@ -25,7 +25,6 @@ import org.gradle.internal.HasInternalProtocol;
  * @since 4.2
  */
 @HasInternalProtocol
-@Incubating
 public interface Deployment {
     /**
      * Returns the latest status for this deployment.
@@ -40,12 +39,12 @@ public interface Deployment {
     /**
      * Status of a Deployment
      */
-    @Incubating
     interface Status {
         /**
          * Returns a Throwable if the latest build failed for this deployment.
          * @return any failure for the current status.
          */
+        @Nullable
         Throwable getFailure();
 
         /**

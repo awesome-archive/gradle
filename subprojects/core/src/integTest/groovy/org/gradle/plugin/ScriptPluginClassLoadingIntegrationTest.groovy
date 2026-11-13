@@ -17,7 +17,10 @@
 package org.gradle.plugin
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 import org.gradle.test.fixtures.plugin.PluginBuilder
+import org.gradle.test.precondition.Requires
+import org.gradle.test.preconditions.TestExecutionPreconditions
 import spock.lang.Issue
 
 import static org.gradle.util.Matchers.containsText
@@ -50,7 +53,7 @@ class ScriptPluginClassLoadingIntegrationTest extends AbstractIntegrationSpec {
             task sayMessageFrom3 { doLast { println new pkg.Thing().getMessage() } }
         """
 
-        buildScript "apply from: 'plugin1.gradle'"
+        buildFile "apply from: 'plugin1.gradle'"
 
         then:
         succeeds "sayMessageFrom1", "sayMessageFrom2", "sayMessageFrom3"
@@ -60,7 +63,7 @@ class ScriptPluginClassLoadingIntegrationTest extends AbstractIntegrationSpec {
     @Issue("https://issues.gradle.org/browse/GRADLE-3079")
     def "methods defined in script are available to used script plugins"() {
         given:
-        buildScript """
+        buildFile """
           def addTask(project) {
             project.tasks.create("hello").doLast { println "hello from method" }
           }
@@ -79,7 +82,7 @@ class ScriptPluginClassLoadingIntegrationTest extends AbstractIntegrationSpec {
 
     def "methods defined in script plugin are not inherited by applied script plugin"() {
         given:
-        buildScript """
+        buildFile """
             apply from: "script1.gradle"
         """
 
@@ -93,7 +96,7 @@ class ScriptPluginClassLoadingIntegrationTest extends AbstractIntegrationSpec {
         """
 
         when:
-        fails "tasks"
+        fails "help"
 
         then:
         failure.assertHasFileName("Script '${file("script2.gradle").absolutePath}'")
@@ -106,12 +109,12 @@ class ScriptPluginClassLoadingIntegrationTest extends AbstractIntegrationSpec {
             def someMethod() {}
         """
 
-        buildScript """
+        buildFile """
             someMethod()
         """
 
         when:
-        fails "tasks"
+        fails "help"
 
         then:
         failure.assertHasFileName("Build file '${buildFile.absolutePath}'")
@@ -124,23 +127,30 @@ class ScriptPluginClassLoadingIntegrationTest extends AbstractIntegrationSpec {
             def someMethod() {}
         """
 
-        buildScript """
+        buildFile """
             someMethod()
         """
 
         when:
-        fails "tasks", "-I", file("init.gradle").absolutePath
+        fails "help", "-I", file("init.gradle").absolutePath
 
         then:
         failure.assertHasFileName("Build file '${buildFile.absolutePath}'")
         failure.assertThatCause(containsText("Could not find method someMethod()"))
     }
 
+    @Requires(
+        value = TestExecutionPreconditions.NotIsolatedProjects,
+        reason = "Exercises IP incompatible behavior"
+    )
     def "methods defined in a build script are visible to scripts applied to sub projects"() {
         given:
-        settingsFile << "include 'sub'"
+        settingsFile << """
+            rootProject.name = 'root'
+            include 'sub'
+        """
 
-        buildScript """
+        buildFile """
             def someMethod() {
                 println "from some method"
             }
@@ -148,9 +158,15 @@ class ScriptPluginClassLoadingIntegrationTest extends AbstractIntegrationSpec {
 
         file("sub/build.gradle") << "apply from: 'script.gradle'"
         file("sub/script.gradle") << "someMethod()"
+        executer.expectDocumentedDeprecationWarning("Implicit lookup of methods in parent projects has been deprecated. " +
+            "This will fail with an error in Gradle 10. " +
+            "Method 'someMethod' was not declared in project ':sub' and was resolved from root project 'root'. " +
+            "This lookup was initiated by a dynamic invocation in the build script. " +
+            "Consult the upgrading guide for further information: " +
+            "https://docs.gradle.org/current/userguide/upgrading_version_9.html#deprecated_implicit_lookup_in_parent_projects")
 
         when:
-        run "tasks"
+        run "help"
 
         then:
         output.contains("from some method")
@@ -159,7 +175,7 @@ class ScriptPluginClassLoadingIntegrationTest extends AbstractIntegrationSpec {
     @Issue("https://issues.gradle.org/browse/GRADLE-3082")
     def "can use apply block syntax to apply multiple scripts"() {
         given:
-        buildScript """
+        buildFile """
           apply {
             from "script1.gradle"
             from "script2.gradle"
@@ -179,7 +195,7 @@ class ScriptPluginClassLoadingIntegrationTest extends AbstractIntegrationSpec {
 
     def "separate classloaders are used when using multi apply syntax"() {
         given:
-        buildScript """
+        buildFile """
           apply {
             from "script1.gradle"
             from "script2.gradle"
@@ -190,22 +206,26 @@ class ScriptPluginClassLoadingIntegrationTest extends AbstractIntegrationSpec {
         file("script2.gradle") << "new Foo()"
 
         when:
-        fails "tasks"
+        fails "help"
 
         then:
         failure.assertHasFileName("Script '${file("script2.gradle").absolutePath}'")
         failure.assertThatCause(containsText("unable to resolve class Foo"))
     }
 
+    @ToBeFixedForIsolatedProjects(because = "Investigate")
     def "script plugin buildscript does not affect client"() {
         given:
         def jar = file("plugin.jar")
         pluginBuilder.addPlugin("project.task('hello')")
         pluginBuilder.publishTo(executer, jar)
 
-        settingsFile << "include 'sub'"
+        settingsFile << """
+            rootProject.name = 'root'
+            include 'sub'
+        """
 
-        buildScript """
+        buildFile """
             apply from: "script.gradle"
 
             try {
@@ -238,6 +258,12 @@ class ScriptPluginClassLoadingIntegrationTest extends AbstractIntegrationSpec {
                 getClass().classLoader.close()
             }
         """
+        executer.expectDocumentedDeprecationWarning("Implicit lookup of properties in parent projects has been deprecated. " +
+            "This will fail with an error in Gradle 10. " +
+            "Property 'pluginClass' was not declared in project ':sub' and was resolved from root project 'root'. " +
+            "This lookup was initiated by a dynamic invocation in the build script. " +
+            "Consult the upgrading guide for further information: " +
+            "https://docs.gradle.org/current/userguide/upgrading_version_9.html#deprecated_implicit_lookup_in_parent_projects")
 
         when:
         succeeds "hello"
@@ -253,7 +279,7 @@ class ScriptPluginClassLoadingIntegrationTest extends AbstractIntegrationSpec {
         pluginBuilder.addPlugin("project.task('hello')")
         pluginBuilder.publishTo(executer, jar)
 
-        buildScript """
+        buildFile """
             buildscript {
                 dependencies { classpath files("plugin.jar") }
             }
@@ -288,7 +314,7 @@ class ScriptPluginClassLoadingIntegrationTest extends AbstractIntegrationSpec {
         pluginBuilder.addPlugin("project.task('hello')")
         pluginBuilder.publishTo(executer, jar)
 
-        buildScript """
+        buildFile """
             apply from: "script1.gradle"
         """
 
@@ -327,7 +353,7 @@ class ScriptPluginClassLoadingIntegrationTest extends AbstractIntegrationSpec {
         pluginBuilder.addPlugin("project.task('hello')")
         pluginBuilder.publishTo(executer, jar)
 
-        buildScript """
+        buildFile """
             apply from: 'foo.gradle'
         """
 

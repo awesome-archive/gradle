@@ -17,15 +17,27 @@
 package org.gradle.api.tasks
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.util.Requires
-import org.gradle.util.TestPrecondition
+import org.gradle.internal.reflect.validation.ValidationMessageChecker
+import org.gradle.test.precondition.Requires
+import org.gradle.test.preconditions.TestExecutionPreconditions
+import org.gradle.test.preconditions.FileSystemTestPreconditions
+
 
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 
-@Requires(TestPrecondition.SYMLINKS)
-class IncrementalBuildSymlinkHandlingIntegrationTest extends AbstractIntegrationSpec {
+@Requires(value = [
+    FileSystemTestPreconditions.Symlinks,
+    TestExecutionPreconditions.NotEmbeddedExecutor,
+], reason = "requires isolated daemons for symlink data cleanup between builds")
+class IncrementalBuildSymlinkHandlingIntegrationTest extends AbstractIntegrationSpec implements ValidationMessageChecker {
     def setup() {
+        expectReindentedValidationMessage()
+
+        // Must run on isolated daemons so that symlink data can be properly cleaned up between builds
+        executer.requireDaemon()
+        executer.requireIsolatedDaemons()
+
         buildFile << """
 // This is a workaround to bust the JVM's file canonicalization cache
 def f = file("delete-me")
@@ -35,11 +47,13 @@ f.delete() // invalidates cache
 task work {
     inputs.file('in.txt')
     inputs.dir('in-dir')
-    outputs.file('out.txt')
-    outputs.dir('out-dir')
+    def outTxt = file('out.txt')
+    def outDir = file('out-dir')
+    outputs.file(outTxt)
+    outputs.dir(outDir)
     doLast {
-        file('out.txt').text = 'content'
-        def f2 = file('out-dir/file1.txt')
+        outTxt.text = 'content'
+        def f2 = new File(outDir, 'file1.txt')
         f2.parentFile.mkdirs()
         f2 << 'content'
     }
@@ -63,7 +77,7 @@ task work {
         run("work")
 
         then:
-        result.assertTasksNotSkipped(":work")
+        result.assertTasksExecuted(":work")
 
         when:
         run("work")
@@ -88,7 +102,7 @@ task work {
         run("work")
 
         then:
-        result.assertTasksNotSkipped(":work")
+        result.assertTasksExecuted(":work")
 
         when:
         run("work")
@@ -113,7 +127,7 @@ task work {
         run("work")
 
         then:
-        result.assertTasksNotSkipped(":work")
+        result.assertTasksExecuted(":work")
 
         when:
         run("work")
@@ -122,17 +136,24 @@ task work {
         result.assertTasksSkipped(":work")
     }
 
-    def "symlink may reference missing input file"() {
+    def "symlink may not reference missing input file"() {
+        enableProblemsApiCheck()
         file("in-dir").createDir()
         def link = file("in.txt")
         link.createLink("other")
         assert !link.exists()
 
-        expect:
-        executer.expectDeprecationWarning().withFullDeprecationStackTraceDisabled()
-        succeeds("work")
-        output.contains """A problem was found with the configuration of task ':work'. Registering invalid inputs and outputs via TaskInputs and TaskOutputs methods has been deprecated and is scheduled to be removed in Gradle 5.0.
- - File '$link' specified for property '\$1' does not exist."""
+        when:
+        fails("work")
+
+        then:
+        failure.assertHasDescription("A problem was found with the configuration of task ':work' (type 'DefaultTask').")
+        verifyAll(receivedProblem) {
+            severity == Severity.ERROR
+            fqid == 'Gradle:Build Definition:Input file does not exist'
+            definition.id.displayName == 'Input file does not exist'
+            definition.documentationLink.url == "https://docs.gradle.org/${distribution.version.version}/userguide/validation_problems.html#input_file_does_not_exist"
+        }
     }
 
     def "can replace input file with symlink to file with same content"() {
@@ -166,7 +187,7 @@ task work {
         run("work")
 
         then:
-        result.assertTasksNotSkipped(":work")
+        result.assertTasksExecuted(":work")
     }
 
     def "can replace input directory with symlink to directory with same content"() {
@@ -202,7 +223,7 @@ task work {
         run("work")
 
         then:
-        result.assertTasksNotSkipped(":work")
+        result.assertTasksExecuted(":work")
     }
 
     def "can replace output file with symlink to file with same content"() {
@@ -238,7 +259,7 @@ task work {
         run("work")
 
         then:
-        result.assertTasksNotSkipped(":work")
+        result.assertTasksExecuted(":work")
     }
 
     def "can replace output directory with symlink to directory with same content"() {
@@ -274,6 +295,6 @@ task work {
         run("work")
 
         then:
-        result.assertTasksNotSkipped(":work")
+        result.assertTasksExecuted(":work")
     }
 }

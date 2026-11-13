@@ -20,16 +20,26 @@ import org.gradle.StartParameter;
 import org.gradle.api.Action;
 import org.gradle.api.Incubating;
 import org.gradle.api.UnknownProjectException;
+import org.gradle.api.cache.CacheConfigurations;
+import org.gradle.api.file.BuildLayout;
 import org.gradle.api.initialization.dsl.ScriptHandler;
+import org.gradle.api.initialization.resolve.DependencyResolutionManagement;
 import org.gradle.api.invocation.Gradle;
+import org.gradle.api.plugins.ExtensionAware;
 import org.gradle.api.plugins.PluginAware;
+import org.gradle.api.provider.Provider;
+import org.gradle.api.provider.ProviderFactory;
+import org.gradle.api.toolchain.management.ToolchainManagement;
 import org.gradle.caching.configuration.BuildCacheConfiguration;
+import org.gradle.declarative.dsl.model.annotations.Adding;
+import org.gradle.declarative.dsl.model.annotations.HiddenInDefinition;
 import org.gradle.internal.HasInternalProtocol;
 import org.gradle.plugin.management.PluginManagementSpec;
 import org.gradle.vcs.SourceControl;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.io.File;
+import java.util.Arrays;
 
 /**
  * <p>Declares the configuration required to instantiate and configure the hierarchy of {@link
@@ -39,7 +49,7 @@ import java.io.File;
  * #DEFAULT_SETTINGS_FILE}</code> settings file. Before Gradle assembles the projects for a build, it creates a
  * <code>Settings</code> instance and executes the settings file against it.</p>
  *
- * <h3>Assembling a Multi-Project Build</h3>
+ * <h2>Assembling a Multi-Project Build</h2>
  *
  * <p>One of the purposes of the <code>Settings</code> object is to allow you to declare the projects which are to be
  * included in the build. You add projects to the build using the {@link #include(String...)} method.  There is always a
@@ -50,9 +60,9 @@ import java.io.File;
  * <p>When a project is included in the build, a {@link ProjectDescriptor} is created. You can use this descriptor to
  * change the default values for several properties of the project.</p>
  *
- * <h3>Using Settings in a Settings File</h3>
+ * <h2>Using Settings in a Settings File</h2>
  *
- * <h4>Dynamic Properties</h4>
+ * <h3>Dynamic Properties</h3>
  *
  * <p>In addition to the properties of this interface, the {@code Settings} object makes some additional read-only
  * properties available to the settings script. This includes properties from the following sources:</p>
@@ -68,11 +78,15 @@ import java.io.File;
  * <li>Provided on the command-line using the -P option.</li>
  *
  * </ul>
+ * @since 0.7
  */
 @HasInternalProtocol
-public interface Settings extends PluginAware {
+public interface Settings extends PluginAware, ExtensionAware {
     /**
      * <p>The default name for the settings file.</p>
+     *
+     * @implNote For internal purposes, prefer constants from {@code BuildLogicFiles}.
+     * @since 0.7
      */
     String DEFAULT_SETTINGS_FILE = "settings.gradle";
 
@@ -108,8 +122,50 @@ public interface Settings extends PluginAware {
      * </pre>
      *
      * @param projectPaths the projects to add.
+     * @since 0.7
      */
-    void include(String... projectPaths);
+    @HiddenInDefinition
+    default void include(String... projectPaths) {
+        include(Arrays.asList(projectPaths));
+    }
+
+    /**
+     * <p>Adds the given projects to the build. Each path in the supplied list is treated as the path of a project to
+     * add to the build. Note that these path are not file paths, but instead specify the location of the new project in
+     * the project hierarchy. As such, the supplied paths must use the ':' character as separator (and NOT '/').</p>
+     *
+     * <p>The last element of the supplied path is used as the project name. The supplied path is converted to a project
+     * directory relative to the root project directory. The project directory can be altered by changing the 'projectDir'
+     * property after the project has been included (see {@link ProjectDescriptor#setProjectDir(File)})</p>
+     *
+     * <p>As an example, the path {@code a:b} adds a project with path {@code :a:b}, name {@code b} and project
+     * directory {@code $rootDir/a/b}. It also adds the a project with path {@code :a}, name {@code a} and project
+     * directory {@code $rootDir/a}, if it does not exist already.</p>
+     *
+     * <p>Some common examples of using the project path are:</p>
+     *
+     * <pre class='autoTestedSettings'>
+     *   // include two projects, 'foo' and 'foo:bar'
+     *   // directories are inferred by replacing ':' with '/'
+     *   include(['foo:bar'])
+     *
+     *   // include one project whose project dir does not match the logical project path
+     *   include(['baz'])
+     *   project(':baz').projectDir = file('foo/baz')
+     *
+     *   // include many projects whose project dirs do not match the logical project paths
+     *   file('subprojects').eachDir { dir -&gt;
+     *     include([dir.name])
+     *     project(":${dir.name}").projectDir = dir
+     *   }
+     * </pre>
+     *
+     * @param projectPaths the projects to add.
+     *
+     * @since 7.4
+     */
+    @HiddenInDefinition
+    void include(Iterable<String> projectPaths);
 
     /**
      * <p>Adds the given projects to the build. Each name in the supplied list is treated as the name of a project to
@@ -122,15 +178,47 @@ public interface Settings extends PluginAware {
      * {@code $rootDir/../a}.</p>
      *
      * @param projectNames the projects to add.
+     * @since 0.7
      */
-    void includeFlat(String... projectNames);
+    @HiddenInDefinition
+    default void includeFlat(String... projectNames) {
+        includeFlat(Arrays.asList(projectNames));
+    }
+
+    /**
+     * <p>Adds the given projects to the build. Each name in the supplied list is treated as the name of a project to
+     * add to the build.</p>
+     *
+     * <p>The supplied name is converted to a project directory relative to the <em>parent</em> directory of the root
+     * project directory.</p>
+     *
+     * <p>As an example, the name {@code a} add a project with path {@code :a}, name {@code a} and project directory
+     * {@code $rootDir/../a}.</p>
+     *
+     * @param projectNames the projects to add.
+     *
+     * @since 7.4
+     */
+    @HiddenInDefinition
+    void includeFlat(Iterable<String> projectNames);
 
     /**
      * <p>Returns this settings object.</p>
      *
      * @return This settings object. Never returns null.
+     * @since 0.8
      */
+    @HiddenInDefinition
     Settings getSettings();
+
+    /**
+     * Provides access to important locations for a Gradle build.
+     *
+     * @since 8.5
+     */
+    @Incubating
+    @HiddenInDefinition
+    BuildLayout getLayout();
 
     /**
      * Returns the build script handler for settings. You can use this handler to query details about the build
@@ -140,7 +228,7 @@ public interface Settings extends PluginAware {
      *
      * @since 4.4
      */
-    @Incubating
+    @HiddenInDefinition
     ScriptHandler getBuildscript();
 
     /**
@@ -148,20 +236,25 @@ public interface Settings extends PluginAware {
      * file.</p>
      *
      * @return The settings directory. Never returns null.
+     * @since 0.7
      */
+    @HiddenInDefinition
     File getSettingsDir();
 
     /**
      * <p>Returns the root directory of the build. The root directory is the project directory of the root project.</p>
      *
      * @return The root directory. Never returns null.
+     * @since 0.7
      */
+    @HiddenInDefinition
     File getRootDir();
 
     /**
      * <p>Returns the root project of the build.</p>
      *
      * @return The root project. Never returns null.
+     * @since 0.7
      */
     ProjectDescriptor getRootProject();
 
@@ -171,7 +264,9 @@ public interface Settings extends PluginAware {
      * @param path The path.
      * @return The project with the given path. Never returns null.
      * @throws UnknownProjectException If no project with the given path exists.
+     * @since 0.7
      */
+    @HiddenInDefinition
     ProjectDescriptor project(String path) throws UnknownProjectException;
 
     /**
@@ -179,8 +274,10 @@ public interface Settings extends PluginAware {
      *
      * @param path The path
      * @return The project with the given path. Returns null if no such project exists.
+     * @since 0.7
      */
     @Nullable
+    @HiddenInDefinition
     ProjectDescriptor findProject(String path);
 
     /**
@@ -189,7 +286,9 @@ public interface Settings extends PluginAware {
      * @param projectDir The project directory.
      * @return The project with the given project directory. Never returns null.
      * @throws UnknownProjectException If no project with the given path exists.
+     * @since 0.7
      */
+    @HiddenInDefinition
     ProjectDescriptor project(File projectDir) throws UnknownProjectException;
 
     /**
@@ -197,22 +296,36 @@ public interface Settings extends PluginAware {
      *
      * @param projectDir The project directory.
      * @return The project with the given project directory. Returns null if no such project exists.
+     * @since 0.7
      */
     @Nullable
+    @HiddenInDefinition
     ProjectDescriptor findProject(File projectDir);
 
     /**
      * <p>Returns the set of parameters used to invoke this instance of Gradle.</p>
      *
      * @return The parameters. Never returns null.
+     * @since 0.7
      */
+    @HiddenInDefinition
     StartParameter getStartParameter();
+
+    /**
+     * Provides access to methods to create various kinds of {@link Provider} instances.
+     *
+     * @since 6.8
+     */
+    @HiddenInDefinition
+    ProviderFactory getProviders();
 
     /**
      * Returns the {@link Gradle} instance for the current build.
      *
      * @return The Gradle instance. Never returns null.
+     * @since 0.9
      */
+    @HiddenInDefinition
     Gradle getGradle();
 
     /**
@@ -221,7 +334,7 @@ public interface Settings extends PluginAware {
      *
      * @since 3.1
      */
-    @Incubating
+    @HiddenInDefinition
     void includeBuild(Object rootProject);
 
     /**
@@ -231,7 +344,7 @@ public interface Settings extends PluginAware {
      *
      * @since 3.1
      */
-    @Incubating
+    @HiddenInDefinition
     void includeBuild(Object rootProject, Action<ConfigurableIncludedBuild> configuration);
 
     /**
@@ -239,6 +352,7 @@ public interface Settings extends PluginAware {
      *
      * @since 3.5
      */
+    @HiddenInDefinition
     BuildCacheConfiguration getBuildCache();
 
     /**
@@ -246,6 +360,7 @@ public interface Settings extends PluginAware {
      *
      * @since 3.5
      */
+    @HiddenInDefinition
     void buildCache(Action<? super BuildCacheConfiguration> action);
 
     /**
@@ -253,7 +368,7 @@ public interface Settings extends PluginAware {
      *
      * @since 3.5
      */
-    @Incubating
+    @HiddenInDefinition
     void pluginManagement(Action<? super PluginManagementSpec> pluginManagementSpec);
 
     /**
@@ -261,7 +376,6 @@ public interface Settings extends PluginAware {
      *
      * @since 3.5
      */
-    @Incubating
     PluginManagementSpec getPluginManagement();
 
     /**
@@ -269,7 +383,7 @@ public interface Settings extends PluginAware {
      *
      * @since 4.4
      */
-    @Incubating
+    @HiddenInDefinition
     void sourceControl(Action<? super SourceControl> configuration);
 
     /**
@@ -277,7 +391,7 @@ public interface Settings extends PluginAware {
      *
      * @since 4.4
      */
-    @Incubating
+    @HiddenInDefinition
     SourceControl getSourceControl();
 
     /**
@@ -287,6 +401,83 @@ public interface Settings extends PluginAware {
      *
      * @since 4.6
      */
-    @Incubating
+    @Adding
     void enableFeaturePreview(String name);
+
+    /**
+     * Configures the cross-project dependency resolution aspects
+     * @param dependencyResolutionConfiguration the configuration
+     *
+     * @since 6.8
+     */
+    @HiddenInDefinition
+    void dependencyResolutionManagement(Action<? super DependencyResolutionManagement> dependencyResolutionConfiguration);
+
+    /**
+     * Returns the dependency resolution management handler.
+     *
+     * @since 6.8
+     */
+    DependencyResolutionManagement getDependencyResolutionManagement();
+
+    /**
+     * Configures toolchain management.
+     *
+     * @since 7.6
+     */
+    @Incubating
+    @HiddenInDefinition
+    void toolchainManagement(Action<? super ToolchainManagement> toolchainManagementConfiguration);
+
+    /**
+     * Returns the toolchain management configuration.
+     *
+     * @since 7.6
+     */
+    @Incubating
+    @HiddenInDefinition
+    ToolchainManagement getToolchainManagement();
+
+    /**
+     * Returns the configuration for caches stored in the user home directory.
+     *
+     * @since 8.0
+     */
+    @Incubating
+    @HiddenInDefinition
+    CacheConfigurations getCaches();
+
+    /**
+     * Configures the settings for caches stored in the user home directory.
+     *
+     * @param cachesConfiguration the configuration
+     *
+     * @since 8.0
+     */
+    @Incubating
+    @HiddenInDefinition
+    void caches(Action<? super CacheConfigurations> cachesConfiguration);
+
+    /**
+     * Returns the model defaults object for this build.
+     *
+     * This is an experimental feature.
+     *
+     * @since 8.10
+     */
+    @Incubating
+    SharedModelDefaults getDefaults();
+
+    /**
+     * Configures the model defaults for this build.
+     *
+     * This is an experimental feature.
+     *
+     * @param action the configuration to apply
+     *
+     * @since 8.10
+     */
+    @Incubating
+    @HiddenInDefinition
+    void defaults(Action<? super SharedModelDefaults> action);
 }

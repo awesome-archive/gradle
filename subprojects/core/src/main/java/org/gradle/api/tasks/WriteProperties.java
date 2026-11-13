@@ -18,19 +18,22 @@ package org.gradle.api.tasks;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Maps;
-import org.apache.commons.io.IOUtils;
 import org.gradle.api.DefaultTask;
+import org.gradle.api.file.RegularFileProperty;
+import org.gradle.internal.IoActions;
 import org.gradle.internal.UncheckedException;
+import org.gradle.internal.instrumentation.api.annotations.ToBeReplacedByLazyProperty;
 import org.gradle.internal.util.PropertiesUtils;
+import org.gradle.util.internal.DeferredUtil;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.io.BufferedOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.Charset;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.Callable;
@@ -53,19 +56,20 @@ import java.util.concurrent.Callable;
  * @since 3.3
  */
 @CacheableTask
-public class WriteProperties extends DefaultTask {
-    private final Map<String, Callable<String>> deferredProperties = Maps.newHashMap();
-    private final Map<String, String> properties = Maps.newHashMap();
+public abstract class WriteProperties extends DefaultTask {
+    private final Map<String, Callable<String>> deferredProperties = new HashMap<>();
+    private final Map<String, String> properties = new HashMap<>();
     private String lineSeparator = "\n";
-    private Object outputFile;
     private String comment;
     private String encoding = "ISO_8859_1";
 
     /**
      * Returns an immutable view of properties to be written to the properties file.
+     *
      * @since 3.3
      */
     @Input
+    @ToBeReplacedByLazyProperty
     public Map<String, String> getProperties() {
         ImmutableMap.Builder<String, String> propertiesBuilder = ImmutableMap.builder();
         propertiesBuilder.putAll(properties);
@@ -84,9 +88,11 @@ public class WriteProperties extends DefaultTask {
      *
      * @see #properties(Map)
      * @see #property(String, Object)
+     * @since 3.3
      */
     public void setProperties(Map<String, Object> properties) {
         this.properties.clear();
+        this.deferredProperties.clear();
         properties(properties);
     }
 
@@ -99,23 +105,26 @@ public class WriteProperties extends DefaultTask {
      * <p>
      * Values are not allowed to be null.
      * </p>
+     *
      * @param name Name of the property
      * @param value Value of the property
      * @since 3.4
      */
     public void property(final String name, final Object value) {
         checkForNullValue(name, value);
-        if (value instanceof Callable) {
+        if (DeferredUtil.isDeferred(value)) {
             deferredProperties.put(name, new Callable<String>() {
                 @Override
                 public String call() throws Exception {
-                    Object futureValue = ((Callable) value).call();
+                    Object futureValue = DeferredUtil.unpack(value);
                     checkForNullValue(name, futureValue);
                     return String.valueOf(futureValue);
                 }
             });
+            properties.remove(name);
         } else {
             properties.put(name, String.valueOf(value));
+            deferredProperties.remove(name);
         }
     }
 
@@ -138,14 +147,17 @@ public class WriteProperties extends DefaultTask {
     /**
      * Returns the line separator to be used when creating the properties file.
      * Defaults to {@literal `\n`}.
+     * @since 3.3
      */
     @Input
+    @ToBeReplacedByLazyProperty
     public String getLineSeparator() {
         return lineSeparator;
     }
 
     /**
      * Sets the line separator to be used when creating the properties file.
+     * @since 3.3
      */
     public void setLineSeparator(String lineSeparator) {
         this.lineSeparator = lineSeparator;
@@ -153,16 +165,19 @@ public class WriteProperties extends DefaultTask {
 
     /**
      * Returns the optional comment to add at the beginning of the properties file.
+     * @since 3.3
      */
     @Nullable
     @Optional
     @Input
+    @ToBeReplacedByLazyProperty
     public String getComment() {
         return comment;
     }
 
     /**
      * Sets the optional comment to add at the beginning of the properties file.
+     * @since 3.3
      */
     public void setComment(@Nullable String comment) {
         this.comment = comment;
@@ -171,8 +186,10 @@ public class WriteProperties extends DefaultTask {
     /**
      * Returns the encoding used to write the properties file. Defaults to {@literal ISO_8859_1}.
      * If set to anything different, unicode escaping is turned off.
+     * @since 3.3
      */
     @Input
+    @ToBeReplacedByLazyProperty
     public String getEncoding() {
         return encoding;
     }
@@ -180,45 +197,36 @@ public class WriteProperties extends DefaultTask {
     /**
      * Sets the encoding used to write the properties file. Defaults to {@literal ISO_8859_1}.
      * If set to anything different, unicode escaping is turned off.
+     * @since 3.3
      */
     public void setEncoding(String encoding) {
         this.encoding = encoding;
     }
 
     /**
-     * Returns the output file to write the properties to.
+     * The output properties file.
+     *
+     * @since 8.1
      */
     @OutputFile
-    public File getOutputFile() {
-        return getProject().file(outputFile);
-    }
+    abstract public RegularFileProperty getDestinationFile();
 
     /**
-     * Sets the output file to write the properties to.
+     * Write properties.
      *
-     * @since 4.0
+     * @since 3.3
      */
-    public void setOutputFile(File outputFile) {
-        this.outputFile = outputFile;
-    }
-
-    /**
-     * Sets the output file to write the properties to.
-     */
-    public void setOutputFile(Object outputFile) {
-        this.outputFile = outputFile;
-    }
-
     @TaskAction
     public void writeProperties() throws IOException {
         Charset charset = Charset.forName(getEncoding());
-        OutputStream out = new BufferedOutputStream(new FileOutputStream(getOutputFile()));
+        File file = getDestinationFile().getAsFile().get();
+        OutputStream out = new BufferedOutputStream(new FileOutputStream(file));
         try {
             Properties propertiesToWrite = new Properties();
             propertiesToWrite.putAll(getProperties());
             PropertiesUtils.store(propertiesToWrite, out, getComment(), charset, getLineSeparator());
         } finally {
-            IOUtils.closeQuietly(out);
+            IoActions.closeQuietly(out);
         }
     }
 

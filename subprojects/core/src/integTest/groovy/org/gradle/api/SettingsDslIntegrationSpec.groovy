@@ -32,4 +32,113 @@ class SettingsDslIntegrationSpec extends AbstractIntegrationSpec {
         then:
         succeeds('help')
     }
+
+    def "can dynamically access properties"() {
+
+        given:
+        propertiesFile << "someProjectProperty=true"
+        settingsFile << """
+            if (getProperty('someProjectProperty') == 'true') {
+                println('getProperty worked')
+            }
+            if (someProjectProperty == 'true') {
+                println('dynamic property access worked')
+            }
+        """
+
+        when:
+        succeeds('help')
+
+        then:
+        outputContains('etProperty worked')
+        outputContains('dynamic property access worked')
+    }
+
+    def "Can type-safely use ExtensionAware with the Groovy DSL"() {
+        when:
+        def answerFile = "answerHolder.gradle"
+        testDirectory.file(answerFile) << """
+        extensions["theAnswer"] = {
+            42
+        }
+        """
+
+        settingsFile << """
+        buildscript {
+            extensions["aValue"] = "hello"
+
+            assert extensions["aValue"] == "hello" : "Can access inside buildscript"
+        }
+
+        assert extensions["aValue"] == "hello" : "Can access outside buildscript"
+
+        apply from: '$answerFile'
+
+        assert(extensions["theAnswer"]() == 42) : "Can access from applied file"
+        """
+        then:
+        succeeds('help')
+    }
+
+    def "Can type-safely use ExtensionAware with the Kotlin DSL"() {
+        when:
+        // Need to use settings.extra because Kotlin DSL needs to be re-compiled
+        def answerFile = "answerHolder.settings.gradle.kts"
+
+        // Need to use settings because Kotlin DSL needs to be re-compiled
+        testDirectory.file(answerFile) << """
+        settings.extra["theAnswer"] = { 42 }
+        """
+
+        settingsKotlinFile << """
+        buildscript {
+            settings.extra["aValue"] = "hello"
+
+            assert(settings.extra["aValue"] == "hello") {
+                "Can access inside buildscript"
+            }
+
+            settings.extra["hamlet"] = "To be or not to be"
+
+            assert(settings.extra["hamlet"] == "To be or not to be") {
+                "Can access inside buildscript"
+            }
+        }
+
+        assert(settings.extra["aValue"] == "hello") {
+            "Can access outside buildscript"
+        }
+
+        val hamlet = settings.extra["hamlet"] as String
+
+        assert(hamlet == "To be or not to be") {
+            "Can access outside buildscript"
+        }
+
+        apply(from = "$answerFile")
+
+        @Suppress("UNCHECKED_CAST")
+        val theAnswer = settings.extra["theAnswer"] as () -> Int
+
+        assert(theAnswer() == 42) {
+            "Can access from applied file"
+        }
+        """
+        then:
+        succeeds('help')
+    }
+
+    def 'settings script classpath has proper usage attribute'() {
+        settingsFile << """
+buildscript {
+    configurations.classpath {
+        def value = attributes.getAttribute(Usage.USAGE_ATTRIBUTE)
+        assert value.name == Usage.JAVA_RUNTIME
+    }
+}
+"""
+        expect:
+        succeeds()
+    }
+
 }

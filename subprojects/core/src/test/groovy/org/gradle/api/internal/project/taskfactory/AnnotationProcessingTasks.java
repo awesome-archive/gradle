@@ -27,14 +27,17 @@ import org.gradle.api.tasks.InputFile;
 import org.gradle.api.tasks.InputFiles;
 import org.gradle.api.tasks.LocalState;
 import org.gradle.api.tasks.Nested;
+import org.gradle.api.tasks.Optional;
 import org.gradle.api.tasks.OutputDirectories;
 import org.gradle.api.tasks.OutputDirectory;
 import org.gradle.api.tasks.OutputFile;
 import org.gradle.api.tasks.OutputFiles;
 import org.gradle.api.tasks.SkipWhenEmpty;
 import org.gradle.api.tasks.TaskAction;
-import org.gradle.api.tasks.incremental.IncrementalTaskInputs;
+import org.gradle.work.InputChanges;
 
+import javax.annotation.Nullable;
+import javax.inject.Inject;
 import java.io.File;
 import java.util.List;
 
@@ -47,6 +50,7 @@ public class AnnotationProcessingTasks {
     public static class TestTask extends DefaultTask {
         final Runnable action;
 
+        @Inject
         public TestTask(Runnable action) {
             this.action = action;
         }
@@ -58,6 +62,7 @@ public class AnnotationProcessingTasks {
     }
 
     public static class TaskWithInheritedMethod extends TestTask {
+        @Inject
         public TaskWithInheritedMethod(Runnable action) {
             super(action);
         }
@@ -66,6 +71,7 @@ public class AnnotationProcessingTasks {
     public static class TaskWithOverriddenMethod extends TestTask {
         private final Runnable action;
 
+        @Inject
         public TaskWithOverriddenMethod(Runnable action) {
             super(null);
             this.action = action;
@@ -81,6 +87,7 @@ public class AnnotationProcessingTasks {
     public static class TaskWithProtectedMethod extends DefaultTask {
         private final Runnable action;
 
+        @Inject
         public TaskWithProtectedMethod(Runnable action) {
             this.action = action;
         }
@@ -93,11 +100,16 @@ public class AnnotationProcessingTasks {
 
     public static class TaskWithStaticMethod extends DefaultTask {
         @TaskAction
-        public static void doStuff() {
+        public static void staticAction() {
+        }
+
+        @TaskAction
+        public void goodAction() {
         }
     }
 
     public static class TaskWithMultipleMethods extends TestTask {
+        @Inject
         public TaskWithMultipleMethods(Runnable action) {
             super(action);
         }
@@ -118,51 +130,60 @@ public class AnnotationProcessingTasks {
         public void doStuff() {}
     }
 
-    public static class TaskWithIncrementalAction extends DefaultTask {
-        private final Action<IncrementalTaskInputs> action;
+    public static class TaskUsingInputChanges extends DefaultTask {
+        private final Action<InputChanges> action;
 
-        public TaskWithIncrementalAction(Action<IncrementalTaskInputs> action) {
+        @Inject
+        public TaskUsingInputChanges(Action<InputChanges> action) {
             this.action = action;
         }
 
         @TaskAction
-        public void doStuff(IncrementalTaskInputs changes) {
+        public void doStuff(InputChanges changes) {
             action.execute(changes);
+        }
+
+        @Optional
+        @OutputFile
+        @Nullable
+        public File getOutputFile() {
+            return null;
         }
     }
 
-    public static class TaskWithOverriddenIncrementalAction extends TaskWithIncrementalAction {
-        private final Action<IncrementalTaskInputs> action;
+    public static class TaskWithOverriddenInputChangesAction extends TaskUsingInputChanges {
+        private final Action<InputChanges> action;
 
-        public TaskWithOverriddenIncrementalAction(Action<IncrementalTaskInputs> action, Action<IncrementalTaskInputs> superAction) {
+        @Inject
+        public TaskWithOverriddenInputChangesAction(Action<InputChanges> action, Action<InputChanges> superAction) {
             super(superAction);
             this.action = action;
         }
 
         @Override
         @TaskAction
-        public void doStuff(IncrementalTaskInputs changes) {
+        public void doStuff(InputChanges changes) {
             action.execute(changes);
         }
     }
 
-    public static class TaskWithMultipleIncrementalActions extends DefaultTask {
+    public static class TaskWithMultipleInputChangesActions extends DefaultTask {
 
         @TaskAction
-        public void doStuff(IncrementalTaskInputs changes) {
+        public void doStuff(InputChanges changes) {
         }
 
         @TaskAction
-        public void doStuff2(IncrementalTaskInputs changes) {
+        public void doStuff2(InputChanges changes) {
         }
     }
 
-    public static class TaskWithOverloadedActions extends DefaultTask {
+    public static class TaskWithOverloadedInputChangesActions extends DefaultTask {
         @TaskAction
         public void doStuff() {}
 
         @TaskAction
-        public void doStuff(IncrementalTaskInputs changes) {}
+        public void doStuff(InputChanges changes) {}
     }
 
     public static class TaskWithSingleParamAction extends DefaultTask {
@@ -180,6 +201,7 @@ public class AnnotationProcessingTasks {
     public static class TaskWithInputFile extends TaskWithAction {
         File inputFile;
 
+        @Inject
         public TaskWithInputFile(File inputFile) {
             this.inputFile = inputFile;
         }
@@ -193,6 +215,7 @@ public class AnnotationProcessingTasks {
     public static class TaskWithInputDir extends TaskWithAction {
         File inputDir;
 
+        @Inject
         public TaskWithInputDir(File inputDir) {
             this.inputDir = inputDir;
         }
@@ -206,6 +229,7 @@ public class AnnotationProcessingTasks {
     public static class TaskWithInput extends TaskWithAction {
         String inputValue;
 
+        @Inject
         public TaskWithInput(String inputValue) {
             this.inputValue = inputValue;
         }
@@ -219,6 +243,7 @@ public class AnnotationProcessingTasks {
     public static class TaskWithBooleanInput extends TaskWithAction {
         boolean inputValue;
 
+        @Inject
         public TaskWithBooleanInput(boolean inputValue) {
             this.inputValue = inputValue;
         }
@@ -230,6 +255,7 @@ public class AnnotationProcessingTasks {
     }
 
     public static class BrokenTaskWithInputDir extends TaskWithInputDir {
+        @Inject
         public BrokenTaskWithInputDir(File inputDir) {
             super(inputDir);
         }
@@ -251,6 +277,7 @@ public class AnnotationProcessingTasks {
     public static class TaskWithOutputFile extends TaskWithAction {
         File outputFile;
 
+        @Inject
         public TaskWithOutputFile(File outputFile) {
             this.outputFile = outputFile;
         }
@@ -264,11 +291,11 @@ public class AnnotationProcessingTasks {
     public static class TaskWithOutputFiles extends TaskWithAction {
         List<File> outputFiles;
 
+        @Inject
         public TaskWithOutputFiles(List<File> outputFiles) {
             this.outputFiles = outputFiles;
         }
 
-        @SuppressWarnings("deprecation")
         @OutputFiles
         public List<File> getOutputFiles() {
             return outputFiles;
@@ -276,7 +303,7 @@ public class AnnotationProcessingTasks {
     }
 
     public static class TaskWithBridgeMethod extends TaskWithAction implements WithProperty<SpecificProperty> {
-        @org.gradle.api.tasks.Nested
+        @Nested
         private SpecificProperty nestedProperty = new SpecificProperty();
         public int traversedOutputsCount;
 
@@ -286,14 +313,14 @@ public class AnnotationProcessingTasks {
         }
     }
 
-    public interface WithProperty<T extends PropertyContainer> {
+    public interface WithProperty<T extends PropertyContainer<?>> {
         T getNestedProperty();
     }
     public interface PropertyContainer<T extends SomeProperty> {}
     public static class SpecificProperty extends SomePropertyContainer<SomeProperty> {}
     public static class SomeProperty {}
 
-    public static abstract class SomePropertyContainer<T extends SomeProperty> implements PropertyContainer {
+    public static abstract class SomePropertyContainer<T extends SomeProperty> implements PropertyContainer<T> {
         @OutputFile
         public File getSomeOutputFile() {
             return new File("hello");
@@ -302,16 +329,16 @@ public class AnnotationProcessingTasks {
 
     public static class TaskWithOptionalOutputFile extends TaskWithAction {
         @OutputFile
-        @org.gradle.api.tasks.Optional
+        @Optional
         public File getOutputFile() {
             return null;
         }
     }
 
     public static class TaskWithOptionalOutputFiles extends TaskWithAction {
-        @SuppressWarnings("deprecation")
+
         @OutputFiles
-        @org.gradle.api.tasks.Optional
+        @Optional
         public List<File> getOutputFiles() {
             return null;
         }
@@ -320,6 +347,7 @@ public class AnnotationProcessingTasks {
     public static class TaskWithOutputDir extends TaskWithAction {
         File outputDir;
 
+        @Inject
         public TaskWithOutputDir(File outputDir) {
             this.outputDir = outputDir;
         }
@@ -333,11 +361,11 @@ public class AnnotationProcessingTasks {
     public static class TaskWithOutputDirs extends TaskWithAction {
         List<File> outputDirs;
 
+        @Inject
         public TaskWithOutputDirs(List<File> outputDirs) {
             this.outputDirs = outputDirs;
         }
 
-        @SuppressWarnings("deprecation")
         @OutputDirectories
         public List<File> getOutputDirs() {
             return outputDirs;
@@ -346,16 +374,16 @@ public class AnnotationProcessingTasks {
 
     public static class TaskWithOptionalOutputDir extends TaskWithAction {
         @OutputDirectory
-        @org.gradle.api.tasks.Optional
+        @Optional
         public File getOutputDir() {
             return null;
         }
     }
 
     public static class TaskWithOptionalOutputDirs extends TaskWithAction {
-        @SuppressWarnings("deprecation")
+
         @OutputDirectories
-        @org.gradle.api.tasks.Optional
+        @Optional
         public File getOutputDirs() {
             return null;
         }
@@ -364,6 +392,7 @@ public class AnnotationProcessingTasks {
     public static class TaskWithInputFiles extends TaskWithAction {
         Iterable<? extends File> input;
 
+        @Inject
         public TaskWithInputFiles(Iterable<? extends File> input) {
             this.input = input;
         }
@@ -375,6 +404,7 @@ public class AnnotationProcessingTasks {
     }
 
     public static class BrokenTaskWithInputFiles extends TaskWithInputFiles {
+        @Inject
         public BrokenTaskWithInputFiles(Iterable<? extends File> input) {
             super(input);
         }
@@ -393,7 +423,7 @@ public class AnnotationProcessingTasks {
 
     public static class TaskWithOptionalInputFile extends TaskWithAction {
         @InputFile
-        @org.gradle.api.tasks.Optional
+        @Optional
         public File getInputFile() {
             return null;
         }
@@ -402,6 +432,7 @@ public class AnnotationProcessingTasks {
     public static class TaskWithLocalState extends TaskWithAction {
         private File localStateFile;
 
+        @Inject
         public TaskWithLocalState(File localStateFile) {
             this.localStateFile = localStateFile;
         }
@@ -414,6 +445,8 @@ public class AnnotationProcessingTasks {
 
     public static class TaskWithDestroyable extends TaskWithAction {
         File destroyable;
+
+        @Inject
         public TaskWithDestroyable(File destroyable) {
             this.destroyable = destroyable;
         }
@@ -427,6 +460,7 @@ public class AnnotationProcessingTasks {
     public static class TaskWithNestedBean extends TaskWithAction {
         Bean bean = new Bean();
 
+        @Inject
         public TaskWithNestedBean(File inputFile) {
             bean.inputFile = inputFile;
         }
@@ -444,6 +478,7 @@ public class AnnotationProcessingTasks {
     public static class TaskWithNestedObject extends TaskWithAction {
         Object bean;
 
+        @Inject
         public TaskWithNestedObject(Object bean) {
             this.bean = bean;
         }
@@ -457,6 +492,7 @@ public class AnnotationProcessingTasks {
     public static class TaskWithNestedIterable extends TaskWithAction {
         Object bean;
 
+        @Inject
         public TaskWithNestedIterable(Object nested) {
             bean = nested;
         }
@@ -470,6 +506,7 @@ public class AnnotationProcessingTasks {
     public static class TaskWithNestedBeanWithPrivateClass extends TaskWithAction {
         Bean2 bean = new Bean2();
 
+        @Inject
         public TaskWithNestedBeanWithPrivateClass(File inputFile, File inputFile2) {
             bean.inputFile = inputFile;
             bean.inputFile2 = inputFile2;
@@ -486,6 +523,7 @@ public class AnnotationProcessingTasks {
     }
 
     public static class TaskWithMultipleProperties extends TaskWithNestedBean {
+        @Inject
         public TaskWithMultipleProperties(File inputFile) {
             super(inputFile);
         }
@@ -499,12 +537,13 @@ public class AnnotationProcessingTasks {
     public static class TaskWithOptionalNestedBean extends TaskWithAction {
         private final Bean bean;
 
+        @Inject
         public TaskWithOptionalNestedBean(Bean bean) {
             this.bean = bean;
         }
 
         @Nested
-        @org.gradle.api.tasks.Optional
+        @Optional
         public Bean getBean() {
             return bean;
         }
@@ -514,7 +553,7 @@ public class AnnotationProcessingTasks {
         Bean2 bean = new Bean2();
 
         @Nested
-        @org.gradle.api.tasks.Optional
+        @Optional
         public Bean getBean() {
             return null;
         }
@@ -532,6 +571,7 @@ public class AnnotationProcessingTasks {
     public static class BeanWithInput {
         private final String input;
 
+        @Inject
         public BeanWithInput(String input) {
             this.input = input;
         }
@@ -580,6 +620,7 @@ public class AnnotationProcessingTasks {
         private String a;
         private String b;
 
+        @Inject
         public TaskWithJavaBeanCornerCaseProperties(String cCompiler, String CFlags, String dns, String URL, String a, String b) {
             this.cCompiler = cCompiler;
             this.CFlags = CFlags;

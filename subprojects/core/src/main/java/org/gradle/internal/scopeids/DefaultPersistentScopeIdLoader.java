@@ -16,10 +16,10 @@
 
 package org.gradle.internal.scopeids;
 
-import org.gradle.cache.PersistentStateCache;
-import org.gradle.cache.internal.CacheScopeMapping;
-import org.gradle.cache.internal.VersionStrategy;
-import org.gradle.initialization.layout.ProjectCacheDir;
+import org.gradle.cache.ObjectHolder;
+import org.gradle.cache.scopes.BuildTreeScopedCacheBuilderFactory;
+import org.gradle.cache.scopes.GlobalScopedCacheBuilderFactory;
+import org.gradle.cache.scopes.ScopedCacheBuilderFactory;
 import org.gradle.internal.Factory;
 import org.gradle.internal.id.UniqueId;
 import org.gradle.internal.scopeids.id.UserScopeId;
@@ -35,14 +35,14 @@ class DefaultPersistentScopeIdLoader implements PersistentScopeIdLoader {
     private static final String USER_ID_FILENAME = "user-id.txt";
     private static final String WORKSPACE_ID_FILENAME = "workspace-id.txt";
 
-    private final ProjectCacheDir projectCacheDir;
-    private final CacheScopeMapping cacheScopeMapping;
     private final Factory<UniqueId> generator;
     private final PersistentScopeIdStoreFactory storeFactory;
+    private final GlobalScopedCacheBuilderFactory globalScopedcacheBuilderFactory;
+    private final BuildTreeScopedCacheBuilderFactory buildTreeScopedCacheBuilderFactory;
 
-    DefaultPersistentScopeIdLoader(ProjectCacheDir projectCacheDir, CacheScopeMapping cacheScopeMapping, PersistentScopeIdStoreFactory storeFactory, Factory<UniqueId> generator) {
-        this.projectCacheDir = projectCacheDir;
-        this.cacheScopeMapping = cacheScopeMapping;
+    DefaultPersistentScopeIdLoader(GlobalScopedCacheBuilderFactory globalScopedcacheBuilderFactory, BuildTreeScopedCacheBuilderFactory buildTreeScopedCacheBuilderFactory, PersistentScopeIdStoreFactory storeFactory, Factory<UniqueId> generator) {
+        this.globalScopedcacheBuilderFactory = globalScopedcacheBuilderFactory;
+        this.buildTreeScopedCacheBuilderFactory = buildTreeScopedCacheBuilderFactory;
         this.generator = generator;
         this.storeFactory = storeFactory;
     }
@@ -61,20 +61,20 @@ class DefaultPersistentScopeIdLoader implements PersistentScopeIdLoader {
 
     // This method is effectively part of a cross Gradle version contract.
     // User scope is expected to be persisted in the global cache since 4.0.
-    private Object userScopeCacheScopeMarker() {
-        return null;
+    private GlobalScopedCacheBuilderFactory userScopeCacheScopeMarker() {
+        return globalScopedcacheBuilderFactory;
     }
 
     // This method is effectively part of a cross Gradle version contract.
     // Workspace scope is expected to be persisted in the project cache dir since 4.0.
-    private File workspaceScopeCacheScopeMarker() {
-        return projectCacheDir.getDir();
+    private BuildTreeScopedCacheBuilderFactory workspaceScopeCacheScopeMarker() {
+        return buildTreeScopedCacheBuilderFactory;
     }
 
     private UniqueId get(ScopeParams params) {
-        PersistentStateCache<UniqueId> store = store(params);
+        ObjectHolder<UniqueId> store = store(params);
 
-        return store.maybeUpdate(new PersistentStateCache.UpdateAction<UniqueId>() {
+        return store.maybeUpdate(new ObjectHolder.UpdateAction<UniqueId>() {
             @Override
             public UniqueId update(UniqueId oldValue) {
                 if (oldValue == null) {
@@ -86,21 +86,18 @@ class DefaultPersistentScopeIdLoader implements PersistentScopeIdLoader {
         });
     }
 
-    private PersistentStateCache<UniqueId> store(ScopeParams params) {
-        File file = cacheScopeMapping.getBaseDirectory(
-            params.cacheScopeMarker, params.fileName, VersionStrategy.SharedCache
-        );
-
+    private ObjectHolder<UniqueId> store(ScopeParams params) {
+        File file = params.cacheBuilderFactory.baseDirForCrossVersionCache(params.fileName);
         return storeFactory.create(file, params.description);
     }
 
     private static class ScopeParams {
-        private final Object cacheScopeMarker;
+        private final ScopedCacheBuilderFactory cacheBuilderFactory;
         private final String fileName;
         private final String description;
 
-        private ScopeParams(Object cacheScopeMarker, String fileName, String description) {
-            this.cacheScopeMarker = cacheScopeMarker;
+        private ScopeParams(ScopedCacheBuilderFactory cacheBuilderFactory, String fileName, String description) {
+            this.cacheBuilderFactory = cacheBuilderFactory;
             this.fileName = fileName;
             this.description = description;
         }

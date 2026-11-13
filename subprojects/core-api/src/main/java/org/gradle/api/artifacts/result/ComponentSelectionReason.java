@@ -16,7 +16,6 @@
 
 package org.gradle.api.artifacts.result;
 
-import org.gradle.api.Incubating;
 import org.gradle.internal.HasInternalProtocol;
 import org.gradle.internal.scan.UsedByScanPlugin;
 
@@ -25,22 +24,23 @@ import java.util.List;
 /**
  * Answers the question why a component was selected during the dependency resolution.
  *
- * @since 1.3
+ * @since 1.10
  */
 @UsedByScanPlugin
-@Incubating
 @HasInternalProtocol
 public interface ComponentSelectionReason {
 
     /**
      * Informs whether the component was forced. Users can force components via {@link org.gradle.api.artifacts.ResolutionStrategy} or when declaring dependencies (see {@link
      * org.gradle.api.artifacts.dsl.DependencyHandler}).
+     * @since 1.10
      */
     boolean isForced();
 
     /**
-     * Informs whether the component was selected by conflict resolution. For more information about Gradle's conflict resolution please refer to the user guide. {@link
+     * Informs whether the component was selected by conflict resolution. For more information about Gradle's conflict resolution please refer to the user manual. {@link
      * org.gradle.api.artifacts.ResolutionStrategy} contains information about conflict resolution and includes means to configure it.
+     * @since 1.10
      */
     boolean isConflictResolution();
 
@@ -48,7 +48,7 @@ public interface ComponentSelectionReason {
      * Informs whether the component was selected by the dependency substitution rule. Users can configure dependency substitution rules via {@link
      * org.gradle.api.artifacts.ResolutionStrategy#getDependencySubstitution()}
      *
-     * @since 1.4
+     * @since 1.10
      */
     boolean isSelectedByRule();
 
@@ -60,28 +60,11 @@ public interface ComponentSelectionReason {
     boolean isExpected();
 
     /**
-     * Informs whether the selected component is a project substitute from a build participating in in a composite build.
+     * Informs whether the selected component is a project substitute from a build participating in a composite build.
      *
      * @since 4.5
      */
     boolean isCompositeSubstitution();
-
-    /**
-     * Returns a human-consumable description of this selection reason.
-     *
-     * @deprecated Use {@link #getDescriptions()} instead
-     */
-    @Deprecated
-    String getDescription();
-
-    /**
-     * Returns a list of descriptions of the causes that led to the selection of this component.
-     *
-     * @return the list of descriptions.
-     *
-     * @since 4.6
-     */
-    List<ComponentSelectionDescriptor> getDescriptions();
 
     /**
      * Informs whether the selected component version has been influenced by a dependency constraint.
@@ -90,6 +73,14 @@ public interface ComponentSelectionReason {
      *
      * @since 4.6
      */
-    @Incubating
     boolean isConstrained();
+
+    /**
+     * Returns a list of descriptions of the causes that led to the selection of this component.
+     *
+     * @return the list of descriptions.
+     *
+     * @since 4.6
+     */
+    List<? extends ComponentSelectionDescriptor> getDescriptions();
 }

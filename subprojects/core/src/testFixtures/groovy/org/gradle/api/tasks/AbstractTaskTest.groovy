@@ -16,23 +16,21 @@
 
 package org.gradle.api.tasks
 
-import com.google.common.collect.Lists
 import org.gradle.api.Action
+import org.gradle.api.DefaultTask
 import org.gradle.api.InvalidUserDataException
 import org.gradle.api.Project
 import org.gradle.api.Task
-import org.gradle.api.internal.AbstractTask
 import org.gradle.api.internal.project.ProjectInternal
-import org.gradle.api.internal.project.taskfactory.ITaskFactory
+import org.gradle.api.internal.project.taskfactory.TaskInstantiator
+import org.gradle.api.internal.tasks.InputChangesAwareTaskAction
 import org.gradle.api.model.ObjectFactory
 import org.gradle.api.specs.Spec
 import org.gradle.internal.Actions
+import org.gradle.internal.MutableBoolean
 import org.gradle.internal.service.DefaultServiceRegistry
 import org.gradle.test.fixtures.AbstractProjectBuilderSpec
-import org.gradle.util.GUtil
 import org.gradle.util.TestUtil
-
-import java.util.concurrent.atomic.AtomicBoolean
 
 import static org.junit.Assert.assertTrue
 
@@ -42,9 +40,9 @@ abstract class AbstractTaskTest extends AbstractProjectBuilderSpec {
     protected DefaultServiceRegistry serviceRegistry = new DefaultServiceRegistry()
     protected ObjectFactory objectFactory = TestUtil.objectFactory()
 
-    abstract AbstractTask getTask()
+    abstract DefaultTask getTask()
 
-    def <T extends AbstractTask> T createTask(Class<T> type) {
+    def <T extends DefaultTask> T createTask(Class<T> type) {
         return createTask(type, project, TEST_TASK_NAME)
     }
 
@@ -52,8 +50,8 @@ abstract class AbstractTaskTest extends AbstractProjectBuilderSpec {
         return createTask(getTask().getClass(), project, name)
     }
 
-    def <T extends AbstractTask> T createTask(Class<T> type, ProjectInternal project, String name) {
-        Task task = project.getServices().get(ITaskFactory.class).createTask(GUtil.map(Task.TASK_TYPE, type, Task.TASK_NAME, name))
+    def <T extends DefaultTask> T createTask(Class<T> type, ProjectInternal project, String name) {
+        Task task = project.getServices().get(TaskInstantiator.class).create(name, type)
         assertTrue(type.isAssignableFrom(task.getClass()))
         return type.cast(task)
     }
@@ -98,21 +96,9 @@ abstract class AbstractTaskTest extends AbstractProjectBuilderSpec {
         "task '" + getTask().getPath() + "'" == getTask().toString()
     }
 
-    def "test deleteAllActions"() {
-        given:
-        Action<? super Task> action1 = Actions.<Task>doNothing()
-        Action<? super Task> action2 = Actions.<Task>doNothing()
-        getTask().doLast(action1)
-        getTask().doLast(action2)
-
-        expect:
-        getTask().is(getTask().deleteAllActions())
-        getTask().getActions().isEmpty()
-    }
-
     def "test setActions"() {
         given:
-        getTask().deleteAllActions()
+        getTask().setActions([])
 
         when:
         getTask().getActions().add(Actions.doNothing())
@@ -122,12 +108,31 @@ abstract class AbstractTaskTest extends AbstractProjectBuilderSpec {
         getTask().getActions().size() == 2
 
         when:
-        List<Action<? super Task>> actions = Lists.newArrayList()
+        List<Action<? super Task>> actions = new ArrayList<>()
         actions.add(Actions.doNothing())
         getTask().setActions(actions)
 
         then:
         getTask().getActions().size() == 1
+    }
+
+    def "can replace an action"() {
+        given:
+        getTask().setActions([])
+
+        when:
+        getTask().getActions().add(Actions.doNothing())
+        getTask().getActions().set(0, { task -> throw new RuntimeException() } as Action)
+
+        then:
+        getTask().getActions().size() == 1
+        getTask().getActions()[0] instanceof InputChangesAwareTaskAction
+
+        when:
+        getTask().getActions()[0].execute(getTask())
+
+        then:
+        thrown(RuntimeException)
     }
 
     def "addAction with null throws"() {
@@ -178,10 +183,29 @@ abstract class AbstractTaskTest extends AbstractProjectBuilderSpec {
         !task.getOnlyIf().isSatisfiedBy(task)
     }
 
+    def "can specify onlyIf predicate using description and spec"() {
+        given:
+        final task = getTask()
+        final Spec<Task> spec = Mock(Spec.class)
+        spec.isSatisfiedBy(task) >> false
+
+        expect:
+        task.getOnlyIf().isSatisfiedBy(task)
+
+        when:
+        task.onlyIf("Always false", spec)
+
+        then:
+        !task.getOnlyIf().isSatisfiedBy(task)
+        def foundSpec = task.getOnlyIf().findUnsatisfiedSpec(task)
+        foundSpec != null
+        foundSpec.displayName == "Always false"
+    }
+
     def "onlyIf predicate is true when task is enabled and all predicates are true"() {
         given:
-        final AtomicBoolean condition1 = new AtomicBoolean(true)
-        final AtomicBoolean condition2 = new AtomicBoolean(true)
+        final MutableBoolean condition1 = new MutableBoolean(true)
+        final MutableBoolean condition2 = new MutableBoolean(true)
 
         def task = getTask()
         task.onlyIf(new Spec<Task>() {
@@ -190,7 +214,7 @@ abstract class AbstractTaskTest extends AbstractProjectBuilderSpec {
             }
         })
 
-        task.onlyIf(new Spec<Task>() {
+        task.onlyIf("Condition 2 was not met", new Spec<Task>() {
             boolean isSatisfiedBy(Task element) {
                 return condition2.get()
             }
@@ -204,6 +228,9 @@ abstract class AbstractTaskTest extends AbstractProjectBuilderSpec {
 
         then:
         !task.getOnlyIf().isSatisfiedBy(task)
+        def disabledSpec = task.getOnlyIf().findUnsatisfiedSpec(task)
+        disabledSpec != null
+        disabledSpec.displayName == "Task is enabled"
 
         when:
         task.setEnabled(true)
@@ -211,6 +238,9 @@ abstract class AbstractTaskTest extends AbstractProjectBuilderSpec {
 
         then:
         !task.getOnlyIf().isSatisfiedBy(task)
+        def condition1Spec = task.getOnlyIf().findUnsatisfiedSpec(task)
+        condition1Spec != null
+        condition1Spec.displayName == "Task satisfies onlyIf spec"
 
         when:
         condition1.set(true)
@@ -218,6 +248,9 @@ abstract class AbstractTaskTest extends AbstractProjectBuilderSpec {
 
         then:
         !task.getOnlyIf().isSatisfiedBy(task)
+        def condition2Spec = task.getOnlyIf().findUnsatisfiedSpec(task)
+        condition2Spec != null
+        condition2Spec.displayName == "Condition 2 was not met"
 
         when:
         condition2.set(true)
@@ -228,7 +261,7 @@ abstract class AbstractTaskTest extends AbstractProjectBuilderSpec {
 
     def "can replace onlyIf spec"() {
         given:
-        final AtomicBoolean condition1 = new AtomicBoolean(true)
+        final MutableBoolean condition1 = new MutableBoolean(true)
         final task = getTask()
         final Spec spec = Mock(Spec.class)
         task.onlyIf(spec)

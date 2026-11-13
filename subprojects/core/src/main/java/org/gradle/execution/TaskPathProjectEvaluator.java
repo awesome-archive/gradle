@@ -16,58 +16,153 @@
 
 package org.gradle.execution;
 
+import org.gradle.api.Action;
 import org.gradle.api.BuildCancelledException;
-import org.gradle.api.Project;
-import org.gradle.api.internal.project.ProjectInternal;
+import org.gradle.api.internal.project.ProjectOrderingUtil;
+import org.gradle.api.internal.project.ProjectState;
 import org.gradle.initialization.BuildCancellationToken;
+import org.gradle.internal.UncheckedException;
+import org.gradle.internal.buildoption.InternalOption;
+import org.gradle.internal.buildoption.InternalOptions;
+import org.gradle.internal.operations.BuildOperationContext;
+import org.gradle.internal.operations.BuildOperationDescriptor;
+import org.gradle.internal.operations.BuildOperationExecutor;
+import org.gradle.internal.operations.BuildOperationQueue;
+import org.gradle.internal.operations.MultipleBuildOperationFailures;
+import org.gradle.internal.operations.RunnableBuildOperation;
+import org.gradle.internal.work.WorkerLimits;
 
 public class TaskPathProjectEvaluator implements ProjectConfigurer {
+
+    /**
+     * Parallel project configuration scheduling strategy, one of:
+     * <ul>
+     * <li> {@code aot}: schedule all projects ahead-of-time and let them compete for resources;
+     * <li> {@code jit}: schedule children only after their parents have been configured (just-in-time);
+     * </ul>
+     * Default is {@code jit}.
+     */
+    private static final InternalOption<String> PARALLEL_CONFIGURATION_SCHEDULER =
+        InternalOptions.ofString("org.gradle.internal.isolated-projects.scheduler", "jit");
+
     private final BuildCancellationToken cancellationToken;
+    private final BuildOperationExecutor buildOperationExecutor;
+    private final WorkerLimits workerLimits;
+    private final InternalOptions internalOptions;
 
-    public TaskPathProjectEvaluator(BuildCancellationToken cancellationToken) {
+    public TaskPathProjectEvaluator(
+        BuildCancellationToken cancellationToken,
+        BuildOperationExecutor buildOperationExecutor,
+        WorkerLimits workerLimits,
+        InternalOptions internalOptions
+    ) {
         this.cancellationToken = cancellationToken;
-    }
-
-    public void configure(ProjectInternal project) {
-        if (cancellationToken.isCancellationRequested()) {
-            throw new BuildCancelledException();
-        }
-        project.evaluate();
+        this.buildOperationExecutor = buildOperationExecutor;
+        this.workerLimits = workerLimits;
+        this.internalOptions = internalOptions;
     }
 
     @Override
-    public void configureFully(ProjectInternal project) {
-        configure(project);
-        discoverTasks(project);
-        bindAllModelRules(project);
-    }
-
-    private void discoverTasks(ProjectInternal project) {
+    public void configureFully(ProjectState projectState) {
+        projectState.ensureConfigured();
         if (cancellationToken.isCancellationRequested()) {
             throw new BuildCancelledException();
         }
-        project.getTasks().discoverTasks();
+        projectState.ensureTasksDiscovered();
     }
 
-    private void bindAllModelRules(ProjectInternal project) {
-        if (cancellationToken.isCancellationRequested()) {
-            throw new BuildCancelledException();
-        }
-        project.bindAllModelRules();
-    }
-
-    public void configureHierarchy(ProjectInternal project) {
-        configure(project);
-        for (Project sub : project.getSubprojects()) {
-            configure((ProjectInternal) sub);
+    @Override
+    public void configureHierarchy(ProjectState projectState) {
+        for (ProjectState project : ProjectOrderingUtil.orderedAllProjectsOf(projectState)) {
+            project.ensureConfigured();
         }
     }
 
     @Override
-    public void configureHierarchyFully(ProjectInternal project) {
-        configureFully(project);
-        for (Project sub : project.getSubprojects()) {
-            configureFully((ProjectInternal) sub);
+    public void configureHierarchyInParallel(ProjectState projectState) {
+        if (!projectState.isRootProject()) {
+            throw new IllegalArgumentException("Parallel configuration must start from root!");
         }
+
+        if (maxWorkerCount() < 2) {
+            // Parallel configuration cannot help with a single worker
+            configureHierarchy(projectState);
+            return;
+        }
+
+        if (!projectState.hasChildren()) {
+            // No hierarchy to configure
+            projectState.ensureConfigured();
+            return;
+        }
+
+        String strategy = schedulingStrategy();
+        if (strategy.equals("jit")) {
+            scheduleProjectsJustInTime(projectState);
+        } else {
+            scheduleProjectsAheadOfTime(projectState);
+        }
+    }
+
+    private String schedulingStrategy() {
+        return internalOptions.getValue(PARALLEL_CONFIGURATION_SCHEDULER);
+    }
+
+    private void scheduleProjectsAheadOfTime(ProjectState root) {
+        runAllWithAccessToProjectState(queue -> {
+            for (ProjectState p : root.getOwner().getProjects().getAllProjects()) {
+                queue.add(configureOperationFor(p));
+            }
+        });
+    }
+
+    private void scheduleProjectsJustInTime(ProjectState root) {
+        runAllWithAccessToProjectState(queue -> queue.add(traverseProject(root, queue)));
+    }
+
+    private static RunnableBuildOperation traverseProject(ProjectState project, BuildOperationQueue<RunnableBuildOperation> queue) {
+        return new RunnableBuildOperation() {
+            @Override
+            public void run(BuildOperationContext context) {
+                project.ensureSelfConfigured();
+                for (ProjectState child : project.getUnorderedChildProjects()) {
+                    queue.add(traverseProject(child, queue));
+                }
+            }
+
+            @Override
+            public BuildOperationDescriptor.Builder description() {
+                return BuildOperationDescriptor.displayName("Parallelize configuration");
+            }
+        };
+    }
+
+    private void runAllWithAccessToProjectState(Action<BuildOperationQueue<RunnableBuildOperation>> buildOperationQueueAction) {
+        try {
+            buildOperationExecutor.runAllWithAccessToProjectState(buildOperationQueueAction);
+        } catch (MultipleBuildOperationFailures e) {
+            if (e.getCauses().size() == 1) {
+                throw UncheckedException.throwAsUncheckedException(e.getCauses().get(0));
+            }
+            throw e;
+        }
+    }
+
+    private static RunnableBuildOperation configureOperationFor(ProjectState projectState) {
+        return new RunnableBuildOperation() {
+            @Override
+            public void run(BuildOperationContext context) {
+                projectState.ensureConfigured();
+            }
+
+            @Override
+            public BuildOperationDescriptor.Builder description() {
+                return BuildOperationDescriptor.displayName("Configure project " + projectState.getName());
+            }
+        };
+    }
+
+    private int maxWorkerCount() {
+        return workerLimits.getMaxWorkerCount();
     }
 }

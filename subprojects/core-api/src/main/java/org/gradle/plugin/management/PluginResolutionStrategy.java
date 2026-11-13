@@ -17,7 +17,6 @@
 package org.gradle.plugin.management;
 
 import org.gradle.api.Action;
-import org.gradle.api.Incubating;
 import org.gradle.internal.HasInternalProtocol;
 
 /**
@@ -25,7 +24,6 @@ import org.gradle.internal.HasInternalProtocol;
  *
  * @since 3.5
  */
-@Incubating
 @HasInternalProtocol
 public interface PluginResolutionStrategy {
 
@@ -34,6 +32,7 @@ public interface PluginResolutionStrategy {
      * The {@link PluginResolveDetails} parameter contains information about
      * the plugin that was requested and allows the rule to modify which plugin
      * will actually be resolved.
+     * @since 3.5
      */
     void eachPlugin(Action<? super PluginResolveDetails> rule);
 

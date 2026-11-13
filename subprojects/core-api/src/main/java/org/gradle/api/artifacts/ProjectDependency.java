@@ -1,5 +1,5 @@
 /*
- * Copyright 2007-2008 the original author or authors.
+ * Copyright 2007 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,20 +16,30 @@
 package org.gradle.api.artifacts;
 
 import org.gradle.api.Project;
+import org.gradle.declarative.dsl.model.annotations.internal.DeclarativeWithHiddenMembers;
 import org.gradle.internal.HasInternalProtocol;
 
 /**
  * <p>A {@code ProjectDependency} is a {@link Dependency} on another project in the current project hierarchy.</p>
+ * @since 0.7
  */
 @HasInternalProtocol
-public interface ProjectDependency extends ModuleDependency, SelfResolvingDependency {
+@DeclarativeWithHiddenMembers
+public interface ProjectDependency extends ModuleDependency {
+
     /**
-     * Returns the project associated with this project dependency.
+     * Get the path to the project that this dependency refers to relative to its owning build.
+     *
+     * @see Project#getPath()
+     *
+     * @since 8.11
      */
-    Project getDependencyProject();
+    String getPath();
 
     /**
      * {@inheritDoc}
      */
+    @Override
     ProjectDependency copy();
+
 }

@@ -1,0 +1,139 @@
+#!/bin/bash
+set -e
+
+# Script to update Gradle wrapper and create a pull request
+#
+# Usage:
+#   ./update_wrapper_and_create_pr.sh [wrapper_version]
+#
+# Arguments:
+#   wrapper_version - The Gradle version to update the wrapper to
+#
+# Environment variables:
+#   DEFAULT_BRANCH  - The default branch to create the pull request on (e.g. "master"/"release")
+#   GITHUB_TOKEN    - GitHub bot token
+#   TRIGGERED_BY    - Optional. If it's "Release - Final", version will be from version-info-final-release/version-info.properties
+#                     If it's "Release - Release Candidate", version will be from version-info-release-candidate/version-info.properties
+#
+# Both version-info.properties artifact dependencies are optional ("?:" rules), because the
+# artifacts of an older lastSuccessful() promotion build may already have been cleaned up.
+# Only the one belonging to the triggering build is actually needed, and it is always fresh.
+
+post() {
+    local endpoint="$1"
+    local data="$2"
+
+    local response=$(curl -X POST \
+        -H "Authorization: token $GITHUB_TOKEN" \
+        -H "Accept: application/vnd.github.v3+json" \
+        -H "Content-Type: application/json" \
+        "https://api.github.com/repos/gradle/gradle$endpoint" \
+        -d "$data" \
+        -w "\n%{http_code}" \
+        2>/dev/null)
+
+    local http_code=$(echo "$response" | tail -n1)
+    local body=$(echo "$response" | head -n -1)
+
+    if [[ "$http_code" -ge 400 ]]; then
+        printf "Error: HTTP %s - %s\n" "$http_code" "$body" >&2
+        exit 1
+    fi
+
+    echo "$body"
+}
+
+source_promoted_version() {
+    local version_info="$1/promote-projects/gradle/build/version-info.properties"
+
+    if [[ ! -f "$version_info" ]]; then
+        printf "Error: %s was not downloaded from the triggering build. Was its artifact cleaned up?\n" "$version_info" >&2
+        exit 1
+    fi
+
+    source "$version_info"
+    export WRAPPER_VERSION="$promotedVersion"
+
+    local sha256_file=$(find "$2" -name "gradle-${versionBase}-bin.zip.sha256" -print -quit 2>/dev/null)
+    if [[ -z "$sha256_file" ]]; then
+        printf "Error: gradle-%s-bin.zip.sha256 was not downloaded to %s from the triggering build. Was its artifact cleaned up?\n" "$versionBase" "$2" >&2
+        exit 1
+    fi
+    WRAPPER_SHA256=$(<"$sha256_file")
+}
+
+resolve_manual_version() {
+    local checksum_url="https://services.gradle.org/distributions/gradle-${WRAPPER_VERSION}-bin.zip.sha256"
+    local endpoint
+    # Same labels as the Wrapper task's --gradle-version
+    case "$WRAPPER_VERSION" in
+        latest) endpoint=current ;;
+        release-milestone) endpoint=milestone ;;
+        release-candidate|release-nightly|nightly) endpoint="$WRAPPER_VERSION" ;;
+    esac
+
+    if [[ -n "${endpoint:-}" ]]; then
+        local version_json
+        version_json=$(curl -fsSL "https://services.gradle.org/versions/$endpoint")
+        WRAPPER_VERSION=$(echo "$version_json" | jq -er '.version')
+        checksum_url=$(echo "$version_json" | jq -er '.checksumUrl')
+    fi
+
+    WRAPPER_SHA256=$(curl -fsSL "$checksum_url")
+}
+
+main() {
+    WRAPPER_VERSION="${1:-}"
+
+    : "${DEFAULT_BRANCH:?DEFAULT_BRANCH environment variable is required}"
+    : "${GITHUB_TOKEN:?GITHUB_TOKEN environment variable is required}"
+
+    if [[ "$TRIGGERED_BY" == *"Release - Final"* ]]; then
+        source_promoted_version version-info-final-release checksums-final-release
+    elif [[ "$TRIGGERED_BY" == *"Release - Release Candidate"* ]]; then
+        source_promoted_version version-info-release-candidate checksums-release-candidate
+    else
+        resolve_manual_version
+    fi
+
+    # Required on a version change because gradle-wrapper.properties pins distributionSha256Sum;
+    # :wrapper cannot look it up itself yet: https://github.com/gradle/gradle/issues/12785
+    ./gradlew :wrapper --gradle-version="$WRAPPER_VERSION" --gradle-distribution-sha256-sum="$WRAPPER_SHA256"
+    ./gradlew :wrapper
+    git add gradle && git add gradlew && git add gradlew.bat
+
+    if git diff --cached --quiet; then
+        echo "No changes to commit"
+        exit 0
+    fi
+
+    BRANCH_NAME="devprod/update-wrapper-$(date +%Y%m%d-%H%M%S)"
+    git switch -c $BRANCH_NAME
+    git commit --signoff --author="bot-gradle <bot-gradle@gradle.com>" -m "Update Gradle wrapper to version $WRAPPER_VERSION"
+    git push https://x-access-token:${GITHUB_TOKEN}@github.com/gradle/gradle.git $BRANCH_NAME
+
+    PR_TITLE="Update Gradle wrapper to version $WRAPPER_VERSION"
+
+    PR_RESPONSE=$(post "/pulls" "{
+        \"title\": \"$PR_TITLE\",
+        \"body\": \"$PR_TITLE\",
+        \"head\": \"$BRANCH_NAME\",
+        \"base\": \"$DEFAULT_BRANCH\"
+    }")
+
+    echo "PR_RESPONSE: $PR_RESPONSE"
+
+    PR_NUMBER=$(echo "$PR_RESPONSE" | jq -r '.number' 2>/dev/null)
+
+    echo "##teamcity[buildStatus text='{build.status.text}, PR: https://github.com/gradle/gradle/pull/$PR_NUMBER']"
+
+    post "/issues/$PR_NUMBER/comments" '{
+        "body": "@bot-gradle test and merge"
+    }'
+
+    post "/issues/$PR_NUMBER/labels" '{
+        "labels": ["@dev-productivity"]
+    }'
+}
+
+main "$@"

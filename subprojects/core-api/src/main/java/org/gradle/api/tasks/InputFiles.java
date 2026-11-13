@@ -21,10 +21,17 @@ import java.lang.annotation.*;
  * <p>Marks a property as specifying the input files for a task.</p>
  *
  * <p>This annotation should be attached to the getter method in Java or the property in Groovy.
+ * In Kotlin, use the {@code get:} use-site target to attach it to the property getter, for example {@code @get:InputFiles}.
+ * This also works on abstract properties, where the annotation without a use-site target does not compile.
  * Annotations on setters or just the field in Java are ignored.</p>
  *
- * <p>This will cause the task to be considered out-of-date when the file paths or contents
- * have changed. Also see {@link org.gradle.api.tasks.InputDirectory}.
+ * <p>This will cause the task to be considered out-of-date when the file paths or contents have changed.
+ * The order of the files does not affect up-to-date checks.
+ * If order sensitivity is required (for example, for a classpath), use a different annotation.
+ *
+ * @see Classpath
+ * @see InputDirectory
+ * @since 0.8
  */
 @Documented
 @Retention(RetentionPolicy.RUNTIME)

@@ -16,11 +16,13 @@
 
 package org.gradle.deployment.internal;
 
+import org.jspecify.annotations.Nullable;
+
 class DefaultDeploymentStatus implements Deployment.Status {
     private final boolean changed;
     private final Throwable failure;
 
-    DefaultDeploymentStatus(boolean changed, Throwable failure) {
+    DefaultDeploymentStatus(boolean changed, @Nullable Throwable failure) {
         this.changed = changed;
         this.failure = failure;
     }

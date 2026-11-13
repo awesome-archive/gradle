@@ -18,7 +18,9 @@ package org.gradle.initialization
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.BuildOperationsFixture
-import org.gradle.internal.operations.trace.BuildOperationRecord
+import spock.lang.Issue
+
+import static org.gradle.integtests.fixtures.TestableBuildOperationRecord.buildOp
 
 class EvaluateSettingsBuildOperationIntegrationTest extends AbstractIntegrationSpec {
 
@@ -31,60 +33,61 @@ class EvaluateSettingsBuildOperationIntegrationTest extends AbstractIntegrationS
         succeeds('help')
 
         then:
-        verifySettings(operation(), settingsFile)
-        operation().details.buildPath == ":"
+        def loadOps = buildOperations.all(LoadBuildBuildOperationType)
+        def evaluationOps = buildOperations.all(EvaluateSettingsBuildOperationType)
+        evaluationOps == [
+            buildOp(details: [settingsDir: settingsFile.parentFile.absolutePath, settingsFile: settingsFile.absolutePath, buildPath: ":"], displayName: "Evaluate settings", parent: loadOps[0])
+        ]
     }
 
-    def "settings with master folder are exposed"() {
-
-        def customSettingsFile = file("master/settings.gradle")
-        customSettingsFile << """
-        includeFlat "a"
+    @Issue("https://github.com/gradle/gradle/issues/38623")
+    def "settings are evaluated once when the build root is given explicitly and the root project is relocated"() {
+        settingsFile << """
+            rootProject.projectDir = file('bar')
         """
-
-        def projectDirectory = testDirectory.createDir("a")
+        file("bar/build.gradle") << ""
 
         when:
-        executer.withSearchUpwards()
-        projectDir(projectDirectory)
+        executer.withArgument("-p").withArgument(testDirectory.absolutePath)
         succeeds('help')
 
         then:
-        verifySettings(operation(), customSettingsFile)
-        operation().details.buildPath == ":"
+        buildOperations.all(LoadBuildBuildOperationType).size() == 1
+        buildOperations.all(EvaluateSettingsBuildOperationType).size() == 1
     }
 
-    def "settings set via cmdline flag are exposed"() {
-        def customSettingsDir = file("custom")
-        customSettingsDir.mkdirs()
-        def customSettingsFile = new File(customSettingsDir, "settings.gradle")
-        customSettingsFile << """
-        
-        include "a"
-        """
+    @Issue("https://github.com/gradle/gradle/issues/38623")
+    def "settings details are exposed when a buildSrc directory is the project directory"() {
+        settingsFile << ""
+        def buildSrc = file("buildSrc")
+        buildSrc.file("build.gradle") << ""
 
         when:
-        executer.withArguments("--settings-file", customSettingsFile.absolutePath)
+        executer.withArgument("-p").withArgument(buildSrc.absolutePath)
         succeeds('help')
 
         then:
-        verifySettings(operation(), customSettingsFile)
-        operation().details.buildPath == ":"
+        def loadOps = buildOperations.all(LoadBuildBuildOperationType)
+        def evaluationOps = buildOperations.all(EvaluateSettingsBuildOperationType)
+        evaluationOps == [
+            buildOp(details: [settingsDir: buildSrc.absolutePath, settingsFile: buildSrc.file("settings.gradle").absolutePath, buildPath: ":"], displayName: "Evaluate settings", parent: loadOps[0])
+        ]
     }
 
     def "composite participants expose their settings details"() {
+        createDirs("a", "nested")
         settingsFile << """
             include "a"
             includeBuild "nested"
-            
+
             rootProject.name = "root"
             rootProject.buildFileName = 'root.gradle'
-            
+
         """
 
         def nestedSettingsFile = file("nested/settings.gradle")
         nestedSettingsFile << """
-            rootProject.name = "nested"    
+            rootProject.name = "nested"
         """
         file("nested/build.gradle") << """
         group = "org.acme"
@@ -95,34 +98,38 @@ class EvaluateSettingsBuildOperationIntegrationTest extends AbstractIntegrationS
         succeeds('help')
 
         then:
-        operations().size() == 2
-        verifySettings(operations()[0], settingsFile)
-        operations()[0].details.buildPath == ":"
-        verifySettings(operations()[1], nestedSettingsFile)
-        operations()[1].details.buildPath == ":nested"
+        def loadOps = buildOperations.all(LoadBuildBuildOperationType)
+        def evaluationOps = buildOperations.all(EvaluateSettingsBuildOperationType)
+        evaluationOps == [
+            buildOp(details: [settingsDir: settingsFile.parentFile.absolutePath, settingsFile: settingsFile.absolutePath, buildPath: ":"], displayName: "Evaluate settings", parent: loadOps[0]),
+            buildOp(details: [settingsDir: nestedSettingsFile.parentFile.absolutePath, settingsFile: nestedSettingsFile.absolutePath, buildPath: ":nested"], displayName: "Evaluate settings (:nested)", parent: loadOps[1])
+        ]
     }
 
     def 'can configure feature preview in settings'() {
         given:
         settingsFile << '''
-enableFeaturePreview('IMPROVED_POM_SUPPORT')
+enableFeaturePreview('GROOVY_COMPILATION_AVOIDANCE')
 '''
         expect:
         succeeds('help')
     }
 
-    private List<BuildOperationRecord> operations() {
-        buildOperations.all(EvaluateSettingsBuildOperationType)
-    }
-
-    private BuildOperationRecord operation() {
-        assert operations().size() == 1
-        operations()[0]
-    }
-
-    private void verifySettings(BuildOperationRecord operation, File settingsFile) {
-        assert operation.details.settingsDir == settingsFile.parentFile.absolutePath
-        assert operation.details.settingsFile == settingsFile.absolutePath
+    def 'can create project directories in afterEvaluate'() {
+        given:
+        settingsFile << '''
+        include 'has-no-dir'
+        def collectChildren(def obj) {
+            [obj] + obj.getChildren().collectMany { collectChildren(it) }
+        }
+        gradle.settingsEvaluated { settings ->
+            collectChildren(settings.rootProject).each { project ->
+                project.projectDir.mkdirs()
+            }
+        }
+        '''
+        expect:
+        succeeds(':has-no-dir:help')
     }
 
 }

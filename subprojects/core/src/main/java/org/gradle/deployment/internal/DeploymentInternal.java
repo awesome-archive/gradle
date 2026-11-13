@@ -16,7 +16,9 @@
 
 package org.gradle.deployment.internal;
 
+import org.jspecify.annotations.Nullable;
+
 public interface DeploymentInternal extends Deployment {
     void outOfDate();
-    void upToDate(Throwable failure);
+    void upToDate(@Nullable Throwable failure);
 }

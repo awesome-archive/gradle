@@ -16,22 +16,22 @@
 
 package org.gradle.api.artifacts;
 
-import org.gradle.api.Incubating;
+import org.gradle.api.Action;
 import org.gradle.api.artifacts.component.ComponentSelector;
 import org.gradle.internal.HasInternalProtocol;
 
 /**
  * Provides means to substitute a different dependency during resolution.
  *
- * @since 2.5
+ * @since 2.4
  */
-@Incubating
 @HasInternalProtocol
 public interface DependencySubstitution {
     /**
      * The requested dependency, before it is resolved.
      * The requested dependency does not change even if there are multiple dependency substitution rules
      * that manipulate the dependency metadata.
+     * @since 2.4
      */
     ComponentSelector getRequested();
 
@@ -49,6 +49,7 @@ public interface DependencySubstitution {
      * </ul>
      *
      * @param notation the notation that gets parsed into an instance of {@link ComponentSelector}.
+     * @since 2.4
      */
     void useTarget(Object notation);
 
@@ -70,4 +71,18 @@ public interface DependencySubstitution {
      * @since 4.5
      */
     void useTarget(Object notation, String reason);
+
+    /**
+     * Configures the artifact selection for the substitution.
+     * This is a convenience method which allows selecting, typically, different artifact classifiers
+     * for the same component.
+     *
+     * Artifact selection matters for components which are not published with Gradle Module Metadata
+     * and therefore do not provide proper variants to reason with.
+     *
+     * @param action the artifact selection configuration action
+     *
+     * @since 6.6
+     */
+    void artifactSelection(Action<? super ArtifactSelectionDetails> action);
 }

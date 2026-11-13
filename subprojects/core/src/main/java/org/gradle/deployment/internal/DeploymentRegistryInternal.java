@@ -16,15 +16,16 @@
 
 package org.gradle.deployment.internal;
 
-import org.gradle.initialization.ContinuousExecutionGate;
-
 import java.util.Collection;
+
 public interface DeploymentRegistryInternal extends DeploymentRegistry {
 
     /**
      * Returns all running deployments
      */
     Collection<Deployment> getRunningDeployments();
+
+    boolean isAnyStarted();
 
     ContinuousExecutionGate getExecutionGate();
 }

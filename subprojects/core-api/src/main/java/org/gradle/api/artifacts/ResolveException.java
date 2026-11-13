@@ -16,23 +16,37 @@
 
 package org.gradle.api.artifacts;
 
+import org.gradle.api.Incubating;
+import org.gradle.internal.HasInternalProtocol;
 import org.gradle.internal.exceptions.Contextual;
 import org.gradle.internal.exceptions.DefaultMultiCauseException;
 
+import java.util.List;
+
 /**
- * <p>A <code>ResolveException</code> is thrown when dependency resolution fails for some reason.</p>
+ * <p>An opaque exception, thrown when dependency resolution fails for some reason.</p>
+ *
+ * <strong>This type should only be extended and/or thrown by Gradle internal code.</strong>
+ * @since 0.7
  */
 @Contextual
+@HasInternalProtocol
 public class ResolveException extends DefaultMultiCauseException {
-    public ResolveException(String resolveContext, Throwable cause) {
-        super(buildMessage(resolveContext), cause);
+    /**
+     * Should not be called except from Gradle internal code.
+     * @since 2.6
+     */
+    protected ResolveException(String message, Iterable<? extends Throwable> causes) {
+        super(message, causes);
     }
 
-    public ResolveException(String resolveContext, Iterable<? extends Throwable> causes) {
-        super(buildMessage(resolveContext), causes);
-    }
-
-    private static String buildMessage(String resolveContext) {
-        return String.format("Could not resolve all dependencies for %s.", resolveContext);
+    /**
+     * Should not be called except from Gradle internal code.
+     *
+     * @since 9.9.0
+     */
+    @Incubating
+    protected ResolveException(String message, Iterable<? extends Throwable> causes, List<String> resolutions) {
+        super(message, causes, resolutions);
     }
 }

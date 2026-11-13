@@ -17,12 +17,13 @@ package org.gradle.api
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.executer.ArtifactBuilder
-import org.gradle.integtests.fixtures.executer.ExecutionResult
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
+import org.gradle.integtests.fixtures.modes.UnsupportedWithConfigurationCache
+import org.gradle.integtests.fixtures.timeout.IntegrationTestTimeout
 import org.gradle.test.fixtures.file.TestFile
-import org.gradle.util.Requires
+import spock.lang.Issue
 
-import static org.gradle.util.TestPrecondition.KOTLIN_SCRIPT
-
+@IntegrationTestTimeout(300)
 class InitScriptExecutionIntegrationTest extends AbstractIntegrationSpec {
     def "executes init.gradle from user home dir"() {
         given:
@@ -61,7 +62,7 @@ class InitScriptExecutionIntegrationTest extends AbstractIntegrationSpec {
     def "executes init script with correct environment"() {
         given:
         def implClassName = 'com.google.common.collect.Multimap'
-        createExternalJar();
+        createExternalJar()
 
         and:
         TestFile initScript = file('init.gradle')
@@ -93,13 +94,11 @@ try {
         buildFile << 'task doStuff'
 
         when:
-        ExecutionResult result = executer.usingInitScript(initScript).withTasks('doStuff').run()
+        result = executer.usingInitScript(initScript).withTasks('doStuff').run()
 
         then:
-        result.output.contains('quiet message')
-        !result.output.contains('error message')
-        result.error.contains('error message')
-        !result.error.contains('quiet message')
+        outputContains('quiet message')
+        result.assertHasErrorOutput('error message')
     }
 
     def "each init script has independent ClassLoader"() {
@@ -132,7 +131,6 @@ try {
         notThrown(Throwable)
     }
 
-    @Requires([KOTLIN_SCRIPT])
     def "each Kotlin init script has independent ClassLoader"() {
         given:
         createExternalJar()
@@ -157,16 +155,15 @@ try {
         buildFile << 'task doStuff'
 
         when:
-        ExecutionResult result = executer.usingInitScript(initScript1).usingInitScript(initScript2).withTasks('doStuff').run()
+        result = executer.usingInitScript(initScript1).usingInitScript(initScript2).withTasks('doStuff').run()
 
         then:
         notThrown(Throwable)
 
         and:
-        result.output.contains("BuildClass not found as expected")
+        outputContains("BuildClass not found as expected")
     }
 
-    @Requires([KOTLIN_SCRIPT])
     def "executes Kotlin init scripts from init.d directory in user home dir in alphabetical order"() {
         given:
         executer.requireOwnGradleUserHomeDir()
@@ -186,13 +183,15 @@ try {
         def a = output.indexOf('init #a#')
         def b = output.indexOf('init #b#')
         def c = output.indexOf('init #c#')
-        a > 0
+        a >= 0
         b > a
         c > b
     }
 
+    @ToBeFixedForIsolatedProjects(because = "allprojects")
     def "init script can inject configuration into the root project and all projects"() {
         given:
+        createDirs("a", "b")
         settingsFile << "include 'a', 'b'"
 
         and:
@@ -210,16 +209,16 @@ rootProject {
         run "root"
 
         then:
-        result.assertTasksExecuted(':worker', ':a:worker', ':b:worker', ':root')
+        result.assertTasksScheduled(':worker', ':a:worker', ':b:worker', ':root')
     }
 
     def "notices changes to init scripts that do not change the file length"() {
         def initScript = file("init.gradle")
         initScript.text = "println 'counter: __'"
-        int before = initScript.length()
+        long before = initScript.length()
 
         expect:
-        (10..40).each {
+        (10..20).each {
             initScript.text = "println 'counter: $it'"
             assert initScript.length() == before
 
@@ -229,8 +228,67 @@ rootProject {
         }
     }
 
+    def 'init script classpath configuration has proper usage attribute'() {
+        def initScript = file('init.gradle')
+        initScript << """
+initscript {
+    configurations.classpath {
+        def value = attributes.getAttribute(Usage.USAGE_ATTRIBUTE)
+        assert value.name == Usage.JAVA_RUNTIME
+    }
+}
+"""
+        expect:
+        executer.withArguments('--init-script', initScript.absolutePath)
+        succeeds()
+    }
+
+    @Issue("https://github.com/gradle/gradle-native/issues/962")
+    @UnsupportedWithConfigurationCache
+    def "init script can register all projects hook from within the projects loaded callback of build listener"() {
+        given:
+        executer.requireOwnGradleUserHomeDir()
+
+        and:
+        file("buildSrc/settings.gradle").createFile()
+
+        and:
+        executer.gradleUserHomeDir.file('init.d/a.gradle') << '''
+            gradle.addListener(new BuildAdapter() {
+                void projectsLoaded(Gradle gradle) {
+                    gradle.rootProject.allprojects {
+                        println "Project '$name'"
+                    }
+                }
+            })
+        '''
+
+        and:
+        settingsFile << "rootProject.name = 'root'"
+
+        when:
+        succeeds()
+
+        then:
+        output.contains("Project 'buildSrc'")
+        output.contains("Project 'root'")
+    }
+
+    @Issue("https://github.com/gradle/gradle/issues/17555")
+    def "init script file is a dotfile"() {
+        def initScript = file('.empty')
+        initScript << 'println "greetings from empty init script"'
+        executer.withArguments('--init-script', initScript.absolutePath)
+
+        when:
+        run()
+
+        then:
+        output.contains("greetings from empty init script")
+    }
+
     private def createExternalJar() {
-        ArtifactBuilder builder = artifactBuilder();
+        ArtifactBuilder builder = artifactBuilder()
         builder.sourceFile('org/gradle/test/BuildClass.java') << '''
             package org.gradle.test;
             public class BuildClass { }

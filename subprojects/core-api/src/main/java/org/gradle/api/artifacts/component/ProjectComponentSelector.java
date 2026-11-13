@@ -15,7 +15,7 @@
  */
 package org.gradle.api.artifacts.component;
 
-import org.gradle.api.Incubating;
+import org.gradle.internal.HasInternalProtocol;
 import org.gradle.internal.scan.UsedByScanPlugin;
 
 /**
@@ -24,14 +24,14 @@ import org.gradle.internal.scan.UsedByScanPlugin;
  * @since 1.10
  */
 @UsedByScanPlugin
-@Incubating
+@HasInternalProtocol
 public interface ProjectComponentSelector extends ComponentSelector {
     /**
-     * The name of the build to select a project from.
+     * Absolute build path of the build within the Gradle invocation to select a project from.
      *
-     * @return The build name
+     * @since 8.2
      */
-    String getBuildName();
+    String getBuildPath();
 
     /**
      * The path of the project to select the component from.

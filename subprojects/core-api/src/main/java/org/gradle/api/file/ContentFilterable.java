@@ -16,13 +16,16 @@
 package org.gradle.api.file;
 
 import groovy.lang.Closure;
+import org.gradle.api.Action;
 import org.gradle.api.Transformer;
+import org.jspecify.annotations.Nullable;
 
 import java.io.FilterReader;
 import java.util.Map;
 
 /**
  * Represents some binary resource whose content can be filtered.
+ * @since 0.9
  */
 public interface ContentFilterable {
     /**
@@ -41,6 +44,7 @@ public interface ContentFilterable {
      * @param properties map of filter properties
      * @param filterType Class of filter to add
      * @return this
+     * @since 0.9
      */
     ContentFilterable filter(Map<String, ?> properties, Class<? extends FilterReader> filterType);
 
@@ -57,6 +61,7 @@ public interface ContentFilterable {
      *
      * @param filterType Class of filter to add
      * @return this
+     * @since 0.9
      */
     ContentFilterable filter(Class<? extends FilterReader> filterType);
 
@@ -67,6 +72,7 @@ public interface ContentFilterable {
      *
      * @param closure to implement line based filtering
      * @return this
+     * @since 0.9
      */
     ContentFilterable filter(Closure closure);
 
@@ -77,18 +83,47 @@ public interface ContentFilterable {
      *
      * @param transformer to implement line based filtering
      * @return this
+     * @since 3.0
      */
-    //TODO:rbo Change the parameter type to `Transformer<String, @Nullable String>` once we migrate to Java 8
-    ContentFilterable filter(Transformer<String, String> transformer);
+    ContentFilterable filter(Transformer<@Nullable String, String> transformer);
 
     /**
      * <p>Expands property references in each file as it is copied. More specifically, each file is transformed using
      * Groovy's {@link groovy.text.SimpleTemplateEngine}. This means you can use simple property references, such as
      * <code>$property</code> or <code>${property}</code> in the file. You can also include arbitrary Groovy code in the
      * file, such as <code>${version ?: 'unknown'}</code> or <code>${classpath*.name.join(' ')}</code>
+     * <p>
+     * Note that all escape sequences ({@code \n}, {@code \t}, {@code \\}, etc) are converted to the symbols
+     * they represent, so, for example, {@code \n} becomes newline. If this is undesirable then {@link #expand(Map, Action)}
+     * should be used to disable this behavior.
      *
-     * @param properties to implement line based filtering
+     * @param properties reference-to-value map for substitution
      * @return this
+     * @since 0.9
      */
     ContentFilterable expand(Map<String, ?> properties);
+
+    /**
+     * <p>Expands property references in each file as it is copied. More specifically, each file is transformed using
+     * Groovy's {@link groovy.text.SimpleTemplateEngine}. This means you can use simple property references, such as
+     * <code>$property</code> or <code>${property}</code> in the file. You can also include arbitrary Groovy code in the
+     * file, such as <code>${version ?: 'unknown'}</code> or <code>${classpath*.name.join(' ')}</code>. The template
+     * engine can be configured with the provided action.
+     * <p>
+     * Note that by default all escape sequences ({@code \n}, {@code \t}, {@code \\}, etc) are converted to the symbols
+     * they represent, so, for example, {@code \n} becomes newline. This behavior is controlled by
+     * {@link ExpandDetails#getEscapeBackslash()} property. It should be set to {@code true} to disable escape sequences
+     * conversion:
+     * <pre>
+     *  expand(one: '1', two: 2) {
+     *      escapeBackslash = true
+     *  }
+     * </pre>
+     *
+     * @param properties reference-to-value map for substitution
+     * @param action action to perform additional configuration of the underlying template engine
+     * @return this
+     * @since 7.2
+     */
+    ContentFilterable expand(Map<String, ?> properties, Action<? super ExpandDetails> action);
 }

@@ -15,13 +15,13 @@
  */
 
 
-
 package org.gradle.api
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.test.fixtures.file.TestFile
 
 class GradlePluginIntegrationTest extends AbstractIntegrationSpec {
-    File initFile;
+    TestFile initFile;
 
     def setup() {
         initFile = temporaryFolder.createFile("initscripts/init.gradle")
@@ -30,68 +30,75 @@ class GradlePluginIntegrationTest extends AbstractIntegrationSpec {
 
     def "can apply binary plugin from init script"() {
         when:
-        initFile << """
-        apply plugin:SimpleGradlePlugin
+        buildFile(initFile, """
+            apply plugin:SimpleGradlePlugin
 
-        class SimpleGradlePlugin implements Plugin<Gradle> {
-            void apply(Gradle aGradle) {
-                aGradle.buildFinished {
-                    println "Gradle Plugin received build finished!"
+            class SimpleGradlePlugin implements Plugin<Gradle> {
+                void apply(Gradle aGradle) {
+                    aGradle.projectsEvaluated {
+                        println "Gradle Plugin received projects evaluated!"
+                    }
                 }
             }
-        }
-        """
+        """)
         then:
         def executed = succeeds('tasks')
-        executed.output.contains("Gradle Plugin received build finished!")
+        executed.output.contains("Gradle Plugin received projects evaluated!")
     }
 
     def "can apply script with relative path"() {
         setup:
         def externalInitFile = temporaryFolder.createFile("initscripts/somePath/anInit.gradle")
-        externalInitFile << """
-        buildFinished {
-            println "Gradle Plugin received build finished!"
-        }
-        """
+        buildFile(externalInitFile, """
+            projectsEvaluated {
+                println "Gradle Plugin received projects evaluated!"
+            }
+        """)
         when:
-        initFile << """
-        apply from: "somePath/anInit.gradle"
-        """
+        buildFile(initFile, """
+            apply from: "somePath/anInit.gradle"
+        """)
         then:
         def executed = succeeds('tasks')
-        executed.output.contains("Gradle Plugin received build finished!")
+        executed.output.contains("Gradle Plugin received projects evaluated!")
     }
 
-    def "cannot apply script with relative path on Gradle instance"() {
+    def "can apply script with relative path on Gradle instance"() {
+        setup:
+        def externalInitFile = temporaryFolder.createFile("initscripts/somePath/anInit.gradle")
+        buildFile(externalInitFile, """
+            projectsEvaluated {
+                println "Gradle Plugin received projects evaluated!"
+            }
+        """)
         when:
-        initFile << """
-            gradle.apply(from: "somePath/anInit.gradle")
-            """
+        buildFile(initFile, """
+            gradle.apply(from: "initscripts/somePath/anInit.gradle")
+        """)
         then:
-        fails('tasks')
-        failure.assertHasCause("Cannot convert relative path somePath${File.separator}anInit.gradle to an absolute file")
+        def executed = succeeds('tasks')
+        executed.output.contains("Gradle Plugin received projects evaluated!")
     }
 
     def "path to script is interpreted relative to the applying script"() {
         setup:
         def externalInitFile = temporaryFolder.createFile("initscripts/path1/anInit.gradle")
-        externalInitFile << """
-            buildFinished {
-                println "Gradle Plugin received build finished!"
+        buildFile(externalInitFile, """
+            projectsEvaluated {
+                println "Gradle Plugin received projects evaluated!"
             }
-        """
+        """)
         def anotherExternalInitFile = temporaryFolder.createFile("initscripts/path2/anotherInit.gradle")
-        anotherExternalInitFile << """
+        buildFile(anotherExternalInitFile, """
             apply from: '../path1/anInit.gradle'
-            """
+        """)
 
         when:
-        initFile << """
+        buildFile(initFile, """
             apply from: "path2/anotherInit.gradle"
-            """
+        """)
         then:
         def executed = succeeds('tasks')
-        executed.output.contains("Gradle Plugin received build finished!")
+        executed.output.contains("Gradle Plugin received projects evaluated!")
     }
 }

@@ -15,29 +15,42 @@
  */
 package org.gradle.api.tasks;
 
-import java.lang.annotation.*;
+import java.lang.annotation.Documented;
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
 
 /**
  * <p>Marks a task property as optional. This means that a value does not have to be specified for the property, but any
  * value specified must meet the validation constraints for the property.</p>
  *
  * <p>This annotation should be attached to the getter method in Java or the property in Groovy.
+ * In Kotlin, use the {@code get:} use-site target to attach it to the property getter, for example {@code @get:Optional}.
+ * This also works on abstract properties, where the annotation without a use-site target does not compile.
  * Annotations on setters or just the field in Java are ignored.</p>
  *
- * <ul> <li>{@link org.gradle.api.tasks.Input}</li>
+ * <p><strong>This annotation must be combined with one of the following annotations.</strong>
  *
+ * <ul>
+ * <li>{@link org.gradle.api.tasks.Input}</li>
  * <li>{@link org.gradle.api.tasks.InputFile}</li>
- *
  * <li>{@link org.gradle.api.tasks.InputDirectory}</li>
- *
  * <li>{@link org.gradle.api.tasks.InputFiles}</li>
- *
+ * <li>{@link org.gradle.api.tasks.Nested}</li>
  * <li>{@link org.gradle.api.tasks.OutputFile}</li>
- *
- * <li>{@link org.gradle.api.tasks.OutputDirectory}</li> </ul>
+ * <li>{@link org.gradle.api.tasks.OutputFiles}</li>
+ * <li>{@link org.gradle.api.tasks.OutputDirectory}</li>
+ * <li>{@link org.gradle.api.tasks.OutputDirectories}</li>
+ * <li>{@link org.gradle.api.services.ServiceReference}</li>
+ * </ul>
+ * <p>
+ * Using {@code @Optional} alone, without an accompanying input or output annotation, is a validation error.
+ * If you want to express that the property should not be an input or output, you should mark it with {@link Internal} which implies optionality.
+ * @since 0.8
  */
 @Documented
 @Retention(RetentionPolicy.RUNTIME)
-@Target({ElementType.METHOD, ElementType.FIELD, ElementType.PARAMETER})
+@Target({ElementType.METHOD, ElementType.FIELD})
 public @interface Optional {
 }

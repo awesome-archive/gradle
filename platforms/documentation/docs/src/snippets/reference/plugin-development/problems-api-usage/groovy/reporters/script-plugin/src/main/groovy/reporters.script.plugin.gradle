@@ -1,0 +1,32 @@
+import org.gradle.api.problems.Problems
+import org.gradle.api.problems.Severity
+
+interface Injected {
+    @Inject Problems getProblems()
+}
+
+def problems = project.objects.newInstance(Injected).getProblems()
+def problemGroup = problems.getGroups().getOthers().group("Root Group")
+
+problems.getReporter().report(problemGroup.problemId('Deprecated script plugin')) {
+    it.contextualLabel("Deprecated script plugin 'demo-script-plugin'")
+        .solution("Please use 'standard-plugin-2' instead of this plugin")
+}
+
+tasks.register('warningTask') {
+    doLast {
+        problems.getReporter().report(problemGroup.problemId('Deprecated task')) {
+            it.contextualLabel("Task 'warningTask' is deprecated")
+                .solution("Please use 'warningTask2' instead of this task")
+        }
+    }
+}
+
+tasks.register('failingTask') {
+    doLast {
+        problems.getReporter().throwing(new RuntimeException("The 'failingTask' should not be called"), problemGroup.problemId('Task should not be called')) {
+            it.contextualLabel("Task 'failingTask' should not be called")
+                .solution("Please use 'successfulTask' instead of this task")
+        }
+    }
+}

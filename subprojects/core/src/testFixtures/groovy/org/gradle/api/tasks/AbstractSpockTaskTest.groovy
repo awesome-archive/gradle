@@ -17,50 +17,75 @@
 package org.gradle.api.tasks
 
 import org.gradle.api.Action
+import org.gradle.api.DefaultTask
 import org.gradle.api.InvalidUserDataException
 import org.gradle.api.Project
 import org.gradle.api.Task
+import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.internal.AbstractTask
-import org.gradle.api.internal.AsmBackedClassGenerator
 import org.gradle.api.internal.project.ProjectInternal
 import org.gradle.api.internal.project.taskfactory.AnnotationProcessingTaskFactory
 import org.gradle.api.internal.project.taskfactory.DefaultTaskClassInfoStore
-import org.gradle.api.internal.project.taskfactory.ITaskFactory
 import org.gradle.api.internal.project.taskfactory.TaskFactory
-import org.gradle.api.internal.tasks.TaskExecuter
-import org.gradle.api.internal.tasks.TaskExecutionContext
-import org.gradle.api.internal.tasks.TaskStateInternal
+import org.gradle.api.internal.project.taskfactory.TaskIdentityFactory
+import org.gradle.api.internal.project.taskfactory.TaskInstantiator
+import org.gradle.api.provider.Property
 import org.gradle.api.specs.Spec
+import org.gradle.cache.internal.TestCrossBuildInMemoryCacheFactory
+import org.gradle.internal.code.UserCodeApplicationContext
+import org.gradle.internal.id.ConfigurationCacheableIdFactory
 import org.gradle.internal.Actions
+import org.gradle.internal.MutableBoolean
+import org.gradle.internal.properties.annotations.DefaultTypeMetadataStore
+import org.gradle.internal.properties.annotations.MissingPropertyAnnotationHandler
+import org.gradle.internal.properties.annotations.NoOpPropertyAnnotationHandler
+import org.gradle.internal.properties.annotations.PropertyTypeResolver
 import org.gradle.internal.reflect.DirectInstantiator
+import org.gradle.internal.reflect.annotations.AnnotationCategory
+import org.gradle.internal.reflect.annotations.impl.DefaultTypeAnnotationMetadataStore
 import org.gradle.test.fixtures.AbstractProjectBuilderSpec
-import org.gradle.util.GUtil
 import org.gradle.util.TestUtil
 
-import java.util.concurrent.atomic.AtomicBoolean
+import javax.annotation.Nullable
+import java.lang.annotation.Annotation
 
 import static org.junit.Assert.assertFalse
 
 abstract class AbstractSpockTaskTest extends AbstractProjectBuilderSpec {
     public static final String TEST_TASK_NAME = "taskname"
 
-    def taskClassInfoStore = new DefaultTaskClassInfoStore()
-    private final ITaskFactory taskFactory = new AnnotationProcessingTaskFactory(taskClassInfoStore, new TaskFactory(new AsmBackedClassGenerator()))
+    def cacheFactory = new TestCrossBuildInMemoryCacheFactory()
+    def typeAnnotationMetadataStore = new DefaultTypeAnnotationMetadataStore(
+        [],
+        [:],
+        [:],
+        ["java", "groovy"],
+        [],
+        [Object, GroovyObject],
+        [ConfigurableFileCollection, Property],
+        [Internal],
+        [],
+        { false },
+        cacheFactory
+    )
+    def propertyHandlers = [new NoOpPropertyAnnotationHandler(Internal)]
+    def typeMetadataStore = new DefaultTypeMetadataStore([], propertyHandlers, [], [], [], typeAnnotationMetadataStore, new TestPropertyResolver(), cacheFactory, MissingPropertyAnnotationHandler.MISSING_INPUT_OUTPUT_HANDLER)
+    def taskClassInfoStore = new DefaultTaskClassInfoStore(new TestCrossBuildInMemoryCacheFactory(), typeMetadataStore)
+    def taskIdentityFactory = new TaskIdentityFactory(new ConfigurationCacheableIdFactory())
+    def taskFactory = new AnnotationProcessingTaskFactory(DirectInstantiator.INSTANCE, taskClassInfoStore, new TaskFactory())
 
-    abstract AbstractTask getTask()
+    abstract DefaultTask getTask()
 
-    def <T extends AbstractTask> T createTask(Class<T> type) {
+    def <T extends DefaultTask> T createTask(Class<T> type) {
         return createTask(type, project, TEST_TASK_NAME)
     }
 
-    Task createTask(Project project, String name) {
+    Task createTask(ProjectInternal project, String name) {
         return createTask(getTask().getClass(), project, name)
     }
 
-    def <T extends AbstractTask> T createTask(Class<T> type, Project project, String name) {
-        Task task = taskFactory.createChild(project, DirectInstantiator.INSTANCE).createTask(
-                GUtil.map(Task.TASK_TYPE, type,
-                        Task.TASK_NAME, name))
+    def <T extends DefaultTask> T createTask(Class<T> type, ProjectInternal project, String name) {
+        Task task = new TaskInstantiator(taskIdentityFactory, taskFactory.createChild(project, TestUtil.instantiatorFactory().decoratingLenientScheme), project, Mock(UserCodeApplicationContext)).create(name, type)
         assert type.isAssignableFrom(task.getClass())
         return type.cast(task)
     }
@@ -126,18 +151,6 @@ abstract class AbstractSpockTaskTest extends AbstractProjectBuilderSpec {
         "task '" + getTask().getPath() + "'" ==  getTask().toString()
     }
 
-    def testDeleteAllActions() {
-        when:
-        Action action1 = Actions.doNothing()
-        Action action2 = Actions.doNothing()
-        getTask().doLast(action1)
-        getTask().doLast(action2)
-
-        then:
-        getTask().is( getTask().deleteAllActions())
-        new ArrayList() ==  getTask().getActions()
-    }
-
     def testSetActions() {
         when:
         Action action1 = Actions.doNothing()
@@ -158,19 +171,6 @@ abstract class AbstractSpockTaskTest extends AbstractProjectBuilderSpec {
         thrown(InvalidUserDataException)
     }
 
-    def testExecuteDelegatesToTaskExecuter() {
-        final AbstractTask task = getTask()
-        TaskExecuter executer = Mock()
-        task.setExecuter(executer)
-
-        when:
-        task.execute()
-
-        then:
-        1 * executer.execute(task, _ as TaskStateInternal, _ as TaskExecutionContext)
-
-    }
-
     def setGetDescription() {
         when:
         String testDescription = "testDescription"
@@ -181,7 +181,7 @@ abstract class AbstractSpockTaskTest extends AbstractProjectBuilderSpec {
     }
 
     def canSpecifyOnlyIfPredicateUsingClosure() {
-        AbstractTask task = getTask()
+        DefaultTask task = getTask()
 
         expect:
         task.getOnlyIf().isSatisfiedBy(task)
@@ -195,7 +195,7 @@ abstract class AbstractSpockTaskTest extends AbstractProjectBuilderSpec {
 
     def canSpecifyOnlyIfPredicateUsingSpec() {
         final Spec<Task> spec = Mock()
-        final AbstractTask task = getTask()
+        final DefaultTask task = getTask()
 
         expect:
         task.getOnlyIf().isSatisfiedBy(task)
@@ -209,10 +209,10 @@ abstract class AbstractSpockTaskTest extends AbstractProjectBuilderSpec {
     }
 
     def onlyIfPredicateIsTrueWhenTaskIsEnabledAndAllPredicatesAreTrue() {
-        final AtomicBoolean condition1 = new AtomicBoolean(true)
-        final AtomicBoolean condition2 = new AtomicBoolean(true)
+        final MutableBoolean condition1 = new MutableBoolean(true)
+        final MutableBoolean condition2 = new MutableBoolean(true)
 
-        AbstractTask task = getTask()
+        DefaultTask task = getTask()
         task.onlyIf {
             condition1.get()
         }
@@ -251,8 +251,8 @@ abstract class AbstractSpockTaskTest extends AbstractProjectBuilderSpec {
     }
 
     def canReplaceOnlyIfSpec() {
-        final AtomicBoolean condition1 = new AtomicBoolean(true)
-        AbstractTask task = getTask()
+        final MutableBoolean condition1 = new MutableBoolean(true)
+        DefaultTask task = getTask()
         task.onlyIf(Mock(Spec))
         task.setOnlyIf {
             return condition1.get()
@@ -281,18 +281,11 @@ abstract class AbstractSpockTaskTest extends AbstractProjectBuilderSpec {
         task.getOnlyIf().isSatisfiedBy(task)
     }
 
-    def testDependentTaskDidWork() {
-        Task task1 = Mock()
-        Task task2 = Mock()
-        TaskDependency dependencyMock = Mock()
-        getTask().dependsOn(dependencyMock)
-        dependencyMock.getDependencies(getTask()) >> [task1, task2]
-        task1.getDidWork() >> false
-        task2.getDidWork() >>> [false, true]
-
-        expect:
-        !getTask().dependsOnTaskDidWork()
-        getTask().dependsOnTaskDidWork()
+    private class TestPropertyResolver implements PropertyTypeResolver {
+        @Nullable
+        @Override
+        Class<? extends Annotation> resolveAnnotationType(Map<AnnotationCategory, Annotation> propertyAnnotations) {
+            propertyAnnotations.get(AnnotationCategory.TYPE)?.annotationType()
+        }
     }
-
 }

@@ -16,22 +16,27 @@
 
 package org.gradle.api.internal.project;
 
-import groovy.lang.Closure;
 import org.gradle.api.Action;
 import org.gradle.api.Project;
+import org.gradle.api.internal.MutationGuard;
+import org.gradle.internal.service.scopes.Scope;
+import org.gradle.internal.service.scopes.ServiceScope;
 
+@ServiceScope(Scope.BuildSession.class)
 public interface CrossProjectConfigurator {
-    Project project(Project project, Closure<? super Project> configureClosure);
 
-    Project project(Project project, Action<? super Project> configureAction);
+    void project(ProjectInternal project, Action<? super Project> configureAction);
 
-    void subprojects(Iterable<Project> projects, Closure<? super Project> configureClosure);
+    void subprojects(Iterable<? extends ProjectInternal> projects, Action<? super Project> configureAction);
 
-    void subprojects(Iterable<Project> projects, Action<? super Project> configureAction);
+    void allprojects(Iterable<? extends ProjectInternal> projects, Action<? super Project> configureAction);
 
-    void allprojects(Iterable<Project> projects, Closure<? super Project> configureClosure);
+    void rootProject(ProjectInternal project, Action<? super Project> buildOperationExecutor);
 
-    void allprojects(Iterable<Project> projects, Action<? super Project> configureAction);
+    /**
+     * Tracks whether the current thread is executing a lazy operation on a domain
+     * object within this project.
+     */
+    MutationGuard getLazyBehaviorGuard();
 
-    Project rootProject(Project project, Action<Project> buildOperationExecutor);
 }

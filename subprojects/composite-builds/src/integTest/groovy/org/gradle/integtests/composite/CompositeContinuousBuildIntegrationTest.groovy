@@ -16,9 +16,10 @@
 
 package org.gradle.integtests.composite
 
-import org.gradle.launcher.continuous.Java7RequiringContinuousIntegrationTest
+import org.gradle.integtests.fixtures.AbstractContinuousIntegrationTest
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 
-class CompositeContinuousBuildIntegrationTest extends Java7RequiringContinuousIntegrationTest {
+class CompositeContinuousBuildIntegrationTest extends AbstractContinuousIntegrationTest {
     def setup() {
         buildTestFixture.withBuildInSubDir()
     }
@@ -61,7 +62,7 @@ class CompositeContinuousBuildIntegrationTest extends Java7RequiringContinuousIn
         when:
         inputFile.text = "second"
         then:
-        succeeds()
+        buildTriggeredAndSucceeded()
         outputFile.text == "second"
     }
 
@@ -89,15 +90,17 @@ class CompositeContinuousBuildIntegrationTest extends Java7RequiringContinuousIn
             apply plugin: 'java'
             apply plugin: 'application'
             group = 'com.example'
-            mainClassName = 'com.example.Main'
+            application {
+                mainClass = 'com.example.Main'
+            }
             dependencies {
-                compile 'org.test:library:0.1'
+                implementation 'org.test:library:0.1'
             }
         """
         def mainSource = file("src/main/java/com/example/Main.java")
         mainSource << """
             package com.example;
-            
+
             public class Main {
                 public static void main(String... args) {
                     org.test.Library.print("World");
@@ -107,22 +110,26 @@ class CompositeContinuousBuildIntegrationTest extends Java7RequiringContinuousIn
         when:
         succeeds("run")
         then:
-        result.assertOutputContains("Hello World")
+        outputContains("Hello World")
 
         when:
         librarySource.text = librarySource.text.replace("Hello", "Goodbye")
         then:
-        succeeds()
-        result.assertOutputContains("Goodbye World")
+        buildTriggeredAndSucceeded()
+        outputContains("Goodbye World")
 
         when:
         mainSource.text = mainSource.text.replace("World", "Friend")
         then:
-        succeeds()
-        result.assertOutputContains("Goodbye Friend")
+        buildTriggeredAndSucceeded()
+        outputContains("Goodbye Friend")
     }
 
     def "will rebuild on change for plugin supplied by included build"() {
+        // to reduce contention with concurrently executing tests
+        requireOwnGradleUserHomeDir()
+        executer.requireIsolatedDaemons()
+
         def includedLibrary = singleProjectBuild("plugin") {
             buildFile << """
                 apply plugin: 'java-gradle-plugin'
@@ -161,17 +168,22 @@ class CompositeContinuousBuildIntegrationTest extends Java7RequiringContinuousIn
         """
 
         when:
+        succeeds("--status")
         succeeds("tasks")
         then:
-        result.assertOutputContains("Hello World")
+        outputContains("Hello World")
 
         when:
         pluginSource.text = pluginSource.text.replace("Hello", "Goodbye")
         then:
-        succeeds()
-        result.assertOutputContains("Goodbye World")
+        buildTriggeredAndSucceeded()
+        outputContains("Goodbye World")
+
+        cleanup:
+        stopGradle()
     }
 
+    @ToBeFixedForIsolatedProjects(because = "cross-build configuration in composite build")
     def "will rebuild on change for build included into a multi-project build"() {
         def includedLibrary = singleProjectBuild("library") {
             buildFile << """
@@ -199,9 +211,11 @@ class CompositeContinuousBuildIntegrationTest extends Java7RequiringContinuousIn
                 apply plugin: 'java'
                 apply plugin: 'application'
                 group = 'com.example'
-                mainClassName = 'com.example.' + name + '.Main'
+                application {
+                   mainClass = 'com.example.' + name + '.Main'
+                }
                 dependencies {
-                    compile 'org.test:library:0.1'
+                    implementation 'org.test:library:0.1'
                 }
             }
             project(":sub2") {
@@ -211,7 +225,7 @@ class CompositeContinuousBuildIntegrationTest extends Java7RequiringContinuousIn
         def mainSourceSub1 = file("sub1/src/main/java/com/example/sub1/Main.java")
         mainSourceSub1 << """
             package com.example.sub1;
-            
+
             public class Main {
                 public static void main(String... args) {
                     org.test.Library.print("First");
@@ -221,7 +235,7 @@ class CompositeContinuousBuildIntegrationTest extends Java7RequiringContinuousIn
         def mainSourceSub2 = file("sub2/src/main/java/com/example/sub2/Main.java")
         mainSourceSub2 << """
             package com.example.sub2;
-            
+
             public class Main {
                 public static void main(String... args) {
                     org.test.Library.print("Second");
@@ -231,28 +245,28 @@ class CompositeContinuousBuildIntegrationTest extends Java7RequiringContinuousIn
         when:
         succeeds("run")
         then:
-        result.assertOutputContains("Hello First")
-        result.assertOutputContains("Hello Second")
+        outputContains("Hello First")
+        outputContains("Hello Second")
 
         when:
         librarySource.text = librarySource.text.replace("Hello", "Goodbye")
         then:
-        succeeds()
-        result.assertOutputContains("Goodbye First")
-        result.assertOutputContains("Goodbye Second")
+        buildTriggeredAndSucceeded()
+        outputContains("Goodbye First")
+        outputContains("Goodbye Second")
 
         when:
         mainSourceSub1.text = mainSourceSub1.text.replace("First", '1st')
         then:
-        succeeds()
-        result.assertOutputContains("Goodbye 1st")
-        result.assertOutputContains("Goodbye Second")
+        buildTriggeredAndSucceeded()
+        outputContains("Goodbye 1st")
+        outputContains("Goodbye Second")
 
         when:
         mainSourceSub2.text = mainSourceSub2.text.replace("Second", '2nd')
         then:
-        succeeds()
-        result.assertOutputContains("Goodbye 1st")
-        result.assertOutputContains("Goodbye 2nd")
+        buildTriggeredAndSucceeded()
+        outputContains("Goodbye 1st")
+        outputContains("Goodbye 2nd")
     }
 }

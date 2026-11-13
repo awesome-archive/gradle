@@ -22,8 +22,7 @@ import org.gradle.test.fixtures.server.http.TestProxyServer
 import org.gradle.test.matchers.UserAgentMatcher
 import org.gradle.util.GradleVersion
 import org.gradle.util.SetSystemProperties
-import org.hamcrest.Matchers
-import spock.lang.Unroll
+import org.hamcrest.CoreMatchers
 
 class HttpProxyScriptPluginIntegrationSpec extends AbstractIntegrationSpec {
     @org.junit.Rule SetSystemProperties systemProperties = new SetSystemProperties()
@@ -38,7 +37,6 @@ class HttpProxyScriptPluginIntegrationSpec extends AbstractIntegrationSpec {
         executer.requireOwnGradleUserHomeDir()
     }
 
-    @Unroll
     def "uses #type proxy to access remote build script plugin"() {
         given:
         testProxyServer.start(userName, password)
@@ -133,6 +131,6 @@ class HttpProxyScriptPluginIntegrationSpec extends AbstractIntegrationSpec {
         and:
         failure.assertHasDescription("A problem occurred evaluating root project 'project'.")
                 .assertHasCause("Could not get resource '${server.uri}/external.gradle'.")
-                .assertThatCause(Matchers.containsString("Proxy Authentication Required"))
+                .assertThatCause(CoreMatchers.containsString("Proxy Authentication Required"))
     }
 }

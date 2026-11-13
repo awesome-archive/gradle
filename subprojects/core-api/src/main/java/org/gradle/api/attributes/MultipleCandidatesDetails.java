@@ -15,9 +15,8 @@
  */
 package org.gradle.api.attributes;
 
-import org.gradle.api.Incubating;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.util.Set;
 
 /**
@@ -27,7 +26,6 @@ import java.util.Set;
  * @param <T> the concrete type of the attribute
  * @since 3.3
  */
-@Incubating
 public interface MultipleCandidatesDetails<T> {
     /**
      * Returns the value of the attribute specified by the consumer.
@@ -42,6 +40,7 @@ public interface MultipleCandidatesDetails<T> {
      * A set of candidate values.
      *
      * @return the set of candidates
+     * @since 3.3
      */
     Set<T> getCandidateValues();
 
@@ -49,7 +48,8 @@ public interface MultipleCandidatesDetails<T> {
      * Calling this method indicates that the candidate is the closest match. It is allowed to call this method several times with
      * different values, in which case it indicates that multiple candidates are equally compatible.
      *
-     * @param candidate the closest match
+     * @param candidate The closest match. Must be present in {@link #getCandidateValues()}.
+     * @since 3.4
      */
     void closestMatch(T candidate);
 

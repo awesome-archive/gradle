@@ -16,7 +16,9 @@
 package org.gradle.api.artifacts.repositories;
 
 import org.gradle.api.Action;
-import org.gradle.api.Incubating;
+import org.gradle.declarative.dsl.model.annotations.HiddenInDefinition;
+import org.gradle.internal.instrumentation.api.annotations.NotToBeReplacedByLazyProperty;
+import org.gradle.internal.instrumentation.api.annotations.ToBeReplacedByLazyProperty;
 
 import java.net.URI;
 import java.util.Set;
@@ -25,42 +27,49 @@ import java.util.Set;
  * An artifact repository which uses a Maven format to store artifacts and meta-data.
  * <p>
  * Repositories of this type are created by the {@link org.gradle.api.artifacts.dsl.RepositoryHandler#maven(org.gradle.api.Action)} group of methods.
+ * @since 1.0
  */
-public interface MavenArtifactRepository extends ArtifactRepository, AuthenticationSupported {
+public interface MavenArtifactRepository extends ArtifactRepository, UrlArtifactRepository, AuthenticationSupported, MetadataSupplierAware {
 
     /**
-     * The base URL of this repository. This URL is used to find both POMs and artifact files. You can add additional URLs to use to look for artifact files, such as jars, using {@link
-     * #setArtifactUrls(Iterable)}.
+     * The base URL of this repository. This URL is used to find both POMs and artifact files.
      *
      * @return The URL.
      */
+    @Override
+    @ToBeReplacedByLazyProperty
     URI getUrl();
 
     /**
-     * Sets the base URL of this repository. This URL is used to find both POMs and artifact files. You can add additional URLs to use to look for artifact files, such as jars, using {@link
-     * #setArtifactUrls(Iterable)}.
+     * Sets the base URL of this repository. This URL is used to find both POMs and artifact files.
      *
      * @param url The base URL.
      * @since 4.0
      */
+    @Override
     void setUrl(URI url);
 
     /**
-     * Sets the base URL of this repository. This URL is used to find both POMs and artifact files. You can add additional URLs to use to look for artifact files, such as jars, using {@link
-     * #setArtifactUrls(Iterable)}.
+     * Sets the base URL of this repository. This URL is used to find both POMs and artifact files.
      *
      * <p>The provided value is evaluated as per {@link org.gradle.api.Project#uri(Object)}. This means, for example, you can pass in a {@code File} object, or a relative path to be evaluated relative
      * to the project directory.
      *
      * @param url The base URL.
      */
+    @Override
+    @HiddenInDefinition
     void setUrl(Object url);
 
     /**
      * Returns the additional URLs to use to find artifact files. Note that these URLs are not used to find POM files.
      *
      * @return The additional URLs. Returns an empty list if there are no such URLs.
+     * @deprecated Maven repositories with separate locations for POMs and artifacts are a Gradle-only feature with no equivalent in Maven. This method is scheduled to be removed in Gradle 10.
+     * @since 1.0
      */
+    @Deprecated
+    @HiddenInDefinition
     Set<URI> getArtifactUrls();
 
     /**
@@ -70,7 +79,11 @@ public interface MavenArtifactRepository extends ArtifactRepository, Authenticat
      * relative to the project directory.
      *
      * @param urls The URLs to add.
+     * @deprecated Maven repositories with separate locations for POMs and artifacts are a Gradle-only feature with no equivalent in Maven. This method is scheduled to be removed in Gradle 10.
+     * @since 1.0
      */
+    @Deprecated
+    @HiddenInDefinition
     void artifactUrls(Object... urls);
 
     /**
@@ -78,7 +91,10 @@ public interface MavenArtifactRepository extends ArtifactRepository, Authenticat
      *
      * @param urls The URLs.
      * @since 4.0
+     * @deprecated Maven repositories with separate locations for POMs and artifacts are a Gradle-only feature with no equivalent in Maven. This method is scheduled to be removed in Gradle 10.
      */
+    @Deprecated
+    @HiddenInDefinition
     void setArtifactUrls(Set<URI> urls);
 
     /**
@@ -88,7 +104,11 @@ public interface MavenArtifactRepository extends ArtifactRepository, Authenticat
      * relative to the project directory.
      *
      * @param urls The URLs.
+     * @deprecated Maven repositories with separate locations for POMs and artifacts are a Gradle-only feature with no equivalent in Maven. This method is scheduled to be removed in Gradle 10.
+     * @since 1.0
      */
+    @Deprecated
+    @HiddenInDefinition
     void setArtifactUrls(Iterable<?> urls);
 
     /**
@@ -99,8 +119,17 @@ public interface MavenArtifactRepository extends ArtifactRepository, Authenticat
      *
      * @since 4.5
      */
-    @Incubating
+    @HiddenInDefinition
     void metadataSources(Action<? super MetadataSources> configureAction);
+
+    /**
+     * Returns the current metadata sources configuration for the repository.
+     *
+     * @since 6.4
+     */
+    @NotToBeReplacedByLazyProperty(because = "Not settable property")
+    @HiddenInDefinition
+    MetadataSources getMetadataSources();
 
     /**
      * Allows configuring the sources of metadata for a specific repository.
@@ -108,24 +137,72 @@ public interface MavenArtifactRepository extends ArtifactRepository, Authenticat
      * @since 4.5
      *
      */
-    @Incubating
     interface MetadataSources {
         /**
          * Indicates that this repository will contain Gradle metadata.
+         * @since 4.5
          */
         void gradleMetadata();
 
         /**
          * Indicates that this repository will contain Maven POM files.
+         * If the POM file contains a marker telling that Gradle metadata exists
+         * for this component, Gradle will <i>also</i> look for the Gradle metadata
+         * file. Gradle module metadata redirection will not happen if {@code ignoreGradleMetadataRedirection()} has been used.
+         * @since 4.5
          */
         void mavenPom();
 
         /**
          * Indicates that this repository may not contain metadata files,
          * but we can infer it from the presence of an artifact file.
+         * @since 4.5
          */
         void artifact();
+
+        /**
+         * Indicates that this repository will ignore Gradle module metadata redirection markers found in POM files.
+         *
+         * @since 5.6
+         *
+         */
+        void ignoreGradleMetadataRedirection();
+
+        /**
+         * Indicates if this repository contains Gradle module metadata.
+         *
+         * @since 6.4
+         */
+        boolean isGradleMetadataEnabled();
+
+        /**
+         * Indicates if this repository contains Maven POM files.
+         *
+         * @since 6.4
+         */
+        boolean isMavenPomEnabled();
+
+        /**
+         * Indicates if this repository only contains artifacts.
+         *
+         * @since 6.4
+         */
+        boolean isArtifactEnabled();
+
+        /**
+         * Indicates if this repository ignores Gradle module metadata redirection markers.
+         *
+         * @since 6.4
+         */
+        boolean isIgnoreGradleMetadataRedirectionEnabled();
     }
 
-
+    /**
+     * Configures the content of this Maven repository.
+     * @param configureAction the configuration action
+     *
+     * @since 5.1
+     */
+    @HiddenInDefinition
+    void mavenContent(Action<? super MavenRepositoryContentDescriptor> configureAction);
 }

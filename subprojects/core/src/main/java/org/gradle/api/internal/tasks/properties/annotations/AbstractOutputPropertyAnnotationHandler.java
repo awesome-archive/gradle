@@ -16,22 +16,37 @@
 
 package org.gradle.api.internal.tasks.properties.annotations;
 
-import org.gradle.api.internal.tasks.DeclaredTaskOutputFileProperty;
-import org.gradle.api.internal.tasks.PropertySpecFactory;
-import org.gradle.api.internal.tasks.properties.BeanPropertyContext;
-import org.gradle.api.internal.tasks.properties.PropertyValue;
-import org.gradle.api.internal.tasks.properties.PropertyVisitor;
+import org.gradle.api.tasks.Optional;
+import org.gradle.internal.execution.model.annotations.ModifierAnnotationCategory;
+import org.gradle.internal.properties.OutputFilePropertyType;
+import org.gradle.internal.properties.PropertyValue;
+import org.gradle.internal.properties.PropertyVisitor;
+import org.gradle.internal.properties.annotations.AbstractPropertyAnnotationHandler;
+import org.gradle.internal.properties.annotations.PropertyMetadata;
+import org.gradle.internal.service.scopes.Scope;
+import org.gradle.internal.service.scopes.ServiceScope;
 
-public abstract class AbstractOutputPropertyAnnotationHandler implements PropertyAnnotationHandler {
+import java.lang.annotation.Annotation;
 
-    protected abstract DeclaredTaskOutputFileProperty createFileSpec(PropertyValue propertyValue, PropertySpecFactory specFactory);
+import static org.gradle.internal.execution.model.annotations.ModifierAnnotationCategory.OPTIONAL;
+import static org.gradle.internal.execution.model.annotations.ModifierAnnotationCategory.REPLACES_EAGER_PROPERTY;
+
+@ServiceScope(Scope.Global.class)
+public abstract class AbstractOutputPropertyAnnotationHandler extends AbstractPropertyAnnotationHandler {
+    private final OutputFilePropertyType filePropertyType;
+
+    public AbstractOutputPropertyAnnotationHandler(Class<? extends Annotation> annotationType, OutputFilePropertyType filePropertyType) {
+        super(annotationType, Kind.OUTPUT, ModifierAnnotationCategory.annotationsOf(OPTIONAL, REPLACES_EAGER_PROPERTY));
+        this.filePropertyType = filePropertyType;
+    }
 
     @Override
-    public void visitPropertyValue(PropertyValue propertyValue, PropertyVisitor visitor, PropertySpecFactory specFactory, BeanPropertyContext context) {
-        DeclaredTaskOutputFileProperty fileSpec = createFileSpec(propertyValue, specFactory);
-        fileSpec
-            .withPropertyName(propertyValue.getPropertyName())
-            .optional(propertyValue.isOptional());
-        visitor.visitOutputFileProperty(fileSpec);
+    public boolean isPropertyRelevant() {
+        return true;
+    }
+
+    @Override
+    public void visitPropertyValue(String propertyName, PropertyValue value, PropertyMetadata propertyMetadata, PropertyVisitor visitor) {
+        visitor.visitOutputFileProperty(propertyName, propertyMetadata.isAnnotationPresent(Optional.class), value, filePropertyType);
     }
 }
